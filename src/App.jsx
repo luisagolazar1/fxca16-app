@@ -863,6 +863,7 @@ function combinedSignal(data, W=7, allData=null) {
 
   // ── MEJORA 3: Régimen de mercado + Calibración Merval ──
   const isMerval  = (data[n]?.moneda === "ARS");
+  const regime    = isMerval ? "neutral" : (MARKET_REGIME?.regime || "neutral");
   detectRegime(allData); // actualiza MARKET_REGIME global con SMA200 real
   const baseThBuy  = isMerval ? 55 : 60;  // Merval: umbral más bajo (más volátil)
   const baseThSell = isMerval ? 45 : 40;
@@ -930,7 +931,7 @@ function combinedSignal(data, W=7, allData=null) {
     ca15_score:evo.ca15_score, evo_prob:evo.evo_prob,
     pct6h:evo.pct6h, vol_24h:evo.vol_24h,
     dist_high:evo.dist_high, dist_low:evo.dist_low,
-    regime: activeRegime, regimeSMA200: MARKET_REGIME.sma200, wfWeight:+wfWeight.toFixed(2),
+    regime, wfWeight:+wfWeight.toFixed(2),
     hourFactor:+hourFactor.toFixed(2), dowFactor:+dowFactor.toFixed(2),
   };
 }
