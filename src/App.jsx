@@ -1709,6 +1709,14 @@ export default function App() {
   const rowDataRef  = useRef({}); // barras por ticker — fuera del estado React        // { AAPL: [{date,open,high,low,close,volume},...] }
   const [csvStatus, setCsvStatus] = useState(null); // null | {n, tickers, rows}
 
+  const embeddedLastDate = useMemo(() => {
+    const emb = expandEmbedded(CSV_DATA_EMBEDDED);
+    return Object.values(emb).reduce((mx, bars) => {
+      const d = bars[bars.length-1]?.date || "";
+      return d > mx ? d : mx;
+    }, "");
+  }, []);
+
   const LC={sys:"#00d4ff",ok:"#00ff9d",warn:"#ffd700",err:"#ff3355",info:"#7ab0c8",dim:"#2e5468"};
   const lg=useCallback((msg,type="info")=>{
     const t=new Date().toLocaleTimeString("es-AR");
@@ -2204,7 +2212,7 @@ export default function App() {
       const prices = Object.fromEntries(Object.entries(embForMkt).map(([tk,bars])=>[tk,bars[bars.length-1].close]));
       const n = Object.keys(prices).length;
       setNReal(n);
-      setPriceSrc(`Embebido · ${n}t · 25/03`);
+      setPriceSrc(`Embebido · ${n}t · ${embeddedLastDate.slice(5).replace('-','/')||'?'}`);
       lg(`📊 ${n} tickers cargados`, "ok");
       await buildRows(prices, "Embebido");
       setFase("done");
@@ -2338,6 +2346,13 @@ export default function App() {
             </div>
 
 
+            <CsvLoader
+              onLoad={processCsvText}
+              csvStatus={csvStatus}
+              onClear={()=>{csvDataRef.current={};setCsvStatus(null);}}
+              embeddedDate={embeddedLastDate}
+            />
+
             <div style={{display:"flex",gap:"8px",justifyContent:"center",flexWrap:"wrap"}}>
               <button className="btn on" onClick={run} style={{padding:"13px 40px",fontSize:"12px",letterSpacing:".15em",boxShadow:"0 0 30px #00ff9d18"}}>▶ EJECUTAR</button>
               {storedMeta && (
@@ -2349,7 +2364,7 @@ export default function App() {
             <div style={{marginTop:"10px",fontSize:"9px",color:"#142030"}}>
               {csvStatus
                 ? `📊 CSV: ${csvStatus.n} tickers · ${csvStatus.rows.toLocaleString()} barras · ${csvStatus.lastDate||""}`
-                : `📊 Datos embebidos: ${Object.keys(CSV_DATA_EMBEDDED||{}).length} tickers · 25/03/2026`}
+                : `📊 Datos embebidos: ${Object.keys(CSV_DATA_EMBEDDED||{}).length} tickers · ${embeddedLastDate||"?"}`}
             </div>
           </div>
         )}
