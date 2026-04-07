@@ -2346,13 +2346,6 @@ export default function App() {
             </div>
 
 
-            <CsvLoader
-              onLoad={processCsvText}
-              csvStatus={csvStatus}
-              onClear={()=>{csvDataRef.current={};setCsvStatus(null);}}
-              embeddedDate={embeddedLastDate}
-            />
-
             <div style={{display:"flex",gap:"8px",justifyContent:"center",flexWrap:"wrap"}}>
               <button className="btn on" onClick={run} style={{padding:"13px 40px",fontSize:"12px",letterSpacing:".15em",boxShadow:"0 0 30px #00ff9d18"}}>▶ EJECUTAR</button>
               {storedMeta && (
