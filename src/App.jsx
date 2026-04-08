@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport } from './data.js';
+import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║         FXCA16 — SISTEMA COMBINADO                  ║
@@ -1746,6 +1746,25 @@ export default function App() {
         }
       } catch(e) {}
     })();
+  },[]);
+
+  // Seed dynParams desde data.js (calculados por Colab con 2 años de datos reales)
+  useEffect(()=>{
+    if (DYN_PARAMS_IMPORTED && Object.keys(DYN_PARAMS_IMPORTED).length > 0) {
+      dynParamsRef.current = DYN_PARAMS_IMPORTED;
+      setDynParams(DYN_PARAMS_IMPORTED);
+      setDynParamsVersion(v=>v+1);
+      lg(`🧠 dynParams: ${Object.keys(DYN_PARAMS_IMPORTED).length} tickers pre-calibrados desde Colab`, "info");
+    }
+  },[]);
+
+  // Seed dynParams desde data.js (calculados por Colab con 2 años de datos reales)
+  useEffect(()=>{
+    if (DYN_PARAMS_IMPORTED && Object.keys(DYN_PARAMS_IMPORTED).length > 0) {
+      dynParamsRef.current = DYN_PARAMS_IMPORTED;
+      setDynParams(DYN_PARAMS_IMPORTED);
+      setDynParamsVersion(v=>v+1);
+    }
   },[]);
 
   // Cargar storage, learning e historial al iniciar
