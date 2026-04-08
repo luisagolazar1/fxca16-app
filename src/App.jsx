@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import CSV_DATA_EMBEDDED_IMPORT, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
+import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║         FXCA16 — SISTEMA COMBINADO                  ║
@@ -22,7 +22,7 @@ import CSV_DATA_EMBEDDED_IMPORT, { expandEmbedded as expandEmbeddedImport, FXCA1
 // ╚══════════════════════════════════════════════════════════════════╝
 
 // ── DATOS REALES: 80 tickers · 60 barras 1h · hasta 2026-03-25 ──
-const CSV_DATA_EMBEDDED = CSV_DATA_EMBEDDED_IMPORT;
+const CSV_DATA_EMBEDDED = CSV_DATA_EMBEDDED_RAW;
 const LAST_PRICES = {};
 function expandEmbedded(raw){const out={};for(const [tk,bars] of Object.entries(raw)){out[tk]=bars.map(b=>({date:b.d,hour:b.h,open:b.o,high:b.hi,low:b.lo,close:b.c,volume:b.v,moneda:b.m,_ticker:tk}));}return out;}
 
@@ -863,6 +863,7 @@ function combinedSignal(data, W=7, allData=null) {
 
   // ── MEJORA 3: Régimen de mercado + Calibración Merval ──
   const isMerval  = (data[n]?.moneda === "ARS");
+  const regime    = isMerval ? "neutral" : (MARKET_REGIME?.regime || "neutral");
   detectRegime(allData); // actualiza MARKET_REGIME global con SMA200 real
   const baseThBuy  = isMerval ? 55 : 60;  // Merval: umbral más bajo (más volátil)
   const baseThSell = isMerval ? 45 : 40;
@@ -930,7 +931,7 @@ function combinedSignal(data, W=7, allData=null) {
     ca15_score:evo.ca15_score, evo_prob:evo.evo_prob,
     pct6h:evo.pct6h, vol_24h:evo.vol_24h,
     dist_high:evo.dist_high, dist_low:evo.dist_low,
-    regime: activeRegime, regimeSMA200: MARKET_REGIME.sma200, wfWeight:+wfWeight.toFixed(2),
+    regime, wfWeight:+wfWeight.toFixed(2),
     hourFactor:+hourFactor.toFixed(2), dowFactor:+dowFactor.toFixed(2),
   };
 }
@@ -1708,6 +1709,13 @@ export default function App() {
   const rowDataRef  = useRef({}); // barras por ticker — fuera del estado React        // { AAPL: [{date,open,high,low,close,volume},...] }
   const [csvStatus, setCsvStatus] = useState(null); // null | {n, tickers, rows}
 
+  const embeddedLastDate = useMemo(() => {
+    return Object.values(CSV_DATA_EMBEDDED).reduce((mx, bars) => {
+      const d = bars[bars.length-1]?.d || "";
+      return d > mx ? d : mx;
+    }, "");
+  }, []);
+
   const LC={sys:"#00d4ff",ok:"#00ff9d",warn:"#ffd700",err:"#ff3355",info:"#7ab0c8",dim:"#2e5468"};
   const lg=useCallback((msg,type="info")=>{
     const t=new Date().toLocaleTimeString("es-AR");
@@ -1737,6 +1745,17 @@ export default function App() {
         }
       } catch(e) {}
     })();
+  },[]);
+
+  // Seed dynParams desde data.js (calculados por Colab con 2 años de datos reales)
+  useEffect(()=>{
+    if (DYN_PARAMS_IMPORTED && Object.keys(DYN_PARAMS_IMPORTED).length > 0) {
+      dynParamsRef.current = DYN_PARAMS_IMPORTED;
+      setDynParams(DYN_PARAMS_IMPORTED);
+      setDynParamsVersion(v=>v+1);
+      lg(`🧠 dynParams: ${Object.keys(DYN_PARAMS_IMPORTED).length} tickers pre-calibrados desde Colab`, "info");
+    }
+  // eslint-disable-next-line
   },[]);
 
   // Cargar storage, learning e historial al iniciar
@@ -1824,7 +1843,9 @@ export default function App() {
     const csv    = csvDataRef.current;
     const yield_ = () => new Promise(r => setTimeout(r, 0));
     const raw    = [];
-    const BATCH  = 10; // procesar 10 tickers por yield (80 → 8 pausas en vez de 160)
+    const BATCH  = 20;
+    // Pre-expandir UNA sola vez — evita 80 expansiones del dataset de 851KB
+    const _embCache = expandEmbedded(CSV_DATA_EMBEDDED);
 
     for (let i = 0; i < TICKERS.length; i++) {
       const tk      = TICKERS[i];
@@ -1840,7 +1861,7 @@ export default function App() {
         data[data.length-1]._ticker = tk.ticker;
       } else if (px) {
         // Sin CSV pero con precio: usar datos embebidos si están disponibles
-        const embBars = expandEmbedded(CSV_DATA_EMBEDDED)[tk.ticker];
+        const embBars = _embCache[tk.ticker];
         if (embBars && embBars.length >= 60) {
           data = embBars;
           data[data.length-1]._ticker = tk.ticker;
@@ -2203,7 +2224,7 @@ export default function App() {
       const prices = Object.fromEntries(Object.entries(embForMkt).map(([tk,bars])=>[tk,bars[bars.length-1].close]));
       const n = Object.keys(prices).length;
       setNReal(n);
-      setPriceSrc(`Embebido · ${n}t · 25/03`);
+      setPriceSrc(`Embebido · ${n}t · ${embeddedLastDate.slice(5).replace('-','/')||'?'}`);
       lg(`📊 ${n} tickers cargados`, "ok");
       await buildRows(prices, "Embebido");
       setFase("done");
@@ -2304,14 +2325,6 @@ export default function App() {
                 <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>setMkt(k)} style={{padding:"9px 18px",fontSize:"11px"}}>{l}</button>
               )}
             </div>
-            {/* ── CSV LOADER ── */}
-            <CsvLoader
-              onLoad={processCsvText}
-              csvStatus={csvStatus}
-              onClear={()=>{setCsvStatus(null);Object.keys(csvDataRef.current).forEach(k=>delete csvDataRef.current[k]);}}
-              embeddedDate={"19/03/2026"}
-            />
-
             {/* Capital del usuario */}
             <div style={{marginBottom:"16px",maxWidth:"420px",margin:"0 auto 16px"}}>
               <div style={{fontSize:"8px",color:"#1a3a50",marginBottom:"6px",letterSpacing:".12em"}}>💰 CAPITAL TOTAL (para position sizing)</div>
@@ -2347,20 +2360,6 @@ export default function App() {
 
             <div style={{display:"flex",gap:"8px",justifyContent:"center",flexWrap:"wrap"}}>
               <button className="btn on" onClick={run} style={{padding:"13px 40px",fontSize:"12px",letterSpacing:".15em",boxShadow:"0 0 30px #00ff9d18"}}>▶ EJECUTAR</button>
-              <button className="btn off" onClick={async()=>{
-                lg("📡 Buscando precios live...", "sys");
-                try {
-                  const {prices,source} = await fetchPrecios(lg, TICKERS, mkt);
-                  if(Object.keys(prices).length>0){
-                    setNReal(Object.keys(prices).length);
-                    setPriceSrc(source);
-                    await buildRows(prices, source);
-                    lg("✅ Precios live actualizados","ok");
-                  }
-                } catch(e){lg("Error live: "+e.message,"warn");}
-              }} style={{padding:"13px 16px",fontSize:"10px",color:"#00d4ff",borderColor:"#00d4ff40"}}>
-                📡 Live
-              </button>
               {storedMeta && (
                 <button className="btn off" onClick={loadFromStorage} style={{padding:"13px 22px",fontSize:"11px",color:"#00d4ff",borderColor:"#00d4ff40"}}>
                   📂 CARGAR STORAGE<br/><span style={{fontSize:"8px",opacity:.7}}>{storedMeta.count} tickers · {storedMeta.savedAt?.slice(0,10)}</span>
@@ -2370,7 +2369,7 @@ export default function App() {
             <div style={{marginTop:"10px",fontSize:"9px",color:"#142030"}}>
               {csvStatus
                 ? `📊 CSV: ${csvStatus.n} tickers · ${csvStatus.rows.toLocaleString()} barras · ${csvStatus.lastDate||""}`
-                : `📊 Datos embebidos: ${Object.keys(CSV_DATA_EMBEDDED||{}).length} tickers · 25/03/2026`}
+                : `📊 Datos embebidos: ${Object.keys(CSV_DATA_EMBEDDED||{}).length} tickers · ${embeddedLastDate||"?"}`}
             </div>
           </div>
         )}
