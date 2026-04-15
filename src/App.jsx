@@ -21,6 +21,23 @@ import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_D
 // ║  MERCADOS: Merval AR (20 tickers) | USA (28 tickers)             ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
+// ── localStorage wrapper — reemplaza window.storage para persistir entre sesiones ──
+const storage = {
+  async set(key, value) {
+    try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); return {key,value}; } catch(e) { return null; }
+  },
+  async get(key) {
+    try { const v = localStorage.getItem(key); return v !== null ? {key, value: v} : null; } catch(e) { return null; }
+  },
+  async delete(key) {
+    try { localStorage.removeItem(key); return {key, deleted: true}; } catch(e) { return null; }
+  },
+  async list(prefix) {
+    try { const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix)); return {keys}; } catch(e) { return {keys:[]}; }
+  }
+};
+if (typeof window !== 'undefined') window.storage = storage;
+
 // ── DATOS REALES: 80 tickers · 60 barras 1h · hasta 2026-03-25 ──
 const CSV_DATA_EMBEDDED = CSV_DATA_EMBEDDED_RAW;
 const LAST_PRICES = {};
