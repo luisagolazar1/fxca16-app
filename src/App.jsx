@@ -1783,7 +1783,22 @@ export default function App() {
         const meta = await StorageManager.getMeta();
         if (meta) { setStoredMeta(meta); lg(`📂 Storage: ${meta.count} tickers (${meta.savedAt?.slice(0,10)})`, "info"); }
         const hist = await LearningEngine.getSimHistory();
-        if (hist.length) setSimHistory(hist);
+        if (hist.length) {
+          // Expandir campos comprimidos al cargar desde localStorage
+          const expanded = hist.map(s => ({...s,
+            results: s.results?.map(r => {
+              // Si ya está expandido (tiene 'ticker'), no tocar
+              if (r.ticker) return r;
+              return {
+                ticker:   r.t, panel: r.p, moneda: r.m,
+                simDate:  r.d, mesesBack: r.mb,
+                predicted: r.pr==="CO"?"COMPRA":r.pr==="VE"?"VENTA":r.pr==="CF"?"COMPRA FUERTE":r.pr==="VF"?"VENTA FUERTE":"NEUTRAL",
+                actualRet: r.ar, hit: r.h===1, score: r.s, evoProb: r.e,
+              };
+            })
+          }));
+          setSimHistory(expanded);
+        }
       } catch(e) {}
     })();
   },[]);
