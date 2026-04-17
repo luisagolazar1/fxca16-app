@@ -1559,10 +1559,10 @@ function runSimulation(allData, combinedSignalFn, learningData, W=7) {
 
 
 // ── UI ────────────────────────────────────────────────────────
-const SC={"COMPRA FUERTE":"#00ff9d","COMPRA":"#5dffb0","NEUTRAL":"#ffd700","VENTA":"#ff9040","VENTA FUERTE":"#ff3355"};
-const TC={"ALCISTA FUERTE":"#00ff9d","ALCISTA":"#7dffb8","LATERAL":"#ffd700","BAJISTA":"#ff9040","BAJISTA FUERTE":"#ff3355"};
+const SC={"COMPRA FUERTE":"#00ff88","COMPRA":"#40d490","NEUTRAL":"#ffe040","VENTA":"#ff8c3a","VENTA FUERTE":"#ff1a44"};
+const TC={"ALCISTA FUERTE":"#00ff88","ALCISTA":"#40d490","LATERAL":"#ffe040","BAJISTA":"#ff8c3a","BAJISTA FUERTE":"#ff1a44"};
 const TI={"ALCISTA FUERTE":"▲▲","ALCISTA":"▲","LATERAL":"◆","BAJISTA":"▼","BAJISTA FUERTE":"▼▼"};
-const GR=r=>r>=72?{l:"A+",c:"#00ff9d"}:r>=62?{l:"A",c:"#5dffb0"}:r>=52?{l:"B+",c:"#ffd700"}:r>=44?{l:"B",c:"#f59e0b"}:{l:"C",c:"#ff3355"};
+const GR=r=>r>=72?{l:"A+",c:"#00ff88"}:r>=62?{l:"A",c:"#40d490"}:r>=52?{l:"B+",c:"#ffe040"}:r>=44?{l:"B",c:"#f59e0b"}:{l:"C",c:"#ff1a44"};
 const F=n=>n?.toLocaleString("es-AR")??"─";
 // FP: usa moneda del ticker cuando está disponible, sino el mercado global
 const FP=(n, mktOrMoneda)=>{
@@ -1609,7 +1609,7 @@ function ScoreBar({fx, evo, final_sc}) {
 }
 
 function FXCA16Badge({score}) {
-  const c = score===3?"#00ff9d":score===2?"#ffd700":score===1?"#ff9040":"#ff3355";
+  const c = score===3?"#00ff88":score===2?"#ffe040":score===1?"#ff8c3a":"#ff1a44";
   return <span style={{display:"inline-flex",alignItems:"center",gap:"3px",background:c+"15",color:c,border:`1px solid ${c}30`,padding:"1px 7px",borderRadius:"3px",fontSize:"9px",fontWeight:700}}>
     FXCA16 {score}/3
   </span>;
@@ -1784,14 +1784,12 @@ export default function App() {
         if (meta) { setStoredMeta(meta); lg(`📂 Storage: ${meta.count} tickers (${meta.savedAt?.slice(0,10)})`, "info"); }
         const hist = await LearningEngine.getSimHistory();
         if (hist.length) {
-          // Expandir campos comprimidos al cargar desde localStorage
           const expanded = hist.map(s => ({...s,
             results: s.results?.map(r => {
-              // Si ya está expandido (tiene 'ticker'), no tocar
               if (r.ticker) return r;
               return {
-                ticker:   r.t, panel: r.p, moneda: r.m,
-                simDate:  r.d, mesesBack: r.mb,
+                ticker: r.t, panel: r.p, moneda: r.m,
+                simDate: r.d, mesesBack: r.mb,
                 predicted: r.pr==="CO"?"COMPRA":r.pr==="VE"?"VENTA":r.pr==="CF"?"COMPRA FUERTE":r.pr==="VF"?"VENTA FUERTE":"NEUTRAL",
                 actualRet: r.ar, hit: r.h===1, score: r.s, evoProb: r.e,
               };
@@ -2287,45 +2285,104 @@ export default function App() {
 
   const CSS=`
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&display=swap');
+    :root{
+      --silver:#b8c8d8;
+      --silver-dim:#6a7a8a;
+      --silver-bg:rgba(184,200,216,0.06);
+      --silver-border:rgba(184,200,216,0.18);
+      --blue:#1a6eff;
+      --blue-bright:#3d8bff;
+      --blue-bg:rgba(26,110,255,0.12);
+      --blue-border:rgba(26,110,255,0.35);
+      --green:#00ff88;
+      --green-bg:rgba(0,255,136,0.08);
+      --red:#ff1a44;
+      --yellow:#ffe040;
+      --orange:#ff8c3a;
+      --bg:#03070e;
+      --card-bg:#080f1a;
+      --border:#0f1e2e;
+    }
     *{box-sizing:border-box;margin:0;padding:0}
-    .card{background:#07101a;border:1px solid #0f2235;border-radius:5px}
-    .btn{cursor:pointer;border:none;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:5px 11px;border-radius:3px;transition:all .15s}
-    .off{background:#00ff9d12;color:#00ff9d;border:1px solid #00ff9d28}.off:hover{background:#00ff9d22}
-    .on{background:#00ff9d;color:#03070e;font-weight:700}
+    body{background:var(--bg)}
+
+    /* ── FONDO MALLADO ── */
+    .grid-bg{
+      position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;
+      background-image:
+        linear-gradient(rgba(184,200,216,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(184,200,216,0.04) 1px, transparent 1px);
+      background-size:32px 32px;
+    }
+    .grid-bg::after{
+      content:'';position:absolute;inset:0;
+      background:radial-gradient(ellipse 80% 60% at 50% 0%, rgba(26,110,255,0.06) 0%, transparent 70%);
+    }
+
+    /* ── CARDS ── */
+    .card{background:var(--card-bg);border:1px solid var(--border);border-radius:6px;position:relative;z-index:1}
+
+    /* ── BOTONES ── */
+    .btn{cursor:pointer;border:none;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 11px;border-radius:4px;transition:all .15s;position:relative;z-index:1}
+    .off{background:var(--silver-bg);color:var(--silver);border:1px solid var(--silver-border)}
+    .off:hover{background:rgba(184,200,216,0.12);border-color:rgba(184,200,216,0.35)}
+    .on{background:linear-gradient(135deg,var(--blue),#0044cc);color:#fff;font-weight:700;border:1px solid var(--blue-border);box-shadow:0 0 14px rgba(26,110,255,0.35)}
+
+    /* ── ANIMACIONES ── */
     .blink{animation:bl 1s step-end infinite}@keyframes bl{50%{opacity:0}}
     .fade{animation:fd .25s ease}@keyframes fd{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-    ::-webkit-scrollbar{width:3px;height:3px}::-webkit-scrollbar-thumb{background:#1a3048;border-radius:2px}
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar{width:3px;height:3px}
+    ::-webkit-scrollbar-thumb{background:rgba(26,110,255,0.3);border-radius:2px}
+
+    /* ── TABLA ── */
     table{border-collapse:collapse;width:100%}
-    th{padding:6px 9px;font-size:8px;color:#1e4058;letter-spacing:.12em;border-bottom:1px solid #0f2235;text-align:left;white-space:nowrap;background:#040a12;font-family:'Space Mono',monospace}
+    th{padding:6px 9px;font-size:8px;color:var(--silver-dim);letter-spacing:.12em;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;background:#040912;font-family:'Space Mono',monospace}
     td{padding:6px 9px;font-size:11px;border-bottom:1px solid #091520}
-    tr:hover td{background:#0c1c2e;cursor:pointer}
+    tr:hover td{background:#0a1828;cursor:pointer}
     .badge{display:inline-block;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700}
+
+    /* ── ANIMACIÓN PULSE ── */
     @keyframes pulse{0%,100%{opacity:.15}50%{opacity:1}}
-    .grid-opp{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px}
+
+    /* ── GRID OPORTUNIDADES ── */
+    .grid-opp{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+
+    /* ── RESPONSIVE MOBILE ── */
+    @media(max-width:640px){
+      .grid-opp{grid-template-columns:1fr}
+      th,td{padding:5px 6px;font-size:10px}
+      .btn{padding:4px 8px;font-size:8px}
+    }
+    @media(max-width:900px){
+      .grid-opp{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+    }
   `;
 
   return (
-    <div style={{fontFamily:"'Space Mono',monospace",background:"#03070e",minHeight:"100vh",color:"#8ab0c8"}}>
+    <div style={{fontFamily:"'Space Mono',monospace",background:"#03070e",minHeight:"100vh",color:"#8ab0c8",position:"relative"}}>
+      <div className="grid-bg"/>
       <style>{CSS}</style>
 
       {/* NAV */}
-      <div style={{background:"#040a12",borderBottom:"1px solid #0f2235",padding:"0 16px",position:"sticky",top:0,zIndex:99}}>
+      <div style={{background:"rgba(4,9,18,0.95)",borderBottom:"1px solid #0f1e2e",backdropFilter:"blur(8px)",padding:"0 16px",position:"sticky",top:0,zIndex:99}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:"46px",flexWrap:"wrap",gap:"8px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-            <div style={{background:"linear-gradient(135deg,#00ff9d,#00d4ff)",borderRadius:"4px",width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Bebas Neue'",fontSize:"12px",color:"#030810",fontWeight:700,letterSpacing:".05em"}}>CA</div>
+            <div style={{background:"linear-gradient(135deg,#1a6eff,#00aaff)",borderRadius:"4px",width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Bebas Neue'",fontSize:"12px",color:"#030810",fontWeight:700,letterSpacing:".05em"}}>CA</div>
             <div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:"#e0f4ff",letterSpacing:".14em",lineHeight:1}}>
                 FXCA16
               </div>
-              <div style={{fontSize:"8px",color:"#1a3a50",letterSpacing:".12em"}}>MERVAL · SISTEMA COMBINADO · P80 THRESHOLD</div>
+              <div style={{fontSize:"8px",color:"#2a4060",letterSpacing:".12em"}}>MERVAL · SISTEMA COMBINADO · P80 THRESHOLD</div>
             </div>
           </div>
           <div style={{display:"flex",gap:"14px",fontSize:"9px",color:"#1e4058",alignItems:"center"}}>
             {fase==="load"&&<span style={{color:"#ffd700",fontFamily:"'Bebas Neue'",fontSize:"20px",letterSpacing:".05em"}}>🔍 {secs}s</span>}
             {fase==="done"&&secs>0&&<span style={{fontSize:"9px",color:"#ffd700"}}>📡 actualizando {secs}s<span className="blink">…</span></span>}
-            <span style={{background:mkt==="USA"?"#00d4ff18":mkt==="MERVAL"?"#ffd70018":"#00ff9d18",color:mkt==="USA"?"#00d4ff":mkt==="MERVAL"?"#ffd700":"#00ff9d",border:`1px solid ${mkt==="USA"?"#00d4ff30":mkt==="MERVAL"?"#ffd70030":"#00ff9d30"}`,padding:"2px 9px",borderRadius:"3px",fontSize:"9px",fontWeight:700}}>{mkt==="USA"?"🇺🇸 USA":mkt==="MERVAL"?"🇦🇷 MERVAL":"🌎 TODOS"}</span>
+            <span style={{background:mkt==="USA"?"#1a6eff18":mkt==="MERVAL"?"#ffe04018":"rgba(184,200,216,0.08)",color:mkt==="USA"?"#3d8bff":mkt==="MERVAL"?"#ffe040":"#b8c8d8",border:`1px solid ${mkt==="USA"?"#1a6eff40":mkt==="MERVAL"?"#ffe04040":"rgba(184,200,216,0.25)"}`,padding:"2px 9px",borderRadius:"3px",fontSize:"9px",fontWeight:700}}>{mkt==="USA"?"🇺🇸 USA":mkt==="MERVAL"?"🇦🇷 MERVAL":"🌎 TODOS"}</span>
             {stats&&<>
-              <span style={{color:nReal>=15?"#00ff9d":nReal>=8?"#ffd700":"#ff9040",fontWeight:700}}>📡 {nReal}/{TICKERS.length}</span><span style={{background:"#00d4ff12",color:"#00d4ff",border:"1px solid #00d4ff25",padding:"2px 7px",borderRadius:"3px",fontSize:"8px"}}>{priceSrc}</span>
+              <span style={{color:nReal>=15?"#b8c8d8":nReal>=8?"#ffe040":"#ff8c3a",fontWeight:700}}>📡 {nReal}/{TICKERS.length}</span><span style={{background:"rgba(26,110,255,0.1)",color:"#3d8bff",border:"1px solid rgba(26,110,255,0.25)",padding:"2px 7px",borderRadius:"3px",fontSize:"8px"}}>{priceSrc}</span>
               <span>P80 <strong style={{color:"#00d4ff"}}>≥{stats.p80}</strong></span>
               <span>EF <strong style={{color:stats.ef>=60?"#00ff9d":"#ff3355"}}>{stats.ef}%</strong></span>
               <span style={{color:"#00ff9d"}}>▲{stats.buy}</span>
@@ -2341,8 +2398,8 @@ export default function App() {
         {fase==="init"&&(
           <div className="fade" style={{textAlign:"center",padding:"50px 16px"}}>
             <div style={{display:"inline-block",position:"relative",marginBottom:"16px"}}>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:"72px",color:"#e0f4ff",letterSpacing:".06em",lineHeight:1}}>FXCA16</div>
-              <div style={{position:"absolute",bottom:"-2px",right:"-4px",fontFamily:"'Bebas Neue'",fontSize:"22px",color:"#00d4ff",opacity:.8}}>v2</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:"72px",color:"#c8d8e8",letterSpacing:".06em",lineHeight:1}}>FXCA16</div>
+              <div style={{position:"absolute",bottom:"-2px",right:"-4px",fontFamily:"'Bebas Neue'",fontSize:"22px",color:"#1a6eff",opacity:.9}}>v2</div>
             </div>
             <div style={{fontSize:"9px",color:"#1e4058",letterSpacing:".2em",marginBottom:"6px"}}>SISTEMA COMBINADO · MERVAL ARGENTINA</div>
             <div style={{display:"flex",justifyContent:"center",gap:"16px",fontSize:"9px",marginBottom:"28px",flexWrap:"wrap"}}>
@@ -2410,11 +2467,11 @@ export default function App() {
         {fase==="load"&&(
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",maxWidth:"900px",margin:"0 auto"}}>
             <div style={{textAlign:"center",padding:"20px 0"}}>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:"26px",color:"#00ff9d",marginBottom:"8px",letterSpacing:".1em"}}>PROCESANDO <span className="blink">█</span></div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:"26px",color:"#b8c8d8",marginBottom:"8px",letterSpacing:".1em"}}>PROCESANDO <span className="blink">█</span></div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:"62px",color:"#ffd700",lineHeight:1,marginBottom:"6px"}}>{secs}s</div>
               <div style={{maxWidth:"240px",margin:"0 auto 14px"}}>
                 <div style={{background:"#07101a",border:"1px solid #0f2235",borderRadius:"3px",height:"3px",overflow:"hidden"}}>
-                  <div style={{width:rows.length?`${rows.length/TICKERS.length*100}%`:"100%",height:"100%",background:"linear-gradient(90deg,#00d4ff,#00ff9d)",animation:rows.length?"none":"pulse 1.5s ease-in-out infinite"}}/>
+                  <div style={{width:rows.length?`${rows.length/TICKERS.length*100}%`:"100%",height:"100%",background:"linear-gradient(90deg,#1a6eff,#00aaff)",animation:rows.length?"none":"pulse 1.5s ease-in-out infinite"}}/>
                 </div>
               </div>
               {rows.length>0&&(
@@ -2445,7 +2502,7 @@ export default function App() {
             </div>
             <div style={{fontSize:"10px",marginBottom:"8px",color:"#2e5468"}}>Procesando tickers del CSV...</div>
             <div style={{background:"#07101a",border:"1px solid #0f2235",borderRadius:"3px",height:"4px",width:"240px",margin:"0 auto",overflow:"hidden"}}>
-              <div style={{height:"100%",background:"linear-gradient(90deg,#00d4ff,#00ff9d)",animation:"pulse 1s ease-in-out infinite"}}/>
+              <div style={{height:"100%",background:"linear-gradient(90deg,#1a6eff,#00aaff)",animation:"pulse 1s ease-in-out infinite"}}/>
             </div>
           </div>
         )}
@@ -2475,7 +2532,7 @@ export default function App() {
               {optApplied && <span style={{color:"#00ff9d",fontWeight:700,fontSize:"9px",background:"#00ff9d12",padding:"2px 7px",borderRadius:"3px"}}>🎯 OPT</span>}
               {autoSim && <span style={{color:"#ffd700",fontWeight:700,fontSize:"9px",background:"#ffd70012",padding:"2px 7px",borderRadius:"3px"}}>🤖 AUTO</span>}
               <span style={{color:"#0f2235"}}>|</span>
-              <span style={{color:MARKET_REGIME.regime==="bull"?"#00ff9d":MARKET_REGIME.regime==="bear"?"#ff3355":"#ffd700",fontWeight:700,fontSize:"9px"}}>
+              <span style={{color:MARKET_REGIME.regime==="bull"?"#00ff88":MARKET_REGIME.regime==="bear"?"#ff1a44":"#ffe040",fontWeight:700,fontSize:"9px"}}>
                 {MARKET_REGIME.regime==="bull"?"🐂 BULL":MARKET_REGIME.regime==="bear"?"🐻 BEAR":"◆ NEUTRAL"} {MARKET_REGIME.spyRoc!==0?`SPY vs SMA200: ${MARKET_REGIME.spyRoc>0?"+":""}${MARKET_REGIME.spyRoc}%`:""}
               </span>
               <span style={{color:"#0f2235"}}>|</span>
@@ -2531,7 +2588,7 @@ export default function App() {
                         })}
 
                         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"3px",marginTop:"8px"}}>
-                          {[{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"},{l:"RSI",v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#ffd700"},{l:"EVO",v:s.evo_prob,c:s.evo_prob>=0.6?"#ff9040":"#ffd700"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"EF",v:`${r.bt.hr}%`,c:g.c}].map(m=>
+                          {[{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"},{l:"RSI",v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#ffd700"},{l:"EVO",v:s.evo_prob,c:s.evo_prob>=0.6?"#ff8c3a":"#ffe040"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"EF",v:`${r.bt.hr}%`,c:g.c}].map(m=>
                             <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px",border:"1px solid #0a1d2e"}}>
                               <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
                               <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:m.c}}>{m.v}</div>
@@ -2612,7 +2669,7 @@ export default function App() {
                           <span style={{fontFamily:"'Bebas Neue'",fontSize:"38px",color:"#00ff9d",letterSpacing:".06em",lineHeight:1}}>{sel.ticker}</span>
                           <FXCA16Badge score={s?.ca15_score??0}/>
                           <span style={{fontSize:"9px",color:sel.real?"#00ff9d":"#ffd700",fontWeight:700}}>{sel.real?"📡 REAL":"🔬 SIM"}</span>
-                          {s?.above_p80&&<span style={{fontSize:"9px",color:"#ffd700",fontWeight:700,background:"#ffd70015",border:"1px solid #ffd70030",padding:"1px 7px",borderRadius:"3px"}}>TOP P80 ★</span>}
+                          {s?.above_p80&&<span style={{fontSize:"9px",color:"#ffe040",fontWeight:700,background:"rgba(255,224,64,0.1)",border:"1px solid rgba(255,224,64,0.3)",padding:"1px 7px",borderRadius:"3px"}}>TOP P80 ★</span>}
                         </div>
                         <div style={{fontSize:"9px",color:"#2e5060",marginBottom:"4px"}}>{sel.name} · {sel.sector}</div>
                         {sel.price!=null
