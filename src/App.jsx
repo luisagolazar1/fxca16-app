@@ -37,6 +37,23 @@ const storage = {
   }
 };
 if (typeof window !== 'undefined') window.storage = storage;
+const FB_PROJECT = "fxca16";
+const FB_KEY = "AIzaSyDxaLjtnuGAWPTvR7odsIE_Oq0AHi28UEU";
+const FB_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/fxca16`;
+const shouldSync = (key) => key.includes('sim_history') || key.includes('learn_') || key.includes('dyn_');
+async function fbWrite(key, val) {
+  try { const k=key.replace(/[^a-zA-Z0-9_-]/g,'_'); await fetch(`${FB_URL}/${k}?key=${FB_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{v:{stringValue:typeof val==='string'?val:JSON.stringify(val)}}})}); } catch(_){}
+}
+async function fbRead(key) {
+  try { const k=key.replace(/[^a-zA-Z0-9_-]/g,'_'); const r=await fetch(`${FB_URL}/${k}?key=${FB_KEY}`); if(!r.ok)return null; const d=await r.json(); return d?.fields?.v?.stringValue??null; } catch(_){return null;}
+}
+const storage = {
+  async set(key,value){try{const s=typeof value==='string'?value:JSON.stringify(value);localStorage.setItem(key,s);if(shouldSync(key))fbWrite(key,s);return{key,value};}catch(e){return null;}},
+  async get(key){try{const local=localStorage.getItem(key);if(local!==null)return{key,value:local};if(shouldSync(key)){const fb=await fbRead(key);if(fb!==null){localStorage.setItem(key,fb);return{key,value:fb};}}return null;}catch(e){return null;}},
+  async delete(key){try{localStorage.removeItem(key);return{key,deleted:true};}catch(e){return null;}},
+  async list(prefix){try{const keys=Object.keys(localStorage).filter(k=>!prefix||k.startsWith(prefix));return{keys};}catch(e){return{keys:[]};}}
+};
+if(typeof window!=='undefined')window.storage=storage;
 
 // ── DATOS REALES: 80 tickers · 60 barras 1h · hasta 2026-03-25 ──
 const CSV_DATA_EMBEDDED = CSV_DATA_EMBEDDED_RAW;
