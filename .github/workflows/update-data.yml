@@ -1,0 +1,36 @@
+name: FXCA16 Update Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 21 * * 1-5'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install yfinance pandas requests
+
+      - name: Run update script
+        run: python scripts/update_data.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "FXCA16 Bot"
+          git config user.email "bot@fxca16.app"
+          git add src/data.js
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "datos $(date +%Y-%m-%d) + dynParams"
+            git push
+          fi
