@@ -2335,7 +2335,7 @@ export default function App() {
               <span>EF <strong style={{color:stats.ef>=60?"#00ff9d":"#ff3355"}}>{stats.ef}%</strong></span>
               <span style={{color:"#00ff9d"}}>▲{stats.buy}</span>
               <span style={{color:"#ff3355"}}>▼{stats.sell}</span>
-            </>}
+            </></span>}
           </div>
         </div>
       </div>
