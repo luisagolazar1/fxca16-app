@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
+import logoUrl from './logo.png';
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║         FXCA16 — SISTEMA COMBINADO                  ║
@@ -2316,7 +2317,7 @@ export default function App() {
       <div style={{background:"rgba(4,9,18,0.95)",borderBottom:"1px solid #0f1e2e",backdropFilter:"blur(8px)",padding:"0 16px",position:"sticky",top:0,zIndex:99}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:"46px",flexWrap:"wrap",gap:"8px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-            <img src="/apple-touch-icon.png" alt="FXCA16" style={{width:"36px",height:"36px",borderRadius:"6px",objectFit:"cover"}}/>
+            <img src="${logoUrl}" alt="FXCA16" style={{width:"36px",height:"36px",borderRadius:"6px",objectFit:"cover"}}/>
             <div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:"#e0f4ff",letterSpacing:".14em",lineHeight:1}}>
                 FXCA16
