@@ -2344,8 +2344,8 @@ export default function App() {
 
         {/* INICIO */}
         {fase==="init"&&(
-          <div className="fade" style={{textAlign:"center",padding:"50px 16px"}}>
-            <div style={{marginBottom:"16px"}}>
+          <div className="fade" style={{textAlign:"center",padding:"30px 16px"}}>
+            <div style={{marginBottom:"8px"}}>
               <img src={logoUrl} alt="FXCA16" style={{width:"200px",height:"200px",objectFit:"contain",filter:"drop-shadow(0 0 20px rgba(26,110,255,0.4))",display:"block",margin:"0 auto"}}/>
             </div>
             <div style={{fontSize:"9px",color:"#1e4058",letterSpacing:".2em",marginBottom:"6px"}}>SISTEMA COMBINADO · MERVAL ARGENTINA</div>
