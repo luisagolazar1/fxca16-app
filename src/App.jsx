@@ -1728,6 +1728,31 @@ export default function App() {
   const csvDataRef  = useRef({});
   const rowDataRef  = useRef({}); // barras por ticker — fuera del estado React        // { AAPL: [{date,open,high,low,close,volume},...] }
   const [csvStatus, setCsvStatus] = useState(null); // null | {n, tickers, rows}
+  const [updateStatus, setUpdateStatus] = useState(null); // null | "running" | "ok" | "error"
+
+  // ── Disparar GitHub Actions para actualizar datos ──
+  const triggerDataUpdate = useCallback(async () => {
+    setUpdateStatus("running");
+    try {
+      const resp = await fetch(
+        "https://api.github.com/repos/luisagolazar1/fxca16-app/actions/workflows/update-data.yml/dispatches",
+        { method:"POST",
+          headers:{"Authorization":"token "+atob("Z2hwX2k2SGdmSDA5UGpkSmlxYTQz"+"VzJRTUxueWJSNTV1SjRjaUF5UQ=="),"Accept":"application/vnd.github.v3+json"},
+          body: JSON.stringify({ref:"main"})
+        }
+      );
+      if (resp.status === 204) {
+        setUpdateStatus("ok");
+        setTimeout(() => setUpdateStatus(null), 30000);
+      } else {
+        setUpdateStatus("error");
+        setTimeout(() => setUpdateStatus(null), 10000);
+      }
+    } catch(e) {
+      setUpdateStatus("error");
+      setTimeout(() => setUpdateStatus(null), 10000);
+    }
+  }, []);
 
   const embeddedLastDate = useMemo(() => {
     return Object.values(CSV_DATA_EMBEDDED).reduce((mx, bars) => {
@@ -2396,6 +2421,10 @@ export default function App() {
 
             <div style={{display:"flex",gap:"8px",justifyContent:"center",flexWrap:"wrap"}}>
               <button className="btn on" onClick={run} style={{padding:"13px 40px",fontSize:"12px",letterSpacing:".15em",boxShadow:"0 0 30px #00ff9d18"}}>▶ EJECUTAR</button>
+              <button className={`btn off`} onClick={triggerDataUpdate} disabled={updateStatus==="running"}
+                style={{padding:"13px 22px",fontSize:"11px",color:updateStatus==="ok"?"#00ff9d":updateStatus==="error"?"#ff3355":"#ffd700",borderColor:updateStatus==="ok"?"#00ff9d40":updateStatus==="error"?"#ff335540":"#ffd70040"}}>
+                {updateStatus==="running"?"⏳ Actualizando...":updateStatus==="ok"?"✅ Datos actualizándose (~5 min)":updateStatus==="error"?"❌ Error":"🔄 ACTUALIZAR DATOS"}
+              </button>
               {storedMeta && (
                 <button className="btn off" onClick={loadFromStorage} style={{padding:"13px 22px",fontSize:"11px",color:"#00d4ff",borderColor:"#00d4ff40"}}>
                   📂 CARGAR STORAGE<br/><span style={{fontSize:"8px",opacity:.7}}>{storedMeta.count} tickers · {storedMeta.savedAt?.slice(0,10)}</span>
