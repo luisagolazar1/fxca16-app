@@ -2317,7 +2317,7 @@ export default function App() {
       <div style={{background:"rgba(4,9,18,0.95)",borderBottom:"1px solid #0f1e2e",backdropFilter:"blur(8px)",padding:"0 16px",position:"sticky",top:0,zIndex:99}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:"46px",flexWrap:"wrap",gap:"8px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-            <img src={logoUrl} alt="FXCA16" style={{width:"36px",height:"36px",borderRadius:"6px",objectFit:"cover"}}/>
+            <img src={logoUrl} alt="FXCA16" style={{width:"36px",height:"36px",objectFit:"contain"}}/>
             <div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:"#e0f4ff",letterSpacing:".14em",lineHeight:1}}>
                 FXCA16
@@ -2345,8 +2345,8 @@ export default function App() {
         {/* INICIO */}
         {fase==="init"&&(
           <div className="fade" style={{textAlign:"center",padding:"50px 16px"}}>
-            <div style={{display:"inline-block",position:"relative",marginBottom:"16px"}}>
-              <img src={logoUrl} alt="FXCA16" style={{width:"120px",height:"120px",borderRadius:"12px",objectFit:"cover",filter:"drop-shadow(0 0 20px rgba(26,110,255,0.4))"}}/>
+            <div style={{marginBottom:"16px"}}>
+              <img src={logoUrl} alt="FXCA16" style={{width:"200px",height:"200px",objectFit:"contain",filter:"drop-shadow(0 0 20px rgba(26,110,255,0.4))",display:"block",margin:"0 auto"}}/>
             </div>
             <div style={{fontSize:"9px",color:"#1e4058",letterSpacing:".2em",marginBottom:"6px"}}>SISTEMA COMBINADO · MERVAL ARGENTINA</div>
             <div style={{display:"flex",justifyContent:"center",gap:"16px",fontSize:"9px",marginBottom:"28px",flexWrap:"wrap"}}>
