@@ -2497,7 +2497,7 @@ export default function App() {
             <div style={{marginBottom:"22px"}}>
               <div style={{fontSize:"8px",color:"#1a3a50",marginBottom:"8px",letterSpacing:".12em"}}>VENTANA ANÁLISIS</div>
               <div style={{display:"flex",gap:"6px",justifyContent:"center"}}>
-                {[5,6,7,8,9,10].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"7px 14px",fontSize:"11px"}}>{d}d</button>)}
+                {[5,7,10,14,21,30,45,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"7px 14px",fontSize:"11px"}}>{d}d</button>)}
               </div>
             </div>
 
@@ -2576,7 +2576,7 @@ export default function App() {
                   <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>{setMkt(k);setRows([]);}} style={{padding:"2px 8px",fontSize:"10px"}}>{l}</button>
                 )}
                 <span style={{color:"#0f2235",margin:"0 2px"}}>|</span>
-                {[5,6,7,8,9,10].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"2px 8px"}}>{d}d</button>)}
+                {[5,7,10,14,21,30,45,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"2px 8px"}}>{d}d</button>)}
                 <button className="btn off" onClick={run} style={{marginLeft:"4px"}}>↺</button>
                 {!storedMeta ? null :
                   <button className="btn off" onClick={()=>setTab("sim")} style={{marginLeft:"4px",color:"#ffd700",fontSize:"9px"}}>💡 SIM</button>
