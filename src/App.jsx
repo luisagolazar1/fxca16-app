@@ -1776,76 +1776,90 @@ export default function App() {
   const searchCustomTicker = useCallback(async (tickerInput) => {
     const tk = tickerInput.trim().toUpperCase();
     if (!tk || tk.length < 1 || tk.length > 6) return;
-    if (customResults.find(r => r.ticker === tk)) return;
+    if (customResults.find(r => r.ticker === tk)) {
+      lg(`${tk} ya fue buscado`, "warn"); return;
+    }
     setCustomSearching(true);
+    lg(`🔍 Buscando ${tk}...`, "sys");
 
     try {
-      const prompt = `Search Google Finance for current stock price of: ${tk} (NASDAQ/NYSE or BCBA). Reply ONLY JSON: {"ticker":"${tk}","price":123.45,"name":"Company Name","sector":"Sector","moneda":"USD"}`;
-      const messages = [{ role: "user", content: prompt }];
-      let priceData = null;
+      // Intentar Yahoo Finance directo — primero como USA, luego como .BA
+      let rows = [], moneda = "USD", finalTk = tk;
 
-      for (let turn = 0; turn < 4; turn++) {
-        const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 40000);
-        let resp;
-        try {
-          resp = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST", signal: ctrl.signal,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 300,
-              tools: [{ type: "web_search_20250305", name: "web_search" }], messages }),
-          });
-        } catch(e) { clearTimeout(tid); break; }
-        clearTimeout(tid);
-        if (!resp.ok) break;
-        const data = await resp.json();
-        messages.push({ role: "assistant", content: data.content });
-        if (data.stop_reason === "end_turn") {
-          const txt = data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
-          const jm = txt.match(/\{[\s\S]*?\}/);
-          if (jm) { try { priceData = JSON.parse(jm[0]); } catch(_) {} }
-          break;
+      const tryYahoo = async (sym) => {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1y`;
+        const r = await fetch(url, { headers: { "Accept": "application/json" } });
+        if (!r.ok) return null;
+        const d = await r.json();
+        const result = d?.chart?.result?.[0];
+        if (!result) return null;
+        const ts = result.timestamp || [];
+        const q = result.indicators?.quote?.[0] || {};
+        const meta = result.meta || {};
+        if (!ts.length) return null;
+        const closes = q.close || [];
+        const bars = ts.map((t,i) => ({
+          date: new Date(t*1000).toISOString().slice(0,10),
+          hour: 14,
+          open: +(q.open?.[i] || closes[i] || 0).toFixed(2),
+          high: +(q.high?.[i] || closes[i] || 0).toFixed(2),
+          low:  +(q.low?.[i]  || closes[i] || 0).toFixed(2),
+          close: +(closes[i] || 0).toFixed(2),
+          volume: q.volume?.[i] || 0,
+        })).filter(b => b.close > 0);
+        return { bars, name: meta.longName || meta.shortName || sym, currency: meta.currency || "USD" };
+      };
+
+      // Intentar USA primero
+      let data = await tryYahoo(tk);
+      if (data) {
+        rows = data.bars;
+        moneda = data.currency === "ARS" ? "ARS" : "USD";
+        finalTk = tk;
+      } else {
+        // Intentar como Merval (.BA)
+        data = await tryYahoo(tk + ".BA");
+        if (data) {
+          rows = data.bars;
+          moneda = "ARS";
+          finalTk = tk;
         }
-        if (data.stop_reason === "tool_use") {
-          const tus = data.content.filter(b => b.type === "tool_use");
-          messages.push({ role: "user", content: tus.map(tu => ({
-            type: "tool_result", tool_use_id: tu.id,
-            content: "Search done. Reply ONLY with the JSON object."
-          })) });
-        } else break;
       }
 
-      if (!priceData?.price) { setCustomSearching(false); return; }
+      if (!rows.length) {
+        lg(`❌ ${tk}: no encontrado en Yahoo Finance`, "err");
+        setCustomSearching(false);
+        return;
+      }
 
-      const px = parseFloat(priceData.price);
-      const moneda = priceData.moneda || "USD";
-      const name = priceData.name || tk;
-      const sector = priceData.sector || "—";
+      const px = rows[rows.length - 1].close;
+      const name = data?.name || tk;
+      rows.forEach(r => { r.moneda = moneda; r._ticker = finalTk; });
 
-      const hist = makeHistory(tk, px);
-      hist[hist.length - 1]._ticker = tk;
-      const sig = combinedSignal(hist, W);
-
+      const sig = combinedSignal(rows, W);
       const result = {
-        ticker: tk, name, sector, moneda, price: px,
-        sig, real: true, fromCsv: false, priceReal: true,
+        ticker: finalTk, name, sector: "Custom", moneda, price: px,
+        sig, real: true, fromCsv: true, priceReal: true,
         bt: { trades:[], curve:[], n:0, hits:0, hr:0, avg:0, aw:0, al:0, pf:0, sh:0, dd:0, eq:100 },
         custom: true,
       };
 
-      rowDataRef.current[tk] = hist;
+      rowDataRef.current[finalTk] = rows;
       setCustomResults(prev => [...prev, result]);
       setRows(prev => [...prev, result]);
+      lg(`✅ ${finalTk}: $${px} (${moneda}) · ${rows.length} barras · ${name}`, "ok");
 
       try {
         const saved = JSON.parse(localStorage.getItem('fxca16_custom') || '[]');
-        if (!saved.find(s => s.ticker === tk)) {
-          saved.push({ ticker: tk, name, sector, moneda });
+        if (!saved.find(s => s.ticker === finalTk)) {
+          saved.push({ ticker: finalTk, name, moneda });
           localStorage.setItem('fxca16_custom', JSON.stringify(saved));
         }
       } catch(_) {}
 
-    } catch(_) {}
+    } catch(e) {
+      lg(`❌ Error buscando ${tk}: ${e.message}`, "err");
+    }
     setCustomSearching(false);
     setCustomInput("");
   }, [W, customResults]);
