@@ -1729,6 +1729,10 @@ export default function App() {
   const rowDataRef  = useRef({}); // barras por ticker — fuera del estado React        // { AAPL: [{date,open,high,low,close,volume},...] }
   const [csvStatus, setCsvStatus] = useState(null); // null | {n, tickers, rows}
   const [updateStatus, setUpdateStatus] = useState(null); // null | "running" | "ok" | "error"
+  const [customInput, setCustomInput] = useState(""); // input de ticker manual
+  const [customSearching, setCustomSearching] = useState(false);
+  const [customResults, setCustomResults] = useState([]); // resultados de búsquedas manuales
+  const customTickersRef = useRef([]); // tickers custom agregados
 
   // ── Disparar GitHub Actions para actualizar datos ──
   const triggerDataUpdate = useCallback(async () => {
@@ -1767,6 +1771,85 @@ export default function App() {
     setLogs(p=>[...p.slice(-250),{msg,type,t}]);
     setTimeout(()=>{if(logRef.current)logRef.current.scrollTop=logRef.current.scrollHeight;},20);
   },[]);
+
+  // ── Buscar y analizar ticker manual ──
+  const searchCustomTicker = useCallback(async (tickerInput) => {
+    const tk = tickerInput.trim().toUpperCase();
+    if (!tk || tk.length < 1 || tk.length > 6) return;
+    if (customResults.find(r => r.ticker === tk)) return;
+    setCustomSearching(true);
+
+    try {
+      const prompt = `Search Google Finance for current stock price of: ${tk} (NASDAQ/NYSE or BCBA). Reply ONLY JSON: {"ticker":"${tk}","price":123.45,"name":"Company Name","sector":"Sector","moneda":"USD"}`;
+      const messages = [{ role: "user", content: prompt }];
+      let priceData = null;
+
+      for (let turn = 0; turn < 4; turn++) {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 40000);
+        let resp;
+        try {
+          resp = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST", signal: ctrl.signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 300,
+              tools: [{ type: "web_search_20250305", name: "web_search" }], messages }),
+          });
+        } catch(e) { clearTimeout(tid); break; }
+        clearTimeout(tid);
+        if (!resp.ok) break;
+        const data = await resp.json();
+        messages.push({ role: "assistant", content: data.content });
+        if (data.stop_reason === "end_turn") {
+          const txt = data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+          const jm = txt.match(/\{[\s\S]*?\}/);
+          if (jm) { try { priceData = JSON.parse(jm[0]); } catch(_) {} }
+          break;
+        }
+        if (data.stop_reason === "tool_use") {
+          const tus = data.content.filter(b => b.type === "tool_use");
+          messages.push({ role: "user", content: tus.map(tu => ({
+            type: "tool_result", tool_use_id: tu.id,
+            content: "Search done. Reply ONLY with the JSON object."
+          })) });
+        } else break;
+      }
+
+      if (!priceData?.price) { setCustomSearching(false); return; }
+
+      const px = parseFloat(priceData.price);
+      const moneda = priceData.moneda || "USD";
+      const name = priceData.name || tk;
+      const sector = priceData.sector || "—";
+
+      const hist = makeHistory(tk, px);
+      hist[hist.length - 1]._ticker = tk;
+      const sig = combinedSignal(hist, W);
+
+      const result = {
+        ticker: tk, name, sector, moneda, price: px,
+        sig, real: true, fromCsv: false, priceReal: true,
+        bt: { trades:[], curve:[], n:0, hits:0, hr:0, avg:0, aw:0, al:0, pf:0, sh:0, dd:0, eq:100 },
+        custom: true,
+      };
+
+      rowDataRef.current[tk] = hist;
+      setCustomResults(prev => [...prev, result]);
+      // Agregar al listado principal si estamos en resultados
+      setRows(prev => [...prev, result]);
+
+      try {
+        const saved = JSON.parse(localStorage.getItem('fxca16_custom') || '[]');
+        if (!saved.find(s => s.ticker === tk)) {
+          saved.push({ ticker: tk, name, sector, moneda });
+          localStorage.setItem('fxca16_custom', JSON.stringify(saved));
+        }
+      } catch(_) {}
+
+    } catch(_) {}
+    setCustomSearching(false);
+    setCustomInput("");
+  }, [W, customResults]);
 
   // Pre-expandir datos embebidos UNA SOLA VEZ al montar (evita re-expandir en cada run)
   useEffect(()=>{
@@ -2390,7 +2473,7 @@ export default function App() {
             <div style={{marginBottom:"16px",maxWidth:"420px",margin:"0 auto 16px"}}>
               <div style={{fontSize:"8px",color:"#1a3a50",marginBottom:"6px",letterSpacing:".12em"}}>💰 CAPITAL TOTAL (para position sizing)</div>
               <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
-                {[100000,500000,1000000,5000000].map(v=>(
+                {[100000,500000,1000000,5000000,10000000,50000000,100000000].map(v=>(
                   <button key={v} className={`btn ${userCapital===v?"on":"off"}`}
                     onClick={()=>setUserCapital(v)}
                     style={{fontSize:"9px",padding:"5px 10px"}}>
@@ -2514,6 +2597,33 @@ export default function App() {
               <span style={{color:"#0f2235"}}>|</span>
               <span>EF <strong style={{color:stats?.ef>=60?"#00ff9d":"#ff3355"}}>{stats?.ef}%</strong></span>
               <span style={{color:"#00ff9d"}}>▲ {stats?.buy}</span><span style={{color:"#ff3355"}}>▼ {stats?.sell}</span>
+            </div>
+
+            {/* BUSCAR TICKER MANUAL */}
+            <div style={{display:"flex",gap:"6px",padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",marginBottom:"10px",alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:"8px",color:"#1a3a50",letterSpacing:".1em"}}>➕ AGREGAR ACCIÓN</span>
+              <input
+                type="text"
+                value={customInput}
+                onChange={e=>setCustomInput(e.target.value.toUpperCase())}
+                onKeyDown={e=>{if(e.key==="Enter"&&customInput.trim())searchCustomTicker(customInput);}}
+                placeholder="Ej: AMD, NFLC, LOMA..."
+                maxLength={6}
+                style={{width:"100px",background:"#020508",color:"#00d4ff",border:"1px solid #0f2235",borderRadius:"4px",padding:"5px 8px",fontSize:"10px",textTransform:"uppercase",outline:"none"}}
+              />
+              <button className={`btn ${customInput.trim()&&!customSearching?"on":"off"}`}
+                onClick={()=>searchCustomTicker(customInput)}
+                disabled={!customInput.trim()||customSearching}
+                style={{padding:"5px 12px",fontSize:"9px"}}>
+                {customSearching?"⏳ Buscando...":"🔍 BUSCAR"}
+              </button>
+              {customResults.length>0&&<span style={{fontSize:"8px",color:"#00ff9d"}}>+{customResults.length} agregados</span>}
+              {customResults.map(r=>(
+                <span key={r.ticker} style={{fontSize:"8px",padding:"2px 6px",background:SC[r.sig?.sig]+"15",color:SC[r.sig?.sig],border:`1px solid ${SC[r.sig?.sig]}30`,borderRadius:"3px",cursor:"pointer"}}
+                  onClick={()=>{setSel(r);setTab("det");}}>
+                  {r.ticker} {r.sig?.sig?.includes("COMPRA")?"▲":r.sig?.sig?.includes("VENTA")?"▼":"◆"}
+                </span>
+              ))}
             </div>
 
             {/* OPORTUNIDADES TOP P80 */}
