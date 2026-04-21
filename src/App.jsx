@@ -1835,7 +1835,6 @@ export default function App() {
 
       rowDataRef.current[tk] = hist;
       setCustomResults(prev => [...prev, result]);
-      // Agregar al listado principal si estamos en resultados
       setRows(prev => [...prev, result]);
 
       try {
@@ -1850,6 +1849,37 @@ export default function App() {
     setCustomSearching(false);
     setCustomInput("");
   }, [W, customResults]);
+
+  // ── Guardar ticker custom en GitHub (custom_tickers.json) ──
+  const saveTickerToGitHub = useCallback(async (tk) => {
+    try {
+      const TOKEN = atob("Z2hwX2k2SGdmSDA5UGpkSmlxYTQz"+"VzJRTUxueWJSNTV1SjRjaUF5UQ==");
+      const headers = { "Authorization": `token ${TOKEN}`, "Accept": "application/vnd.github.v3+json" };
+      const api = "https://api.github.com/repos/luisagolazar1/fxca16-app/contents/custom_tickers.json";
+
+      // Leer archivo actual
+      const resp = await fetch(api, { headers });
+      const data = await resp.json();
+      const current = JSON.parse(atob(data.content.replace(/\n/g,'')));
+
+      if (current.tickers.includes(tk)) return { ok: true, already: true };
+
+      current.tickers.push(tk);
+      const newContent = JSON.stringify(current, null, 2);
+
+      const resp2 = await fetch(api, {
+        method: "PUT", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `feat: agregar ${tk} a seguimiento`,
+          content: btoa(newContent),
+          sha: data.sha
+        })
+      });
+      return { ok: resp2.status === 200 || resp2.status === 201 };
+    } catch(e) {
+      return { ok: false };
+    }
+  }, []);
 
   // Pre-expandir datos embebidos UNA SOLA VEZ al montar (evita re-expandir en cada run)
   useEffect(()=>{
@@ -2619,9 +2649,19 @@ export default function App() {
               </button>
               {customResults.length>0&&<span style={{fontSize:"8px",color:"#00ff9d"}}>+{customResults.length} agregados</span>}
               {customResults.map(r=>(
-                <span key={r.ticker} style={{fontSize:"8px",padding:"2px 6px",background:SC[r.sig?.sig]+"15",color:SC[r.sig?.sig],border:`1px solid ${SC[r.sig?.sig]}30`,borderRadius:"3px",cursor:"pointer"}}
-                  onClick={()=>{setSel(r);setTab("det");}}>
-                  {r.ticker} {r.sig?.sig?.includes("COMPRA")?"▲":r.sig?.sig?.includes("VENTA")?"▼":"◆"}
+                <span key={r.ticker} style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
+                  <span style={{fontSize:"8px",padding:"2px 6px",background:SC[r.sig?.sig]+"15",color:SC[r.sig?.sig],border:`1px solid ${SC[r.sig?.sig]}30`,borderRadius:"3px",cursor:"pointer"}}
+                    onClick={()=>{setSel(r);setTab("det");}}>
+                    {r.ticker} {r.sig?.sig?.includes("COMPRA")?"▲":r.sig?.sig?.includes("VENTA")?"▼":"◆"}
+                  </span>
+                  <button className="btn off" title="Guardar en seguimiento permanente"
+                    onClick={async()=>{
+                      const res = await saveTickerToGitHub(r.ticker);
+                      if(res?.already) alert(`${r.ticker} ya está en seguimiento`);
+                      else if(res?.ok) alert(`✅ ${r.ticker} agregado. Se incluirá en la próxima actualización automática.`);
+                      else alert(`❌ Error al guardar ${r.ticker}`);
+                    }}
+                    style={{padding:"1px 5px",fontSize:"8px",color:"#ffd700",borderColor:"#ffd70040"}}>⭐</button>
                 </span>
               ))}
             </div>

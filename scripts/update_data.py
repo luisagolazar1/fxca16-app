@@ -30,6 +30,19 @@ MERVAL_TICKERS_YF = [
 
 def clean(t): return t.replace(".BA", "")
 
+# ── Cargar tickers custom agregados desde la app ──
+def load_custom_tickers():
+    custom_path = os.path.join(os.path.dirname(__file__), "..", "custom_tickers.json")
+    try:
+        with open(custom_path) as f:
+            data = json.load(f)
+        tickers = data.get("tickers", [])
+        if tickers:
+            print(f"📌 Custom tickers: {tickers}")
+        return tickers
+    except:
+        return []
+
 def descargar_grupo(tickers_yf, moneda, periodo="2y", intervalo="1h"):
     print(f"\n{'━'*55}")
     print(f"  Descargando {len(tickers_yf)} tickers ({moneda}) — {intervalo} / {periodo}")
@@ -115,7 +128,27 @@ def main():
     df_usa, err_usa = descargar_grupo(USA_TICKERS, moneda="USD")
     df_merval, err_merval = descargar_grupo(MERVAL_TICKERS_YF, moneda="ARS")
 
-    df_total = pd.concat([df_usa, df_merval], ignore_index=True)
+    # ── Tickers custom desde la app ──
+    custom_tks = load_custom_tickers()
+    df_custom = pd.DataFrame()
+    if custom_tks:
+        # Detectar si son argentinos (.BA) o USA
+        custom_usa = [t for t in custom_tks if not t.endswith(".BA") and len(t) <= 6]
+        custom_arg = [t if t.endswith(".BA") else t+".BA" for t in custom_tks if t.endswith(".BA")]
+        dfs = []
+        if custom_usa:
+            df_c, _ = descargar_grupo(custom_usa, moneda="USD")
+            if not df_c.empty: dfs.append(df_c)
+        if custom_arg:
+            df_c, _ = descargar_grupo(custom_arg, moneda="ARS")
+            if not df_c.empty: dfs.append(df_c)
+        if dfs:
+            df_custom = pd.concat(dfs, ignore_index=True)
+            print(f"📌 Custom descargados: {df_custom['ticker'].nunique()} tickers")
+
+    frames = [df_usa, df_merval]
+    if not df_custom.empty: frames.append(df_custom)
+    df_total = pd.concat(frames, ignore_index=True)
     df_total = df_total.sort_values(["ticker","datetime"]).reset_index(drop=True)
     last_date = str(df_total["datetime"].max())[:10]
 
