@@ -1803,6 +1803,45 @@ export default function App() {
   const [csvStatus, setCsvStatus] = useState(null); // null | {n, tickers, rows}
   const [updateStatus, setUpdateStatus] = useState(null); // null | "running" | "ok" | "error"
   const [customInput, setCustomInput] = useState(""); // input de ticker manual
+  // ── WATCHLISTS / SEGUIMIENTO ──
+  const [watchlists, setWatchlists] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fxca16_watchlists');
+      return saved ? JSON.parse(saved) : [{ id:1, name:"Mi Lista", tickers:[] }];
+    } catch { return [{ id:1, name:"Mi Lista", tickers:[] }]; }
+  });
+  const [activeWL,  setActiveWL]  = useState(0); // índice activo
+  const [editingWL, setEditingWL] = useState(null); // id en edición de nombre
+  const [editWLName,setEditWLName]= useState("");
+  const [wlInput,   setWlInput]   = useState(""); // add ticker to watchlist
+
+  const saveWatchlists = (wls) => {
+    setWatchlists(wls);
+    try { localStorage.setItem('fxca16_watchlists', JSON.stringify(wls)); } catch(_) {}
+  };
+  const addToWatchlist = (wlIdx, ticker) => {
+    const wls = watchlists.map((w,i) => i===wlIdx && !w.tickers.includes(ticker)
+      ? {...w, tickers:[...w.tickers, ticker]} : w);
+    saveWatchlists(wls);
+  };
+  const removeFromWatchlist = (wlIdx, ticker) => {
+    const wls = watchlists.map((w,i) => i===wlIdx
+      ? {...w, tickers:w.tickers.filter(t=>t!==ticker)} : w);
+    saveWatchlists(wls);
+  };
+  const createWatchlist = () => {
+    const newId = Date.now();
+    const n = watchlists.length + 1;
+    const wls = [...watchlists, { id:newId, name:`Lista ${n}`, tickers:[] }];
+    saveWatchlists(wls);
+    setActiveWL(wls.length-1);
+  };
+  const deleteWatchlist = (idx) => {
+    if (watchlists.length <= 1) return;
+    const wls = watchlists.filter((_,i)=>i!==idx);
+    saveWatchlists(wls);
+    setActiveWL(Math.max(0, idx-1));
+  };
   const [customSearching, setCustomSearching] = useState(false);
   const [customResults, setCustomResults] = useState([]); // resultados de búsquedas manuales
   const customTickersRef = useRef([]); // tickers custom agregados
@@ -2648,7 +2687,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Top P80"],["rank","🏆 Ranking"],["det","🔍 Detalle"],["opt","⚙️ Optimizar"],["sim","💡 Simulador"],["learn","🧠 Aprendizaje"]].map(([k,l])=>
+              {[["opp","🎯 Top P80"],["rank","🏆 Ranking"],["det","🔍 Detalle"],["watch","⭐ Seguimiento"],["opt","⚙️ Optimizar"],["sim","💡 Simulador"],["learn","🧠 Aprendizaje"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
@@ -3011,6 +3050,133 @@ export default function App() {
                     </div>
                   </div>;
                 })()}
+              </div>
+            )}
+
+            {/* ══ TAB: SEGUIMIENTO ══ */}
+            {tab==="watch"&&(
+              <div className="fade">
+                {/* Barra de listas */}
+                <div style={{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
+                  {watchlists.map((wl,i)=>(
+                    <div key={wl.id} style={{display:"inline-flex",alignItems:"center",gap:"2px"}}>
+                      {editingWL===wl.id ? (
+                        <input autoFocus value={editWLName}
+                          onChange={e=>setEditWLName(e.target.value)}
+                          onBlur={()=>{
+                            const wls=watchlists.map(w=>w.id===wl.id?{...w,name:editWLName||w.name}:w);
+                            saveWatchlists(wls);setEditingWL(null);
+                          }}
+                          onKeyDown={e=>{if(e.key==="Enter"){
+                            const wls=watchlists.map(w=>w.id===wl.id?{...w,name:editWLName||w.name}:w);
+                            saveWatchlists(wls);setEditingWL(null);
+                          }}}
+                          style={{width:"90px",background:"#07101a",color:"#00d4ff",border:"1px solid #00d4ff40",borderRadius:"4px",padding:"3px 6px",fontSize:"9px"}}
+                        />
+                      ) : (
+                        <button className={`btn ${activeWL===i?"on":"off"}`} onClick={()=>setActiveWL(i)}
+                          style={{padding:"4px 10px",fontSize:"9px"}}>
+                          ⭐ {wl.name} <span style={{opacity:.6}}>({wl.tickers.length})</span>
+                        </button>
+                      )}
+                      <button className="btn off" onClick={()=>{setEditingWL(wl.id);setEditWLName(wl.name);}}
+                        style={{padding:"3px 5px",fontSize:"8px",color:"#7ab0c8"}}>✏️</button>
+                      {watchlists.length>1&&(
+                        <button className="btn off" onClick={()=>deleteWatchlist(i)}
+                          style={{padding:"3px 5px",fontSize:"8px",color:"#ff3355"}}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <button className="btn off" onClick={createWatchlist}
+                    style={{padding:"4px 10px",fontSize:"9px",color:"#00ff9d",borderColor:"#00ff9d40"}}>
+                    + Nueva lista
+                  </button>
+                </div>
+
+                {/* Agregar ticker manual a la lista */}
+                <div style={{display:"flex",gap:"6px",marginBottom:"10px",alignItems:"center"}}>
+                  <input type="text" value={wlInput} onChange={e=>setWlInput(e.target.value.toUpperCase())}
+                    onKeyDown={e=>{if(e.key==="Enter"&&wlInput.trim()){addToWatchlist(activeWL,wlInput.trim());setWlInput("");}}}
+                    placeholder="Agregar ticker..."
+                    maxLength={6}
+                    style={{width:"110px",background:"#020508",color:"#00d4ff",border:"1px solid #0f2235",borderRadius:"4px",padding:"5px 8px",fontSize:"10px",textTransform:"uppercase",outline:"none"}}
+                  />
+                  <button className={`btn ${wlInput.trim()?"on":"off"}`}
+                    onClick={()=>{if(wlInput.trim()){addToWatchlist(activeWL,wlInput.trim());setWlInput("");}}}
+                    style={{padding:"5px 12px",fontSize:"9px"}}>+ Agregar</button>
+                  <span style={{fontSize:"8px",color:"#1e4058"}}>o hacé click en ⭐ desde cualquier señal</span>
+                </div>
+
+                {/* Tickers de la lista activa */}
+                {(watchlists[activeWL]?.tickers||[]).length===0 ? (
+                  <div style={{textAlign:"center",padding:"40px",color:"#1a3848",fontSize:"11px"}}>
+                    <div style={{fontSize:"28px",marginBottom:"8px"}}>⭐</div>
+                    <div>Todavía no hay acciones en <strong style={{color:"#ffd700"}}>{watchlists[activeWL]?.name}</strong></div>
+                    <div style={{fontSize:"9px",marginTop:"6px",color:"#1e4058"}}>Agregá tickers desde las señales o escribí arriba</div>
+                  </div>
+                ) : (
+                  <div className="grid-opp">
+                    {(watchlists[activeWL]?.tickers||[]).map(tk=>{
+                      // Buscar en rows o en rowDataRef
+                      const rowData = rows.find(r=>r.ticker===tk);
+                      const barData = rowDataRef.current[tk];
+                      let r = rowData;
+                      if (!r && barData?.length>=60) {
+                        const sig2 = combinedSignal(barData.map(b=>({...b,_ticker:tk})), W);
+                        const px2  = barData[barData.length-1].close;
+                        const mon  = barData[0]?.moneda||"USD";
+                        r = {ticker:tk,name:tk,sector:"—",moneda:mon,price:px2,sig:sig2,
+                          bt:{trades:[],curve:[],n:0,hits:0,hr:0,avg:0,aw:0,al:0,pf:0,sh:0,dd:0,eq:100},
+                          real:true,fromCsv:true};
+                      }
+                      if (!r) return (
+                        <div key={tk} className="card" style={{padding:"12px",opacity:.5}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:"#7ab0c8"}}>{tk}</span>
+                            <span style={{fontSize:"8px",color:"#1e4058"}}>Sin datos · ejecutá el sistema</span>
+                            <button className="btn off" onClick={()=>removeFromWatchlist(activeWL,tk)}
+                              style={{padding:"2px 7px",fontSize:"8px",color:"#ff3355"}}>✕</button>
+                          </div>
+                        </div>
+                      );
+                      const s=r.sig; if(!s) return null;
+                      const g=GR(r.bt.hr);
+                      return (
+                        <div key={tk} className="card" style={{padding:"13px",cursor:"pointer",borderLeft:`3px solid ${SC[s.sig]}`}}
+                          onClick={()=>{setSel(r);rowDataRef.current[tk]=barData||rowDataRef.current[tk];setTab("det");}}>
+                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+                            <div>
+                              <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"2px"}}>
+                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:SC[s.sig]}}>{tk}</span>
+                                <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
+                                <FXCA16Badge score={s.ca15_score}/>
+                              </div>
+                              <div style={{fontSize:"8px",color:"#2e5060"}}>{r.name}</div>
+                            </div>
+                            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px"}}>
+                              <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`}}>{s.sig}</span>
+                              <button className="btn off" onClick={e=>{e.stopPropagation();removeFromWatchlist(activeWL,tk);}}
+                                style={{padding:"2px 7px",fontSize:"7px",color:"#ff3355"}}>✕ quitar</button>
+                            </div>
+                          </div>
+                          <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
+                          <div style={{background:"#050c15",borderRadius:"4px",padding:"5px 8px",margin:"7px 0",display:"flex",justifyContent:"space-between"}}>
+                            <span style={{fontSize:"8px",color:"#1e4058"}}>PRECIO</span>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:"#d0ecff"}}>{FP(r.price,r.moneda)}</span>
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"3px"}}>
+                            {[{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"FX",v:s.fx_sc,c:"#00d4ff"},{l:"EVO",v:s.evo_sc,c:"#ff9040"},{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"}].map(m=>
+                              <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
+                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:m.c}}>{m.v}</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
