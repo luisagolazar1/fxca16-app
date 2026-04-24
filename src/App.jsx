@@ -2273,6 +2273,18 @@ export default function App() {
   // Limpiar timer al desmontar
   useEffect(() => () => clearInterval(autoTimerRef.current), []);
 
+  // Auto-ejecutar al cambiar mercado si ya hay resultados
+  const prevMktRef = useRef(mkt);
+  useEffect(() => {
+    if (prevMktRef.current !== mkt && fase === "done") {
+      prevMktRef.current = mkt;
+      run();
+    } else {
+      prevMktRef.current = mkt;
+    }
+  // eslint-disable-next-line
+  }, [mkt]);
+
   // Countdown en tiempo real
   useEffect(() => {
     if (!autoSim || !autoNext) return;
@@ -2668,7 +2680,7 @@ export default function App() {
               )}
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
                 {[["USA","🇺🇸"],["MERVAL","🇦🇷"],["TODOS","🌎"]].map(([k,l])=>
-                  <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>{setMkt(k);setRows([]);}} style={{padding:"2px 8px",fontSize:"10px"}}>{l}</button>
+                  <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>{setMkt(k);}} style={{padding:"2px 8px",fontSize:"10px"}}>{l}</button>
                 )}
                 <span style={{color:"#0f2235",margin:"0 2px"}}>|</span>
                 {[5,7,10,14,21,30,45,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"2px 8px"}}>{d}d</button>)}
