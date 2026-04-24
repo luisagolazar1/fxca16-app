@@ -2096,16 +2096,16 @@ export default function App() {
   }, [lg]);
 
   // buildRows — optimizado: batch de 10 tickers + yield cada batch
-  const buildRows = useCallback(async (prices, label) => {
+  const buildRows = useCallback(async (prices, label, overrideTickers) => {
     const csv    = csvDataRef.current;
     const yield_ = () => new Promise(r => setTimeout(r, 0));
     const raw    = [];
     const BATCH  = 20;
-    // Pre-expandir UNA sola vez — evita 80 expansiones del dataset de 851KB
     const _embCache = expandEmbedded(CSV_DATA_EMBEDDED);
+    const tickerList = overrideTickers || TICKERS;
 
-    for (let i = 0; i < TICKERS.length; i++) {
-      const tk      = TICKERS[i];
+    for (let i = 0; i < tickerList.length; i++) {
+      const tk      = tickerList[i];
       const csvRows = csv[tk.ticker];
       const px      = prices[tk.ticker];
       const fromCsv = !!(csvRows && csvRows.length >= 60);
@@ -2278,7 +2278,7 @@ export default function App() {
   useEffect(() => {
     if (prevMktRef.current !== mkt && fase === "done") {
       prevMktRef.current = mkt;
-      run();
+      setTimeout(() => run(mkt), 50);
     } else {
       prevMktRef.current = mkt;
     }
@@ -2465,13 +2465,15 @@ export default function App() {
     setTab("opt");
   }, [rows, lg]);
 
-    const run=useCallback(async ()=>{
+    const run=useCallback(async (forceMkt)=>{
+    const activeMkt = forceMkt || mkt;
+    const activeTickers = activeMkt === "USA" ? TICKERS_USA.map(t=>({...t,moneda:"USD"})) : activeMkt === "MERVAL" ? TICKERS_MERVAL.map(t=>({...t,moneda:"ARS"})) : TICKERS_TODOS;
     setFase("load"); setRows([]); setLogs([]); setSecs(0); setNReal(0); setPriceSrc("—");
     clearInterval(tmRef.current);
     tmRef.current = setInterval(()=>setSecs(s=>s+1), 1000);
 
     // ── Paso 1: datos del CSV subido > storage > precios conocidos > sintético ──
-    const mktTickers = TICKERS.map(t=>t.ticker);
+    const mktTickers = activeTickers.map(t=>t.ticker);
 
     // Prioridad 1: CSV subido manualmente esta sesión
     const draggedData = csvDataRef.current;
@@ -2483,7 +2485,7 @@ export default function App() {
       setNReal(Object.keys(csvPrices).length);
       setPriceSrc(`CSV · ${Object.keys(csvPrices).length} tickers`);
       lg(`📊 CSV: ${Object.keys(csvPrices).length} tickers cargados`, "ok");
-      await buildRows(csvPrices, "CSV");
+      await buildRows(csvPrices, "CSV", activeTickers);
       setFase("done");
     } else {
       // Sin CSV → usar datos embebidos (instantáneo, sin storage)
@@ -2495,7 +2497,7 @@ export default function App() {
       setNReal(n);
       setPriceSrc(`Embebido · ${n}t · ${embeddedLastDate.slice(5).replace('-','/')||'?'}`);
       lg(`📊 ${n} tickers cargados`, "ok");
-      await buildRows(prices, "Embebido");
+      await buildRows(prices, "Embebido", activeTickers);
       setFase("done");
     }
 
