@@ -12,15 +12,15 @@ BARRAS = 1600
 
 # ── Tickers ──
 USA_TICKERS = [
-    "AAPL","NVDA","MSFT","GOOGL","AMZN","META","TSLA","AVGO","ORCL","NFLX",
-    "AMD","INTC","QCOM","TXN","MU","CRM","NOW","ADBE","IBM","UBER",
-    "COIN","MELI","SPOT","BABA","PYPL","GLOB",
-    "JPM","BAC","WFC","GS","MS","C","AXP","V","MA","BRK-B","NDAQ",
-    "UNH","JNJ","PFE","ABBV","MRK","LLY","CAH",
-    "WMT","KO","PEP","PG","MCD","SBUX","NKE","DIS",
-    "XOM","CVX","VIST","PBR",
-    "AAL","DAL","F","GM",
-    "SPY","QQQ","IWM","DIA","GLD","SLV","XLE","XLF","XLK","TLT",
+    "AAPL", "NVDA", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "ORCL", "NFLX",
+    "AMD", "INTC", "QCOM", "TXN", "MU", "CRM", "NOW", "ADBE", "IBM", "UBER",
+    "COIN", "MELI", "SPOT", "BABA", "PYPL", "GLOB", "JPM", "BAC", "WFC", "GS",
+    "MS", "C", "AXP", "V", "MA", "BRK-B", "NDAQ", "UNH", "JNJ", "PFE",
+    "ABBV", "MRK", "LLY", "CAH", "WMT", "KO", "PEP", "PG", "MCD", "SBUX",
+    "NKE", "DIS", "XOM", "CVX", "VIST", "PBR", "AAL", "DAL", "UAL", "F",
+    "GM", "VZ", "T", "TMUS", "ABT", "TMO", "DHR", "CVS", "BA", "CAT",
+    "HON", "RTX", "AMT", "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "XLE",
+    "XLF", "XLK", "TLT",
 ]
 
 MERVAL_TICKERS_YF = [
