@@ -2588,30 +2588,6 @@ export default function App() {
                 <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>setMkt(k)} style={{padding:"9px 18px",fontSize:"11px"}}>{l}</button>
               )}
             </div>
-            {/* Capital del usuario */}
-            <div style={{marginBottom:"16px",maxWidth:"420px",margin:"0 auto 16px"}}>
-              <div style={{fontSize:"8px",color:"#1a3a50",marginBottom:"6px",letterSpacing:".12em"}}>💰 CAPITAL TOTAL (para position sizing)</div>
-              <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
-                {[100000,500000,1000000,5000000,10000000,50000000,100000000].map(v=>(
-                  <button key={v} className={`btn ${userCapital===v?"on":"off"}`}
-                    onClick={()=>setUserCapital(v)}
-                    style={{fontSize:"9px",padding:"5px 10px"}}>
-                    {v>=1000000?`$${v/1000000}M`:`$${v/1000}K`}
-                  </button>
-                ))}
-                <input
-                  type="number"
-                  value={userCapital}
-                  onChange={e=>setUserCapital(+e.target.value||1000000)}
-                  style={{width:"90px",background:"#020508",color:"#00d4ff",
-                    border:"1px solid #00d4ff40",borderRadius:"4px",
-                    padding:"5px 8px",fontSize:"9px",textAlign:"right"}}
-                />
-              </div>
-              <div style={{fontSize:"8px",color:"#1e4058",marginTop:"4px"}}>
-                Riesgo máximo por operación: <strong style={{color:"#ffd700"}}>${(userCapital*0.01).toLocaleString()}</strong> (1%)
-              </div>
-            </div>
 
             <div style={{marginBottom:"22px"}}>
               <div style={{fontSize:"8px",color:"#1a3a50",marginBottom:"8px",letterSpacing:".12em"}}>VENTANA ANÁLISIS</div>
