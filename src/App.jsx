@@ -117,11 +117,26 @@ const TICKERS_USA = [
   { ticker:"CVX",   name:"Chevron",            sector:"Energía"     },
   { ticker:"VIST",  name:"Vista Energy",       sector:"Energía"     },
   { ticker:"PBR",   name:"Petrobras",          sector:"Energía"     },
-  // ── AEROLÍNEAS / AUTOS ──
+  // ── AEROLÍNEAS / AUTOS / TELECOM ──
   { ticker:"AAL",   name:"American Airlines",  sector:"Aerolíneas"  },
   { ticker:"DAL",   name:"Delta Airlines",     sector:"Aerolíneas"  },
+  { ticker:"UAL",   name:"United Airlines",    sector:"Aerolíneas"  },
   { ticker:"F",     name:"Ford",               sector:"Autos"       },
   { ticker:"GM",    name:"General Motors",     sector:"Autos"       },
+  { ticker:"VZ",    name:"Verizon",            sector:"Telecom"     },
+  { ticker:"T",     name:"AT&T",               sector:"Telecom"     },
+  { ticker:"TMUS",  name:"T-Mobile",           sector:"Telecom"     },
+  // ── SALUD ADICIONAL ──
+  { ticker:"ABT",   name:"Abbott",             sector:"Salud"       },
+  { ticker:"TMO",   name:"Thermo Fisher",      sector:"Salud"       },
+  { ticker:"DHR",   name:"Danaher",            sector:"Salud"       },
+  { ticker:"CVS",   name:"CVS Health",         sector:"Salud"       },
+  // ── INMUEBLES / INDUSTRIA ──
+  { ticker:"BA",    name:"Boeing",             sector:"Industria"   },
+  { ticker:"CAT",   name:"Caterpillar",        sector:"Industria"   },
+  { ticker:"HON",   name:"Honeywell",          sector:"Industria"   },
+  { ticker:"RTX",   name:"Raytheon",           sector:"Industria"   },
+  { ticker:"AMT",   name:"American Tower",     sector:"Inmuebles"   },
   // ── ETFs ──
   { ticker:"SPY",   name:"S&P 500 ETF",        sector:"ETF"         },
   { ticker:"QQQ",   name:"Nasdaq 100 ETF",     sector:"ETF"         },
@@ -2665,40 +2680,82 @@ export default function App() {
             </div>
 
             {/* BUSCAR TICKER MANUAL */}
-            <div style={{display:"flex",gap:"6px",padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",marginBottom:"10px",alignItems:"center",flexWrap:"wrap"}}>
-              <span style={{fontSize:"8px",color:"#1a3a50",letterSpacing:".1em"}}>➕ AGREGAR ACCIÓN</span>
-              <input
-                type="text"
-                value={customInput}
-                onChange={e=>setCustomInput(e.target.value.toUpperCase())}
-                onKeyDown={e=>{if(e.key==="Enter"&&customInput.trim())searchCustomTicker(customInput);}}
-                placeholder="Ej: AMD, NFLC, LOMA..."
-                maxLength={6}
-                style={{width:"100px",background:"#020508",color:"#00d4ff",border:"1px solid #0f2235",borderRadius:"4px",padding:"5px 8px",fontSize:"10px",textTransform:"uppercase",outline:"none"}}
-              />
-              <button className={`btn ${customInput.trim()&&!customSearching?"on":"off"}`}
-                onClick={()=>searchCustomTicker(customInput)}
-                disabled={!customInput.trim()||customSearching}
-                style={{padding:"5px 12px",fontSize:"9px"}}>
-                {customSearching?"⏳ Buscando...":"🔍 BUSCAR"}
-              </button>
-              {customResults.length>0&&<span style={{fontSize:"8px",color:"#00ff9d"}}>+{customResults.length} agregados</span>}
-              {customResults.map(r=>(
-                <span key={r.ticker} style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
-                  <span style={{fontSize:"8px",padding:"2px 6px",background:SC[r.sig?.sig]+"15",color:SC[r.sig?.sig],border:`1px solid ${SC[r.sig?.sig]}30`,borderRadius:"3px",cursor:"pointer"}}
-                    onClick={()=>{setSel(r);setTab("det");}}>
-                    {r.ticker} {r.sig?.sig?.includes("COMPRA")?"▲":r.sig?.sig?.includes("VENTA")?"▼":"◆"}
-                  </span>
-                  <button className="btn off" title="Guardar en seguimiento permanente"
-                    onClick={async()=>{
-                      const res = await saveTickerToGitHub(r.ticker);
-                      if(res?.already) alert(`${r.ticker} ya está en seguimiento`);
-                      else if(res?.ok) alert(`✅ ${r.ticker} agregado. Se incluirá en la próxima actualización automática.`);
-                      else alert(`❌ Error al guardar ${r.ticker}`);
-                    }}
-                    style={{padding:"1px 5px",fontSize:"8px",color:"#ffd700",borderColor:"#ffd70040"}}>⭐</button>
-                </span>
-              ))}
+            <div style={{padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",marginBottom:"10px"}}>
+              <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:"8px",color:"#1a3a50",letterSpacing:".1em"}}>🔍 BUSCAR ACCIÓN</span>
+                <input
+                  type="text"
+                  value={customInput}
+                  onChange={e=>setCustomInput(e.target.value.toUpperCase())}
+                  onKeyDown={e=>{if(e.key==="Enter"&&customInput.trim())searchCustomTicker(customInput);}}
+                  placeholder="Ej: ABT, VZ, GGAL..."
+                  maxLength={6}
+                  style={{width:"100px",background:"#020508",color:"#00d4ff",border:"1px solid #0f2235",borderRadius:"4px",padding:"5px 8px",fontSize:"10px",textTransform:"uppercase",outline:"none"}}
+                />
+                <button className={`btn ${customInput.trim()&&!customSearching?"on":"off"}`}
+                  onClick={()=>searchCustomTicker(customInput)}
+                  disabled={!customInput.trim()||customSearching}
+                  style={{padding:"5px 12px",fontSize:"9px"}}>
+                  {customSearching?"⏳...":"🔍 BUSCAR"}
+                </button>
+                {customResults.length>0&&(
+                  <button className="btn off" onClick={()=>setCustomResults([])}
+                    style={{padding:"3px 8px",fontSize:"8px",color:"#ff3355"}}>✕ limpiar</button>
+                )}
+              </div>
+
+              {/* Resultados de búsqueda — cards completas */}
+              {customResults.length>0&&(
+                <div style={{marginTop:"10px"}}>
+                  <div style={{fontSize:"8px",color:"#ffd700",letterSpacing:".1em",marginBottom:"6px"}}>
+                    ⭐ RESULTADOS DE BÚSQUEDA ({customResults.length})
+                  </div>
+                  <div className="grid-opp">
+                    {customResults.map(r=>{
+                      const s=r.sig; if(!s) return null;
+                      const buy=s.sig.includes("COMPRA"),g=GR(r.bt.hr);
+                      return (
+                        <div key={r.ticker} className="card" style={{padding:"13px",cursor:"pointer",borderLeft:`3px solid ${SC[s.sig]}`,borderTop:`1px solid #ffd70030`}} onClick={()=>{setSel(r);setTab("det");}}>
+                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+                            <div>
+                              <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
+                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:SC[s.sig],letterSpacing:".06em"}}>{r.ticker}</span>
+                                <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
+                                <FXCA16Badge score={s.ca15_score}/>
+                              </div>
+                              <div style={{fontSize:"8px",color:"#2e5060"}}>{r.name}</div>
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,display:"block",marginBottom:"3px"}}>{s.sig}</span>
+                              <span style={{fontSize:"8px",color:TC[s.trend]}}>{TI[s.trend]} {s.trend}</span>
+                            </div>
+                          </div>
+                          <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
+                          <div style={{background:"#050c15",borderRadius:"4px",padding:"6px 9px",margin:"8px 0",display:"flex",justifyContent:"space-between"}}>
+                            <span style={{fontSize:"8px",color:"#1e4058"}}>PRECIO {r.moneda}</span>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#d0ecff"}}>{FP(r.price,r.moneda)}</span>
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"3px",marginTop:"6px"}}>
+                            {[{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"FX",v:s.fx_sc,c:"#00d4ff"},{l:"EVO",v:s.evo_sc,c:"#ff9040"},{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"}].map(m=>
+                              <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
+                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:m.c}}>{m.v}</div>
+                              </div>
+                            )}
+                          </div>
+                          <button className="btn off" style={{marginTop:"6px",width:"100%",fontSize:"8px",color:"#ffd700",borderColor:"#ffd70040"}}
+                            onClick={async(e)=>{e.stopPropagation();
+                              const res = await saveTickerToGitHub(r.ticker);
+                              if(res?.already) alert(`${r.ticker} ya está en seguimiento`);
+                              else if(res?.ok) alert(`✅ ${r.ticker} agregado al seguimiento permanente`);
+                              else alert(`❌ Error`);
+                            }}>⭐ GUARDAR EN SEGUIMIENTO</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* OPORTUNIDADES TOP P80 */}
