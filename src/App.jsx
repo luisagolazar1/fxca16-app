@@ -137,6 +137,33 @@ const TICKERS_USA = [
   { ticker:"HON",   name:"Honeywell",          sector:"Industria"   },
   { ticker:"RTX",   name:"Raytheon",           sector:"Industria"   },
   { ticker:"AMT",   name:"American Tower",     sector:"Inmuebles"   },
+  // ── TECH ADICIONAL ──
+  { ticker:"PLTR", name:"Palantir",            sector:"Tecnología"  },
+  { ticker:"SNOW", name:"Snowflake",           sector:"Tecnología"  },
+  { ticker:"NET",  name:"Cloudflare",          sector:"Tecnología"  },
+  { ticker:"SHOP", name:"Shopify",             sector:"Tecnología"  },
+  { ticker:"SQ",   name:"Block (Square)",      sector:"Fintech"     },
+  { ticker:"RBLX", name:"Roblox",              sector:"Tecnología"  },
+  // ── FINANCIERO ADICIONAL ──
+  { ticker:"SCHW", name:"Charles Schwab",      sector:"Financiero"  },
+  { ticker:"BLK",  name:"BlackRock",           sector:"Financiero"  },
+  { ticker:"COF",  name:"Capital One",         sector:"Financiero"  },
+  // ── SALUD ADICIONAL ──
+  { ticker:"ISRG", name:"Intuitive Surgical",  sector:"Salud"       },
+  { ticker:"REGN", name:"Regeneron",           sector:"Salud"       },
+  { ticker:"GILD", name:"Gilead",              sector:"Salud"       },
+  // ── CONSUMO ADICIONAL ──
+  { ticker:"COST", name:"Costco",              sector:"Consumo"     },
+  { ticker:"TGT",  name:"Target",              sector:"Consumo"     },
+  { ticker:"HD",   name:"Home Depot",          sector:"Consumo"     },
+  { ticker:"LOW",  name:"Lowe's",              sector:"Consumo"     },
+  // ── ENERGÍA ADICIONAL ──
+  { ticker:"SLB",  name:"SLB (Schlumberger)",  sector:"Energía"     },
+  { ticker:"OXY",  name:"Occidental Petroleum",sector:"Energía"     },
+  // ── INDUSTRIA ADICIONAL ──
+  { ticker:"GE",   name:"GE Aerospace",        sector:"Industria"   },
+  { ticker:"UPS",  name:"UPS",                 sector:"Industria"   },
+  { ticker:"FDX",  name:"FedEx",               sector:"Industria"   },
   // ── ETFs ──
   { ticker:"SPY",   name:"S&P 500 ETF",        sector:"ETF"         },
   { ticker:"QQQ",   name:"Nasdaq 100 ETF",     sector:"ETF"         },

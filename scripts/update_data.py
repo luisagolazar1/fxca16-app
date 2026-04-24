@@ -19,8 +19,10 @@ USA_TICKERS = [
     "ABBV", "MRK", "LLY", "CAH", "WMT", "KO", "PEP", "PG", "MCD", "SBUX",
     "NKE", "DIS", "XOM", "CVX", "VIST", "PBR", "AAL", "DAL", "UAL", "F",
     "GM", "VZ", "T", "TMUS", "ABT", "TMO", "DHR", "CVS", "BA", "CAT",
-    "HON", "RTX", "AMT", "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "XLE",
-    "XLF", "XLK", "TLT",
+    "HON", "RTX", "AMT", "PLTR", "SNOW", "NET", "SHOP", "SQ", "RBLX", "SCHW",
+    "BLK", "COF", "ISRG", "REGN", "GILD", "COST", "TGT", "HD", "LOW", "SLB",
+    "OXY", "GE", "UPS", "FDX", "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV",
+    "XLE", "XLF", "XLK", "TLT",
 ]
 
 MERVAL_TICKERS_YF = [
