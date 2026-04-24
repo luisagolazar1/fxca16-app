@@ -2285,6 +2285,18 @@ export default function App() {
   // eslint-disable-next-line
   }, [mkt]);
 
+  // Auto-re-ejecutar al cambiar W si ya hay resultados
+  const prevWRef = useRef(W);
+  useEffect(() => {
+    if (prevWRef.current !== W && fase === "done" && rows.length > 0) {
+      prevWRef.current = W;
+      setTimeout(() => run(mkt), 50);
+    } else {
+      prevWRef.current = W;
+    }
+  // eslint-disable-next-line
+  }, [W]);
+
   // Countdown en tiempo real
   useEffect(() => {
     if (!autoSim || !autoNext) return;
