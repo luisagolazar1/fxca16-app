@@ -2553,7 +2553,7 @@ export default function App() {
               <span style={{color:"#ffd700"}}>Umbral P80</span>
             </div>
             <div style={{display:"flex",justifyContent:"center",gap:"8px",marginBottom:"20px"}}>
-              {[["USA","🇺🇸 USA · 28"],["MERVAL","🇦🇷 Merval · 52"],["TODOS","🌎 Todos · 80"]].map(([k,l])=>
+              {[["USA",`🇺🇸 USA · ${TICKERS_USA.length}`],["MERVAL",`🇦🇷 Merval · ${TICKERS_MERVAL.length}`],["TODOS",`🌎 Todos · ${TICKERS_TODOS.length}`]].map(([k,l])=>
                 <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>setMkt(k)} style={{padding:"9px 18px",fontSize:"11px"}}>{l}</button>
               )}
             </div>
