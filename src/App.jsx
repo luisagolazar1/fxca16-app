@@ -2319,6 +2319,14 @@ export default function App() {
   useEffect(() => {
     if (prevWRef.current !== W && fase === "done" && rows.length > 0) {
       prevWRef.current = W;
+      // Recalcular señal del ticker seleccionado inmediatamente
+      if (sel) {
+        const data = rowDataRef.current[sel.ticker];
+        if (data) {
+          const sig2 = combinedSignal(data, W);
+          setSel(prev => prev ? {...prev, sig: sig2} : prev);
+        }
+      }
       setTimeout(() => run(mkt), 50);
     } else {
       prevWRef.current = W;
@@ -2933,15 +2941,15 @@ export default function App() {
               <div className="fade">
                 <div style={{display:"flex",gap:"3px",flexWrap:"wrap",marginBottom:"10px"}}>
                   {rows.map(r=>{const g=GR(r.bt.hr);return <button key={r.ticker} className={`btn ${sel?.ticker===r.ticker?"on":"off"}`} onClick={()=>{
-  if (!r.bt || r.bt.n === 0) {
-    const data = rowDataRef.current[r.ticker];
-    if (data) {
-      const W2 = (optApplied && optParams[r.ticker]?.w) || W;
-      const bt = backtest(data, W2);
-      setRows(prev => prev.map(p => p.ticker===r.ticker ? {...p, bt} : p));
-      setSel({...r, bt});
-      return;
-    }
+  const data = rowDataRef.current[r.ticker];
+  if (data) {
+    const W2 = (optApplied && optParams[r.ticker]?.w) || W;
+    const sig2 = combinedSignal(data, W2);
+    const bt2  = r.bt?.n > 0 ? r.bt : backtest(data, W2);
+    const updated = {...r, sig: sig2, bt: bt2};
+    setRows(prev => prev.map(p => p.ticker===r.ticker ? updated : p));
+    setSel(updated);
+    return;
   }
   setSel(r);
 }} style={{color:sel?.ticker===r.ticker?undefined:g.c}}>{r.ticker}{r.real?" 📡":""}</button>;})}
