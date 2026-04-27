@@ -1024,11 +1024,13 @@ function combinedSignal(data, W=7, allData=null) {
   sig = sigFiltered;
   const buy=sig.includes("COMPRA"), sell=sig.includes("VENTA");
   const entry=+(px*(buy?0.995:sell?1.005:1)).toFixed(2);
-  const am=sig.includes("FUERTE")?1.5:2.0;
+  // Escalar multiplicador ATR según ventana W (más días = rangos más amplios)
+  const wScale = Math.sqrt(W/7); // raíz cuadrada: 7D=1x, 14D=1.41x, 30D=2.07x, 60D=2.93x
+  const am=(sig.includes("FUERTE")?1.5:2.0)*wScale;
   const sl  =buy?+(entry-at*am).toFixed(2):sell?+(entry+at*am).toFixed(2):null;
-  const tp1 =buy?+(entry+at*1.5).toFixed(2):sell?+(entry-at*1.5).toFixed(2):null;
-  const tp2 =buy?+(entry+at*2.5).toFixed(2):sell?+(entry-at*2.5).toFixed(2):null;
-  const tp3 =buy?+(entry+at*4.0).toFixed(2):sell?+(entry-at*4.0).toFixed(2):null;
+  const tp1 =buy?+(entry+at*1.5*wScale).toFixed(2):sell?+(entry-at*1.5*wScale).toFixed(2):null;
+  const tp2 =buy?+(entry+at*2.5*wScale).toFixed(2):sell?+(entry-at*2.5*wScale).toFixed(2):null;
+  const tp3 =buy?+(entry+at*4.0*wScale).toFixed(2):sell?+(entry-at*4.0*wScale).toFixed(2):null;
   const risk=sl?Math.abs(entry-sl):0, rew=tp2?Math.abs(tp2-entry):0;
 
   // Confianza ajustada con factores temporales + penalización BEAR
@@ -3052,12 +3054,14 @@ export default function App() {
 
                     <div className="card" style={{padding:"10px",marginBottom:"9px"}}>
                       <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"6px"}}>EQUITY CURVE</div>
-                      <Curve curve={sel.bt.curve} w={560} h={80}/>
+                      <div style={{overflowX:"auto"}}>
+                        <Curve curve={sel.bt.curve} w={Math.min(560, window.innerWidth-60)} h={80}/>
+                      </div>
                     </div>
 
                     <div className="card" style={{padding:"10px"}}>
                       <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"6px"}}>OPERACIONES · {sel.bt.trades.length}</div>
-                      <div style={{overflowX:"auto",maxHeight:"220px",overflowY:"auto"}}>
+                      <div style={{overflowX:"auto",maxHeight:"320px",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
                         <table>
                           <thead><tr><th>#</th><th>SEÑAL</th><th>FXCA16</th><th>ENTRADA</th><th>STOP</th><th>SALIDA</th><th>DÍAS</th><th>MOTIVO</th><th>RET</th><th>RES</th></tr></thead>
                           <tbody>{sel.bt.trades.map((t,i)=>
