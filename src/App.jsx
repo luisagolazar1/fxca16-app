@@ -1900,10 +1900,16 @@ export default function App() {
   }, []);
 
   const embeddedLastDate = useMemo(() => {
-    return Object.values(CSV_DATA_EMBEDDED).reduce((mx, bars) => {
-      const d = bars[bars.length-1]?.d || "";
-      return d > mx ? d : mx;
-    }, "");
+    let maxDate = "", maxHour = 0;
+    for (const bars of Object.values(CSV_DATA_EMBEDDED)) {
+      const last = bars[bars.length-1];
+      if (!last) continue;
+      if (last.d > maxDate || (last.d === maxDate && (last.h||0) > maxHour)) {
+        maxDate = last.d;
+        maxHour = last.h || 0;
+      }
+    }
+    return maxDate ? `${maxDate} ${String(maxHour).padStart(2,"0")}:00hs` : "";
   }, []);
 
   const LC={sys:"#00d4ff",ok:"#00ff9d",warn:"#ffd700",err:"#ff3355",info:"#7ab0c8",dim:"#2e5468"};
@@ -2638,13 +2644,13 @@ export default function App() {
             <div style={{marginBottom:"8px"}}>
               <img src={logoUrl} alt="FXCA16" style={{width:"200px",height:"200px",objectFit:"contain",filter:"drop-shadow(0 0 20px rgba(26,110,255,0.4))",display:"block",margin:"0 auto"}}/>
             </div>
-            <div style={{fontSize:"9px",color:"#1e4058",letterSpacing:".2em",marginBottom:"6px"}}>SISTEMA COMBINADO · MERVAL ARGENTINA</div>
+            <div style={{fontSize:"10px",color:"#7ab0c8",letterSpacing:".2em",marginBottom:"6px",fontWeight:700}}>SISTEMA COMBINADO · MERVAL ARGENTINA</div>
             <div style={{display:"flex",justifyContent:"center",gap:"16px",fontSize:"9px",marginBottom:"28px",flexWrap:"wrap"}}>
-              <span style={{color:"#00d4ff"}}>FX-TÉCNICO <span style={{color:"#2e5060"}}>65% · RSI+MACD+Bollinger</span></span>
+              <span style={{color:"#00d4ff",fontWeight:700}}>FX-TÉCNICO <span style={{color:"#8ab0c8"}}>65% · RSI+MACD+Bollinger</span></span>
               <span style={{color:"#1e4058"}}>|</span>
-              <span style={{color:"#ff9040"}}>EVO-SCORE <span style={{color:"#2e5060"}}>35% · Score+Vol+Momentum</span></span>
-              <span style={{color:"#1e4058"}}>|</span>
-              <span style={{color:"#ffd700"}}>Umbral P80</span>
+              <span style={{color:"#ff9040",fontWeight:700}}>EVO-SCORE <span style={{color:"#8ab0c8"}}>35% · Score+Vol+Momentum</span></span>
+              <span style={{color:"#2e5468"}}>|</span>
+              <span style={{color:"#ffd700",fontWeight:700}}>Umbral P80</span>
             </div>
             <div style={{display:"flex",justifyContent:"center",gap:"8px",marginBottom:"20px"}}>
               {[["USA",`🇺🇸 USA · ${TICKERS_USA.length}`],["MERVAL",`🇦🇷 Merval · ${TICKERS_MERVAL.length}`],["TODOS",`🌎 Todos · ${TICKERS_TODOS.length}`]].map(([k,l])=>
@@ -2672,7 +2678,7 @@ export default function App() {
                 </button>
               )}
             </div>
-            <div style={{marginTop:"10px",fontSize:"9px",color:"#142030"}}>
+            <div style={{marginTop:"10px",fontSize:"9px",color:"#4a7090",letterSpacing:".05em"}}>
               {csvStatus
                 ? `📊 CSV: ${csvStatus.n} tickers · ${csvStatus.rows.toLocaleString()} barras · ${csvStatus.lastDate||""}`
                 : `📊 Datos embebidos: ${Object.keys(CSV_DATA_EMBEDDED||{}).length} tickers · ${embeddedLastDate||"?"}`}
