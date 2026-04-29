@@ -1129,6 +1129,68 @@ function applyP80Threshold(results) {
 }
 
 // ── BACKTEST ──────────────────────────────────────────────────
+// ── FIBONACCI RETRACEMENT + EXTENSIÓN ────────────────────────
+// Calcula niveles de rebote desde el swing alto/bajo reciente
+function calcFibonacci(data, W=7) {
+  if (!data || data.length < 10) return null;
+  // Ventana: últimas W*7 barras (barras horarias) o W días
+  const lookback = Math.min(data.length, W * 7);
+  const slice = data.slice(-lookback);
+
+  const high = Math.max(...slice.map(d => d.high));
+  const low  = Math.min(...slice.map(d => d.low));
+  const px   = data[data.length-1].close;
+  const rng  = high - low;
+  if (rng <= 0) return null;
+
+  // Determinar dirección del swing
+  const trend = px > (high + low) / 2 ? "up" : "down";
+
+  // Niveles Fibonacci estándar
+  const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+  // Extensiones (para objetivos más allá del swing)
+  const FIB_EXT    = [1.272, 1.414, 1.618];
+
+  let levels, extensions;
+
+  if (trend === "up") {
+    // Tendencia alcista: retrocesos desde el high hacia el low
+    // Soporte en retrocesos (posibles rebotes si baja)
+    levels = FIB_LEVELS.map(f => ({
+      label: `${(f*100).toFixed(1)}%`,
+      value: +(high - rng * f).toFixed(2),
+      type: f <= 0.382 ? "resistencia" : f >= 0.618 ? "soporte_fuerte" : "soporte",
+    }));
+    // Extensiones alcistas (objetivos de suba)
+    extensions = FIB_EXT.map(f => ({
+      label: `Ext ${(f*100).toFixed(0)}%`,
+      value: +(low + rng * f).toFixed(2),
+      type: "extension",
+    }));
+  } else {
+    // Tendencia bajista: rebotes desde el low hacia el high
+    // Resistencias en rebote (posibles frenos si sube)
+    levels = FIB_LEVELS.map(f => ({
+      label: `${(f*100).toFixed(1)}%`,
+      value: +(low + rng * f).toFixed(2),
+      type: f <= 0.382 ? "soporte" : f >= 0.618 ? "resistencia_fuerte" : "resistencia",
+    }));
+    // Extensiones bajistas (objetivos de baja)
+    extensions = FIB_EXT.map(f => ({
+      label: `Ext ${(f*100).toFixed(0)}%`,
+      value: +(high - rng * f).toFixed(2),
+      type: "extension_baja",
+    }));
+  }
+
+  // Nivel más cercano al precio actual (zona de rebote inmediata)
+  const closest = [...levels].sort((a,b) =>
+    Math.abs(a.value - px) - Math.abs(b.value - px)
+  )[0];
+
+  return { high, low, rng, trend, levels, extensions, closest, lookback };
+}
+
 function backtest(data, W=7) {
   // Versión RÁPIDA: sin llamar combinedSignal() en cada barra
   // Usa cruce de SMA20/SMA50 como proxy de señal — O(n) en vez de O(n²)
@@ -3067,6 +3129,107 @@ export default function App() {
                         </div>
                       )}
                     </div>
+
+                    {/* FIBONACCI */}
+                    {(()=>{
+                      const fibData = rowDataRef.current[sel.ticker];
+                      if (!fibData || fibData.length < 10) return null;
+                      const fib = calcFibonacci(fibData, W);
+                      if (!fib) return null;
+                      const px = sel.price || fibData[fibData.length-1].close;
+                      const isUp = fib.trend === "up";
+                      const moneda = sel.moneda || "USD";
+
+                      return (
+                        <div className="card" style={{padding:"12px",marginBottom:"9px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+                            <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em"}}>
+                              📐 FIBONACCI — últimas {fib.lookback} barras
+                            </div>
+                            <div style={{display:"flex",gap:"8px",fontSize:"8px"}}>
+                              <span style={{color:"#00ff88"}}>MAX {FP(fib.high,moneda)}</span>
+                              <span style={{color:"#1e4058"}}>|</span>
+                              <span style={{color:"#ff3355"}}>MIN {FP(fib.low,moneda)}</span>
+                            </div>
+                          </div>
+
+                          {/* Zona de rebote más cercana */}
+                          <div style={{padding:"8px",background: isUp?"#00ff8808":"#ff335508",border:`1px solid ${isUp?"#00ff8830":"#ff335530"}`,borderRadius:"4px",marginBottom:"8px"}}>
+                            <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>
+                              {isUp ? "🔄 SOPORTE MÁS CERCANO (posible rebote alcista)" : "🔄 RESISTENCIA MÁS CERCANA (posible rebote bajista)"}
+                            </div>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                              <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:isUp?"#00ff88":"#ff3355"}}>
+                                {FP(fib.closest?.value, moneda)}
+                              </span>
+                              <span style={{fontSize:"9px",color:"#ffd700",fontWeight:700}}>
+                                Fib {fib.closest?.label}
+                              </span>
+                              <span style={{fontSize:"9px",color:isUp?"#00ff88":"#ff3355"}}>
+                                {fib.closest?.value > px ? "+" : ""}{((fib.closest?.value - px)/px*100).toFixed(2)}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Tabla de niveles */}
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
+                            {/* Retrocesos */}
+                            <div>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"4px",letterSpacing:".1em"}}>
+                                {isUp ? "▼ RETROCESOS (soporte)" : "▲ REBOTES (resistencia)"}
+                              </div>
+                              {fib.levels.map(l => {
+                                const pct = ((l.value - px)/px*100).toFixed(1);
+                                const isCurrent = Math.abs(l.value - px)/px < 0.005;
+                                const isAbove = l.value > px;
+                                return (
+                                  <div key={l.label} style={{
+                                    display:"flex",justifyContent:"space-between",
+                                    padding:"3px 5px",marginBottom:"2px",
+                                    background: isCurrent?"#ffd70015":isAbove?"#00ff8808":"#ff335508",
+                                    border: isCurrent?"1px solid #ffd70040":"1px solid transparent",
+                                    borderRadius:"3px",fontSize:"8px"
+                                  }}>
+                                    <span style={{color:"#ffd700",fontWeight: isCurrent?700:400}}>{l.label}</span>
+                                    <span style={{color:"#d0ecff"}}>{FP(l.value,moneda)}</span>
+                                    <span style={{color:+pct>=0?"#00ff88":"#ff3355",fontSize:"7px"}}>{+pct>=0?"+":""}{pct}%</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Extensiones */}
+                            <div>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"4px",letterSpacing:".1em"}}>
+                                {isUp ? "▲ EXTENSIONES (objetivo)" : "▼ EXTENSIONES (objetivo)"}
+                              </div>
+                              {fib.extensions.map(l => {
+                                const pct = ((l.value - px)/px*100).toFixed(1);
+                                return (
+                                  <div key={l.label} style={{
+                                    display:"flex",justifyContent:"space-between",
+                                    padding:"3px 5px",marginBottom:"2px",
+                                    background: isUp?"#00d4ff08":"#ff9040008",
+                                    borderRadius:"3px",fontSize:"8px"
+                                  }}>
+                                    <span style={{color:isUp?"#00d4ff":"#ff9040",fontWeight:700}}>{l.label}</span>
+                                    <span style={{color:"#d0ecff"}}>{FP(l.value,moneda)}</span>
+                                    <span style={{color:+pct>=0?"#00ff88":"#ff3355",fontSize:"7px"}}>{+pct>=0?"+":""}{pct}%</span>
+                                  </div>
+                                );
+                              })}
+
+                              {/* Explicación */}
+                              <div style={{marginTop:"6px",padding:"5px",background:"#050c15",borderRadius:"3px",fontSize:"7px",color:"#2e5468",lineHeight:"1.6"}}>
+                                {isUp
+                                  ? "📈 Tendencia alcista: los retrocesos son zonas de compra. Las extensiones son objetivos de ganancia."
+                                  : "📉 Tendencia bajista: los rebotes son zonas de resistencia. Las extensiones son objetivos de caída."}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div className="card" style={{padding:"10px",marginBottom:"9px"}}>
                       <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"6px"}}>EQUITY CURVE</div>
