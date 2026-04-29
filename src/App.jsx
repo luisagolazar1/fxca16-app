@@ -1344,6 +1344,179 @@ function calcMarketCorrelation(data, indexData) {
   return { corr: +corr.toFixed(2), type };
 }
 
+// ══════════════════════════════════════════════════════════════
+// ANÁLISIS AVANZADO 2 — ATR Bands, Volume Profile, Multi-TF, Régimen
+// ══════════════════════════════════════════════════════════════
+
+// 1. ATR BANDS DINÁMICOS — detecta breakouts genuinos vs falsos
+function calcATRBands(data, period=14, mult=2.5) {
+  const n = data.length;
+  if (n < period + 5) return null;
+  // Calcular ATR rolling
+  const atrs = [];
+  for (let i = 1; i < n; i++) {
+    const tr = Math.max(
+      data[i].high - data[i].low,
+      Math.abs(data[i].high - data[i-1].close),
+      Math.abs(data[i].low  - data[i-1].close)
+    );
+    atrs.push(tr);
+  }
+  // Media ATR últimos `period` periodos
+  const atr = atrs.slice(-period).reduce((a,b)=>a+b,0)/period;
+  const px = data[n-1].close;
+  const mid = data.slice(-period).reduce((a,d)=>a+d.close,0)/period;
+  const upper = +(mid + atr*mult).toFixed(2);
+  const lower = +(mid - atr*mult).toFixed(2);
+
+  // Breakout genuino: precio supera banda con volumen > promedio
+  const vol = data[n-1].volume;
+  const volMean = data.slice(-20).reduce((a,d)=>a+d.volume,0)/20;
+  const volConfirm = volMean > 0 && vol/volMean > 1.2;
+
+  const breakoutUp   = px > upper && volConfirm;
+  const breakoutDown = px < lower && volConfirm;
+  const falseBreakUp   = px > upper && !volConfirm;
+  const falseBreakDown = px < lower && !volConfirm;
+
+  const pctFromMid = +((px/mid-1)*100).toFixed(2);
+  const pctFromUpper = +((px/upper-1)*100).toFixed(2);
+  const pctFromLower = +((px/lower-1)*100).toFixed(2);
+
+  return {
+    atr: +atr.toFixed(2), mid: +mid.toFixed(2), upper, lower,
+    breakoutUp, breakoutDown, falseBreakUp, falseBreakDown,
+    pctFromMid, pctFromUpper, pctFromLower,
+    volRatio: volMean>0 ? +(vol/volMean).toFixed(2) : 1,
+  };
+}
+
+// 2. VOLUME PROFILE — encuentra niveles de mayor concentración de volumen
+function calcVolumeProfile(data, bins=10) {
+  if (!data || data.length < 20) return null;
+  const slice = data.slice(-Math.min(data.length, 200));
+  const high = Math.max(...slice.map(d=>d.high));
+  const low  = Math.min(...slice.map(d=>d.low));
+  const rng  = high - low;
+  if (rng <= 0) return null;
+  const binSize = rng / bins;
+
+  // Acumular volumen por bin de precio
+  const profile = Array(bins).fill(0);
+  slice.forEach(d => {
+    const mid = (d.high + d.low) / 2;
+    const bin = Math.min(bins-1, Math.floor((mid - low) / binSize));
+    profile[bin] += d.volume || 1;
+  });
+
+  // Point of Control (POC) — bin con mayor volumen
+  const pocIdx = profile.indexOf(Math.max(...profile));
+  const poc = +(low + pocIdx*binSize + binSize/2).toFixed(2);
+
+  // Value Area (70% del volumen)
+  const totalVol = profile.reduce((a,b)=>a+b,0);
+  let vaVol = profile[pocIdx], vaHigh = pocIdx, vaLow = pocIdx;
+  while (vaVol/totalVol < 0.7 && (vaHigh < bins-1 || vaLow > 0)) {
+    const upVol  = vaHigh < bins-1 ? profile[vaHigh+1] : 0;
+    const downVol= vaLow  > 0      ? profile[vaLow-1]  : 0;
+    if (upVol >= downVol && vaHigh < bins-1) { vaHigh++; vaVol += upVol; }
+    else if (vaLow > 0) { vaLow--; vaVol += downVol; }
+    else break;
+  }
+  const vaH = +(low + vaHigh*binSize + binSize).toFixed(2);
+  const vaL = +(low + vaLow*binSize).toFixed(2);
+
+  const px = data[data.length-1].close;
+  const abovePoc = px > poc;
+  const inValueArea = px >= vaL && px <= vaH;
+  const pctFromPoc = +((px/poc-1)*100).toFixed(2);
+
+  return { poc, vaH, vaL, high, low, profile, bins, binSize,
+    abovePoc, inValueArea, pctFromPoc };
+}
+
+// 3. ANÁLISIS MULTI-TIMEFRAME — compara señales en 7D, 30D, 60D
+function calcMultiTimeframe(data, W=7) {
+  if (!data || data.length < 60) return null;
+  const frames = [
+    { w:7,  label:"Corto (7D)",  bars:49  },
+    { w:30, label:"Medio (30D)", bars:210 },
+    { w:60, label:"Largo (60D)", bars:420 },
+  ];
+  return frames.map(f => {
+    const slice = data.slice(-Math.min(data.length, f.bars));
+    if (slice.length < 20) return { ...f, sig:null, score:0 };
+    const sig = combinedSignal(slice, f.w);
+    const trend = sig?.trend || "neutral";
+    const score = sig?.final_sc || 0;
+    const dir = sig?.sig?.includes("COMPRA")?"bull":sig?.sig?.includes("VENTA")?"bear":"neutral";
+    return { ...f, sig, score, trend, dir };
+  });
+}
+
+// 4. RÉGIMEN DEL TICKER — fase Weinstein: acumulación, markup, distribución, markdown
+function detectTickerRegime(data) {
+  const n = data.length;
+  if (n < 150) return null;
+  const closes = data.map(d=>d.close);
+  const vols   = data.map(d=>d.volume||0);
+
+  // SMA 30 semanas = 150 barras diarias aprox (en data horaria usamos 200 barras)
+  const sma150 = closes.slice(-150).reduce((a,b)=>a+b,0)/150;
+  const sma50  = closes.slice(-50).reduce((a,b)=>a+b,0)/50;
+  const sma20  = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
+  const px = closes[n-1];
+
+  // Pendiente de SMA150 (últimas 20 vs anteriores 20)
+  const sma150_now  = closes.slice(-150).reduce((a,b)=>a+b,0)/150;
+  const sma150_prev = closes.slice(-170,-20).reduce((a,b)=>a+b,0)/150;
+  const slopeUp   = sma150_now > sma150_prev * 1.001;
+  const slopeDown = sma150_now < sma150_prev * 0.999;
+  const slopeFlat = !slopeUp && !slopeDown;
+
+  // Volumen promedio últimos 20 vs anteriores 20
+  const volRecent = vols.slice(-20).reduce((a,b)=>a+b,0)/20;
+  const volPrev   = vols.slice(-40,-20).reduce((a,b)=>a+b,0)/20;
+  const volExpanding = volRecent > volPrev * 1.1;
+  const volContracting = volRecent < volPrev * 0.9;
+
+  let phase = "neutral", desc = "", action = "", color = "#7ab0c8";
+
+  if (slopeFlat && px > sma150 && volExpanding) {
+    phase = "Acumulación"; color = "#00d4ff";
+    desc = "Precio lateral sobre SMA150 con volumen creciente. Grandes manos comprando silenciosamente.";
+    action = "Zona de preparación. Esperá el breakout con volumen para confirmar entrada.";
+  } else if (slopeUp && px > sma150 && sma20 > sma50 && volExpanding) {
+    phase = "Markup"; color = "#00ff88";
+    desc = "Tendencia alcista confirmada. SMA150 sube, precio por encima de todas las medias.";
+    action = "Momento ideal para estar largo. Comprá en retrocesos a SMA20.";
+  } else if ((slopeUp || slopeFlat) && px > sma150 && volContracting) {
+    phase = "Distribución"; color = "#ffd700";
+    desc = "Precio alto pero volumen cayendo. Posible techo de mercado — manos fuertes distribuyendo.";
+    action = "Reducí exposición. No es momento de nuevas entradas. Ajustá stops.";
+  } else if (slopeDown && px < sma150) {
+    phase = "Markdown"; color = "#ff3355";
+    desc = "Tendencia bajista. Precio por debajo de SMA150 que cae. Presión vendedora dominante.";
+    action = "Evitá comprar. Esperá estabilización y nueva acumulación antes de entrar.";
+  } else if (px > sma150) {
+    phase = "Recuperación"; color = "#ff9040";
+    desc = "Precio sobre SMA150 pero sin tendencia clara definida.";
+    action = "Mantené posición si ya estás. Esperá más señales antes de agregar.";
+  } else {
+    phase = "Debilidad"; color = "#ff6040";
+    desc = "Precio bajo SMA150. Mercado en debilidad estructural.";
+    action = "No operar en largo hasta que el precio recupere SMA150.";
+  }
+
+  return {
+    phase, desc, action, color,
+    sma150: +sma150.toFixed(2), sma50: +sma50.toFixed(2), sma20: +sma20.toFixed(2),
+    slopeUp, slopeDown, slopeFlat, volExpanding, volContracting,
+    aboveSma150: px > sma150,
+  };
+}
+
+
 // 7. SCORE DE CONFLUENCIA — cuenta señales que coinciden en dirección
 function calcConfluence(sig, rsiDiv, volFib, cross, bollRsi, candles, corr) {
   let bull = 0, bear = 0, signals = [];
@@ -3540,6 +3713,165 @@ export default function App() {
                               </div>
                             );
                           })()}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ══ ANÁLISIS AVANZADO ══ */}
+                    {(()=>{
+                      const data = rowDataRef.current[sel.ticker];
+                      if (!data || data.length < 50) return null;
+                      const moneda = sel.moneda || "USD";
+                      const px = sel.price || data[data.length-1].close;
+                      const atrB = calcATRBands(data);
+                      const vp   = calcVolumeProfile(data);
+                      const mtf  = calcMultiTimeframe(data, W);
+                      const reg  = detectTickerRegime(data);
+
+                      // Contar timeframes alineados
+                      const mtfBull = mtf?.filter(f=>f.dir==="bull").length || 0;
+                      const mtfBear = mtf?.filter(f=>f.dir==="bear").length || 0;
+                      const mtfAlign = Math.max(mtfBull, mtfBear);
+                      const mtfDir = mtfBull > mtfBear ? "bull" : mtfBear > mtfBull ? "bear" : "neutral";
+                      const mtfColor = mtfDir==="bull"?"#00ff88":mtfDir==="bear"?"#ff3355":"#ffd700";
+
+                      return (
+                        <div className="card" style={{padding:"12px",marginBottom:"9px"}}>
+                          <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"10px"}}>
+                            🔬 ANÁLISIS ESTRUCTURAL AVANZADO
+                          </div>
+
+                          {/* MULTI-TIMEFRAME */}
+                          <div style={{marginBottom:"10px"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>📊 CONFLUENCIA MULTI-TIMEFRAME</div>
+                              <div style={{fontSize:"9px",fontWeight:700,color:mtfColor}}>
+                                {mtfAlign}/3 {mtfDir==="bull"?"ALCISTAS":mtfDir==="bear"?"BAJISTAS":"MIXTOS"}
+                              </div>
+                            </div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px"}}>
+                              {mtf?.map(f=>{
+                                const c = f.dir==="bull"?"#00ff88":f.dir==="bear"?"#ff3355":"#ffd700";
+                                return (
+                                  <div key={f.w} style={{padding:"6px",background:`${c}10`,border:`1px solid ${c}30`,borderRadius:"4px",textAlign:"center"}}>
+                                    <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>{f.label}</div>
+                                    <div style={{fontSize:"10px",fontWeight:700,color:c}}>
+                                      {f.dir==="bull"?"▲":f.dir==="bear"?"▼":"◆"}
+                                    </div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:c}}>{f.score}</div>
+                                    <div style={{fontSize:"7px",color:"#2e5468"}}>{f.sig?.sig?.replace(" FUERTE","").replace(" MODERADO","") || "NEUTRAL"}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {mtfAlign===3&&(
+                              <div style={{marginTop:"5px",padding:"4px 8px",background:`${mtfColor}15`,borderRadius:"3px",fontSize:"7px",color:mtfColor,fontWeight:700}}>
+                                ⭐ SEÑAL TRIPLE CONFIRMADA — Los 3 timeframes coinciden. Confiabilidad muy alta.
+                              </div>
+                            )}
+                            {mtfAlign===2&&(
+                              <div style={{marginTop:"5px",padding:"4px 8px",background:"#ffd70010",borderRadius:"3px",fontSize:"7px",color:"#ffd700"}}>
+                                2 de 3 timeframes alineados — señal moderadamente confiable.
+                              </div>
+                            )}
+                            {mtfAlign<=1&&(
+                              <div style={{marginTop:"5px",padding:"4px 8px",background:"#1e405810",borderRadius:"3px",fontSize:"7px",color:"#1e4058"}}>
+                                Timeframes contradictorios — mercado en indefinición. Esperá.
+                              </div>
+                            )}
+                          </div>
+
+                          {/* RÉGIMEN DEL TICKER */}
+                          {reg&&(
+                            <div style={{marginBottom:"10px",padding:"8px 10px",background:`${reg.color}10`,border:`1px solid ${reg.color}30`,borderRadius:"5px"}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>📈 FASE WEINSTEIN</div>
+                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:reg.color}}>{reg.phase.toUpperCase()}</div>
+                              </div>
+                              <div style={{fontSize:"8px",color:"#8ab0c8",lineHeight:"1.6",marginBottom:"4px"}}>{reg.desc}</div>
+                              <div style={{fontSize:"8px",color:"#ffd700",fontWeight:600}}>📌 {reg.action}</div>
+                              <div style={{display:"flex",gap:"8px",marginTop:"6px",fontSize:"7px",color:"#1e4058"}}>
+                                <span>SMA20 {FP(reg.sma20,moneda)}</span>
+                                <span>SMA50 {FP(reg.sma50,moneda)}</span>
+                                <span>SMA150 {FP(reg.sma150,moneda)}</span>
+                                <span style={{color:reg.volExpanding?"#00ff88":reg.volContracting?"#ff3355":"#ffd700"}}>
+                                  VOL {reg.volExpanding?"▲ expandiendo":reg.volContracting?"▼ contrayendo":"→ estable"}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* ATR BANDS */}
+                          {atrB&&(
+                            <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em",marginBottom:"6px"}}>⚡ ATR BANDS — Breakout genuino vs falso</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"6px"}}>
+                                {[
+                                  {l:"BANDA SUP",v:FP(atrB.upper,moneda),c:"#ff3355",sub:`${atrB.pctFromUpper>=0?"+":""}${atrB.pctFromUpper}%`},
+                                  {l:"MEDIA ATR",v:FP(atrB.mid,moneda),c:"#7ab0c8",sub:`${atrB.pctFromMid>=0?"+":""}${atrB.pctFromMid}%`},
+                                  {l:"BANDA INF",v:FP(atrB.lower,moneda),c:"#00ff88",sub:`${atrB.pctFromLower>=0?"+":""}${atrB.pctFromLower}%`},
+                                ].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#07101a",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
+                                    <div style={{fontSize:"9px",color:x.c,fontWeight:600}}>{x.v}</div>
+                                    <div style={{fontSize:"7px",color:x.c,opacity:.7}}>{x.sub}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              {atrB.breakoutUp&&<div style={{padding:"4px 8px",background:"#00ff8815",border:"1px solid #00ff8840",borderRadius:"3px",fontSize:"8px",color:"#00ff88",fontWeight:700}}>✅ BREAKOUT ALCISTA GENUINO — Precio supera banda con volumen {atrB.volRatio}x. Alta probabilidad de continuación.</div>}
+                              {atrB.breakoutDown&&<div style={{padding:"4px 8px",background:"#ff335515",border:"1px solid #ff335540",borderRadius:"3px",fontSize:"8px",color:"#ff3355",fontWeight:700}}>⬇️ BREAKOUT BAJISTA GENUINO — Precio rompe banda inferior con volumen {atrB.volRatio}x. Señal de continuación bajista.</div>}
+                              {atrB.falseBreakUp&&<div style={{padding:"4px 8px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px",fontSize:"8px",color:"#ffd700"}}>⚠️ POSIBLE FALSO BREAKOUT ALCISTA — Precio sobre banda pero sin volumen ({atrB.volRatio}x). Alta probabilidad de regreso a la media.</div>}
+                              {atrB.falseBreakDown&&<div style={{padding:"4px 8px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px",fontSize:"8px",color:"#ffd700"}}>⚠️ POSIBLE FALSO BREAKOUT BAJISTA — Precio bajo banda pero sin volumen ({atrB.volRatio}x). Puede ser una trampa bajista.</div>}
+                              {!atrB.breakoutUp&&!atrB.breakoutDown&&!atrB.falseBreakUp&&!atrB.falseBreakDown&&(
+                                <div style={{fontSize:"7px",color:"#1e4058"}}>Precio dentro de las bandas ATR — movimiento normal sin breakout.</div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* VOLUME PROFILE */}
+                          {vp&&(
+                            <div style={{padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em",marginBottom:"6px"}}>📦 VOLUME PROFILE — Niveles de mayor interés</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"6px"}}>
+                                <div style={{textAlign:"center",padding:"4px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px"}}>
+                                  <div style={{fontSize:"6px",color:"#1e4058"}}>POC (Control)</div>
+                                  <div style={{fontSize:"11px",color:"#ffd700",fontWeight:700}}>{FP(vp.poc,moneda)}</div>
+                                  <div style={{fontSize:"7px",color:"#ffd700",opacity:.7}}>{vp.pctFromPoc>=0?"+":""}{vp.pctFromPoc}% del precio</div>
+                                </div>
+                                <div style={{textAlign:"center",padding:"4px",background:"#00ff8810",borderRadius:"3px"}}>
+                                  <div style={{fontSize:"6px",color:"#1e4058"}}>VA Alto</div>
+                                  <div style={{fontSize:"11px",color:"#00ff88",fontWeight:600}}>{FP(vp.vaH,moneda)}</div>
+                                  <div style={{fontSize:"7px",color:"#1e4058"}}>resistencia</div>
+                                </div>
+                                <div style={{textAlign:"center",padding:"4px",background:"#ff335510",borderRadius:"3px"}}>
+                                  <div style={{fontSize:"6px",color:"#1e4058"}}>VA Bajo</div>
+                                  <div style={{fontSize:"11px",color:"#ff3355",fontWeight:600}}>{FP(vp.vaL,moneda)}</div>
+                                  <div style={{fontSize:"7px",color:"#1e4058"}}>soporte</div>
+                                </div>
+                              </div>
+                              {/* Barra visual del perfil */}
+                              <div style={{display:"flex",gap:"1px",alignItems:"flex-end",height:"30px",marginBottom:"4px"}}>
+                                {vp.profile.map((v,i)=>{
+                                  const maxV = Math.max(...vp.profile);
+                                  const h = Math.max(4, (v/maxV)*28);
+                                  const priceAtBin = vp.low + i*vp.binSize + vp.binSize/2;
+                                  const isPoc = i === vp.profile.indexOf(maxV);
+                                  const isValue = priceAtBin >= vp.vaL && priceAtBin <= vp.vaH;
+                                  const isCurrent = Math.abs(priceAtBin - px)/px < vp.binSize/px;
+                                  return (
+                                    <div key={i} style={{flex:1,height:`${h}px`,background:isPoc?"#ffd700":isCurrent?"#00d4ff":isValue?"#00ff8840":"#1e405840",borderRadius:"1px",transition:"height .3s"}}/>
+                                  );
+                                })}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#1e4058"}}>
+                                {vp.inValueArea
+                                  ? `✓ Precio dentro del Value Area (VA) — zona de mayor liquidez y actividad.`
+                                  : vp.abovePoc
+                                  ? `Precio por encima del POC — zona de menor liquidez, movimiento más rápido posible.`
+                                  : `Precio por debajo del POC — buscará volver al nivel de control (${FP(vp.poc,moneda)}).`}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
