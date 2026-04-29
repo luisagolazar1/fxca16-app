@@ -1191,6 +1191,202 @@ function calcFibonacci(data, W=7) {
   return { high, low, rng, trend, levels, extensions, closest, lookback };
 }
 
+// ══════════════════════════════════════════════════════════════
+// ANÁLISIS AVANZADO — CONFLUENCIA DE SEÑALES
+// ══════════════════════════════════════════════════════════════
+
+// 1. RSI DIVERGENCIA — precio hace nuevo mínimo pero RSI no
+function detectRSIDivergence(data, period=14) {
+  const n = data.length;
+  if (n < period * 3) return { bullish: false, bearish: false };
+  // Calcular RSI en los últimos 60 puntos
+  const slice = data.slice(-60);
+  const closes = slice.map(d => d.close);
+  let g = 0, l = 0;
+  for (let i = 1; i <= period; i++) {
+    const x = closes[i] - closes[i-1];
+    x > 0 ? g += x : l -= x;
+  }
+  let ag = g/period, al = l/period;
+  const rsiArr = [null];
+  for (let i = 1; i < closes.length; i++) {
+    if (i <= period) { rsiArr.push(null); continue; }
+    const x = closes[i] - closes[i-1];
+    ag = (ag*(period-1) + Math.max(x,0)) / period;
+    al = (al*(period-1) + Math.max(-x,0)) / period;
+    rsiArr.push(al === 0 ? 100 : 100 - 100/(1+ag/al));
+  }
+  // Buscar divergencia en últimas 20 barras vs 20 barras anteriores
+  const half = 20;
+  const recentPrices = closes.slice(-half);
+  const prevPrices   = closes.slice(-half*2, -half);
+  const recentRSI    = rsiArr.slice(-half).filter(Boolean);
+  const prevRSI      = rsiArr.slice(-half*2, -half).filter(Boolean);
+  if (!recentRSI.length || !prevRSI.length) return { bullish: false, bearish: false };
+  const recentMinPx  = Math.min(...recentPrices);
+  const prevMinPx    = Math.min(...prevPrices);
+  const recentMinRSI = Math.min(...recentRSI);
+  const prevMinRSI   = Math.min(...prevRSI);
+  const recentMaxPx  = Math.max(...recentPrices);
+  const prevMaxPx    = Math.max(...prevPrices);
+  const recentMaxRSI = Math.max(...recentRSI);
+  const prevMaxRSI   = Math.max(...prevRSI);
+  // Divergencia alcista: precio hace mínimo más bajo, RSI hace mínimo más alto
+  const bullish = recentMinPx < prevMinPx * 0.99 && recentMinRSI > prevMinRSI * 1.02;
+  // Divergencia bajista: precio hace máximo más alto, RSI hace máximo más bajo
+  const bearish = recentMaxPx > prevMaxPx * 1.01 && recentMaxRSI < prevMaxRSI * 0.98;
+  return { bullish, bearish };
+}
+
+// 2. VOLUMEN EN FIBONACCI — confirma rebote si hay volumen alto en nivel clave
+function checkVolumeAtFib(data, fibLevels) {
+  const n = data.length;
+  if (n < 5 || !fibLevels?.length) return null;
+  const px = data[n-1].close;
+  const vol = data[n-1].volume;
+  const volMean = data.slice(-20).reduce((a,d)=>a+d.volume,0)/20;
+  const volRatio = volMean > 0 ? vol/volMean : 1;
+  // Buscar nivel Fib más cercano
+  const closest = [...fibLevels].sort((a,b)=>Math.abs(a.value-px)-Math.abs(b.value-px))[0];
+  const distPct = closest ? Math.abs(closest.value - px)/px : 1;
+  const confirmed = distPct < 0.02 && volRatio > 1.3;
+  return { volRatio: +volRatio.toFixed(2), distPct: +(distPct*100).toFixed(2), confirmed, closestFib: closest?.label };
+}
+
+// 3. GOLDEN/DEATH CROSS — cruce de SMA20 y SMA50
+function detectCross(data) {
+  const n = data.length;
+  if (n < 55) return null;
+  const sma20_now = data.slice(-20).reduce((a,d)=>a+d.close,0)/20;
+  const sma50_now = data.slice(-50).reduce((a,d)=>a+d.close,0)/50;
+  const sma20_prev = data.slice(-21,-1).reduce((a,d)=>a+d.close,0)/20;
+  const sma50_prev = data.slice(-51,-1).reduce((a,d)=>a+d.close,0)/50;
+  const golden = sma20_prev <= sma50_prev && sma20_now > sma50_now;
+  const death  = sma20_prev >= sma50_prev && sma20_now < sma50_now;
+  const gap    = +((sma20_now/sma50_now - 1)*100).toFixed(2);
+  return { golden, death, gap, sma20: +sma20_now.toFixed(2), sma50: +sma50_now.toFixed(2) };
+}
+
+// 4. BOLLINGER + RSI COMBINADOS — sobreventa/sobrecompra doble confirmación
+function detectBollingerRSISetup(data) {
+  const n = data.length;
+  if (n < 20) return null;
+  const px = data[n-1].close;
+  // Bollinger
+  const slice20 = data.slice(-20);
+  const mean = slice20.reduce((a,d)=>a+d.close,0)/20;
+  const std  = Math.sqrt(slice20.reduce((a,d)=>a+(d.close-mean)**2,0)/20);
+  const upper = mean + 2*std, lower = mean - 2*std;
+  // RSI rápido
+  let g=0,l=0;
+  for(let i=n-14;i<n;i++){const x=data[i].close-data[i-1].close;x>0?g+=x:l-=x;}
+  const rsi = l===0?100:+(100-100/(1+(g/14)/(l/14))).toFixed(1);
+  // Setups
+  const oversold  = px <= lower * 1.005 && rsi < 32; // toca banda inf + RSI oversold
+  const overbought= px >= upper * 0.995 && rsi > 68; // toca banda sup + RSI overbought
+  const pctFromLower = +((px/lower-1)*100).toFixed(2);
+  const pctFromUpper = +((px/upper-1)*100).toFixed(2);
+  return { oversold, overbought, rsi, upper:+upper.toFixed(2), lower:+lower.toFixed(2), mean:+mean.toFixed(2), pctFromLower, pctFromUpper };
+}
+
+// 5. PATRONES DE VELAS — detecta reversiones en último cierre
+function detectCandlePattern(data) {
+  const n = data.length;
+  if (n < 3) return null;
+  const c = data[n-1], p = data[n-2], pp = data[n-3];
+  const body = Math.abs(c.close - c.open);
+  const range = c.high - c.low;
+  const upperWick = c.high - Math.max(c.open, c.close);
+  const lowerWick = Math.min(c.open, c.close) - c.low;
+  const isBull = c.close > c.open;
+  const patterns = [];
+  // Martillo (Hammer) — vela alcista con mecha inferior larga
+  if (lowerWick > body*2 && upperWick < body*0.5 && range > 0)
+    patterns.push({ name:"Martillo", type:"bullish", desc:"Posible reversión alcista" });
+  // Estrella fugaz (Shooting Star) — vela bajista con mecha superior larga
+  if (upperWick > body*2 && lowerWick < body*0.5 && range > 0)
+    patterns.push({ name:"Estrella Fugaz", type:"bearish", desc:"Posible reversión bajista" });
+  // Doji — cuerpo muy pequeño (indecisión)
+  if (range > 0 && body/range < 0.1)
+    patterns.push({ name:"Doji", type:"neutral", desc:"Indecisión — esperar confirmación" });
+  // Engulfing alcista — vela alcista que envuelve la anterior bajista
+  if (isBull && p.close < p.open && c.close > p.open && c.open < p.close)
+    patterns.push({ name:"Engulfing Alcista", type:"bullish", desc:"Señal fuerte de reversión alcista" });
+  // Engulfing bajista
+  if (!isBull && p.close > p.open && c.close < p.open && c.open > p.close)
+    patterns.push({ name:"Engulfing Bajista", type:"bearish", desc:"Señal fuerte de reversión bajista" });
+  // Marubozu alcista — vela sin mechas, cuerpo completo
+  if (isBull && lowerWick/range < 0.05 && upperWick/range < 0.05 && body/range > 0.9)
+    patterns.push({ name:"Marubozu Alcista", type:"bullish", desc:"Momentum comprador muy fuerte" });
+  // Tres velas alcistas (Three White Soldiers)
+  if (data[n-1].close > data[n-2].close && data[n-2].close > data[n-3].close &&
+      data[n-1].open > data[n-2].open && data[n-2].open > data[n-3].open)
+    patterns.push({ name:"3 Velas Alcistas", type:"bullish", desc:"Tendencia alcista confirmada" });
+  return { patterns, isBull, body: +body.toFixed(2), range: +range.toFixed(2) };
+}
+
+// 6. CORRELACIÓN CON MERCADO (SPY/MERVAL)
+function calcMarketCorrelation(data, indexData) {
+  if (!indexData?.length || !data?.length) return null;
+  const n = Math.min(data.length, indexData.length, 30);
+  const stockRets  = data.slice(-n).map((d,i,a) => i===0?0:(d.close-a[i-1].close)/a[i-1].close);
+  const indexRets  = indexData.slice(-n).map((d,i,a) => i===0?0:(d.close-a[i-1].close)/a[i-1].close);
+  const meanS = stockRets.reduce((a,b)=>a+b,0)/n;
+  const meanI = indexRets.reduce((a,b)=>a+b,0)/n;
+  let num=0,denS=0,denI=0;
+  for(let i=0;i<n;i++){
+    num  += (stockRets[i]-meanS)*(indexRets[i]-meanI);
+    denS += (stockRets[i]-meanS)**2;
+    denI += (indexRets[i]-meanI)**2;
+  }
+  const corr = (denS*denI)>0 ? num/Math.sqrt(denS*denI) : 0;
+  const type = corr > 0.6 ? "alta" : corr > 0.3 ? "media" : corr < -0.3 ? "inversa" : "baja";
+  return { corr: +corr.toFixed(2), type };
+}
+
+// 7. SCORE DE CONFLUENCIA — cuenta señales que coinciden en dirección
+function calcConfluence(sig, rsiDiv, volFib, cross, bollRsi, candles, corr) {
+  let bull = 0, bear = 0, signals = [];
+  if (!sig) return { bull:0, bear:0, total:0, signals:[], score:0, action:"ESPERAR" };
+  const isBullSig = sig.sig?.includes("COMPRA");
+  const isBearSig = sig.sig?.includes("VENTA");
+  // Señal FXCA16
+  if (isBullSig) { bull+=2; signals.push({name:"FXCA16 Compra",type:"bull",weight:2}); }
+  if (isBearSig) { bear+=2; signals.push({name:"FXCA16 Venta",type:"bear",weight:2}); }
+  // RSI Divergencia
+  if (rsiDiv?.bullish) { bull+=3; signals.push({name:"Divergencia RSI Alcista",type:"bull",weight:3}); }
+  if (rsiDiv?.bearish) { bear+=3; signals.push({name:"Divergencia RSI Bajista",type:"bear",weight:3}); }
+  // Volumen en Fib
+  if (volFib?.confirmed) {
+    if (isBullSig) { bull+=2; signals.push({name:`Vol en Fib ${volFib.closestFib} (${volFib.volRatio}x)`,type:"bull",weight:2}); }
+    else { bear+=2; signals.push({name:`Vol en Fib ${volFib.closestFib} (${volFib.volRatio}x)`,type:"bear",weight:2}); }
+  }
+  // Golden/Death cross
+  if (cross?.golden) { bull+=3; signals.push({name:"Golden Cross SMA20/50",type:"bull",weight:3}); }
+  if (cross?.death)  { bear+=3; signals.push({name:"Death Cross SMA20/50",type:"bear",weight:3}); }
+  // Bollinger + RSI
+  if (bollRsi?.oversold)   { bull+=2; signals.push({name:"Sobreventa BB+RSI",type:"bull",weight:2}); }
+  if (bollRsi?.overbought) { bear+=2; signals.push({name:"Sobrecompra BB+RSI",type:"bear",weight:2}); }
+  // Patrones de velas
+  candles?.patterns?.forEach(p => {
+    if (p.type==="bullish") { bull+=1; signals.push({name:p.name,type:"bull",weight:1}); }
+    if (p.type==="bearish") { bear+=1; signals.push({name:p.name,type:"bear",weight:1}); }
+    if (p.type==="neutral") signals.push({name:p.name,type:"neutral",weight:0});
+  });
+  // Tendencia de mercado
+  if (sig.regime==="bull" && isBullSig) { bull+=1; signals.push({name:"Mercado en Bull",type:"bull",weight:1}); }
+  if (sig.regime==="bear" && isBearSig) { bear+=1; signals.push({name:"Mercado en Bear",type:"bear",weight:1}); }
+  const total = bull + bear;
+  const score = total > 0 ? Math.round((Math.max(bull,bear)/total)*100) : 0;
+  let action = "ESPERAR";
+  if (bull > bear && score >= 70) action = "COMPRAR";
+  else if (bull > bear && score >= 50) action = "COMPRAR MODERADO";
+  else if (bear > bull && score >= 70) action = "VENDER";
+  else if (bear > bull && score >= 50) action = "VENDER MODERADO";
+  return { bull, bear, total, score, action, signals };
+}
+
+
 function backtest(data, W=7) {
   // Versión RÁPIDA: sin llamar combinedSignal() en cada barra
   // Usa cruce de SMA20/SMA50 como proxy de señal — O(n) en vez de O(n²)
@@ -3129,6 +3325,137 @@ export default function App() {
                         </div>
                       )}
                     </div>
+
+                    {/* ══ CONFLUENCIA DE SEÑALES ══ */}
+                    {(()=>{
+                      const data = rowDataRef.current[sel.ticker];
+                      if (!data || data.length < 30) return null;
+                      const s = sel.sig;
+                      const fib = calcFibonacci(data, W);
+                      const rsiDiv  = detectRSIDivergence(data);
+                      const volFib  = checkVolumeAtFib(data, fib?.levels);
+                      const cross   = detectCross(data);
+                      const bollRsi = detectBollingerRSISetup(data);
+                      const candles = detectCandlePattern(data);
+                      const spyData = rowDataRef.current["SPY"] || rowDataRef.current["GGAL"];
+                      const corr    = calcMarketCorrelation(data, spyData);
+                      const conf    = calcConfluence(s, rsiDiv, volFib, cross, bollRsi, candles, corr);
+                      const actionColor = conf.action.includes("COMPRAR")?"#00ff88":conf.action.includes("VENDER")?"#ff3355":"#ffd700";
+
+                      return (
+                        <div className="card" style={{padding:"12px",marginBottom:"9px",border:`1px solid ${actionColor}30`}}>
+                          {/* Header con acción recomendada */}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+                            <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em"}}>🎯 CONFLUENCIA DE SEÑALES</div>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:actionColor,lineHeight:1}}>{conf.action}</div>
+                              <div style={{fontSize:"8px",color:"#1e4058"}}>{conf.bull} alcistas · {conf.bear} bajistas</div>
+                            </div>
+                          </div>
+
+                          {/* Barra de confluencia */}
+                          <div style={{marginBottom:"10px"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginBottom:"3px"}}>
+                              <span>BAJISTA</span>
+                              <span style={{color:actionColor,fontWeight:700}}>CONFLUENCIA {conf.score}%</span>
+                              <span>ALCISTA</span>
+                            </div>
+                            <div style={{height:"8px",background:"#0c1826",borderRadius:"4px",overflow:"hidden",display:"flex"}}>
+                              <div style={{width:`${conf.total>0?(conf.bear/conf.total*100):50}%`,background:"#ff3355",opacity:.8,transition:"width .3s"}}/>
+                              <div style={{width:`${conf.total>0?(conf.bull/conf.total*100):50}%`,background:"#00ff88",opacity:.8,transition:"width .3s"}}/>
+                            </div>
+                          </div>
+
+                          {/* Señales individuales */}
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px",marginBottom:"10px"}}>
+                            {/* RSI Divergencia */}
+                            <div style={{padding:"6px 8px",background:rsiDiv?.bullish?"#00ff8810":rsiDiv?.bearish?"#ff335510":"#050c15",border:`1px solid ${rsiDiv?.bullish?"#00ff8840":rsiDiv?.bearish?"#ff335540":"#0f2235"}`,borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>RSI DIVERGENCIA</div>
+                              <div style={{fontSize:"9px",fontWeight:700,color:rsiDiv?.bullish?"#00ff88":rsiDiv?.bearish?"#ff3355":"#7ab0c8"}}>
+                                {rsiDiv?.bullish?"▲ ALCISTA":rsiDiv?.bearish?"▼ BAJISTA":"— Sin señal"}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468"}}>
+                                {rsiDiv?.bullish?"Precio cae, RSI sube → rebote":rsiDiv?.bearish?"Precio sube, RSI baja → corrección":"No hay divergencia activa"}
+                              </div>
+                            </div>
+
+                            {/* Golden/Death Cross */}
+                            <div style={{padding:"6px 8px",background:cross?.golden?"#00ff8810":cross?.death?"#ff335510":"#050c15",border:`1px solid ${cross?.golden?"#00ff8840":cross?.death?"#ff335540":"#0f2235"}`,borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>CRUCE DE MEDIAS</div>
+                              <div style={{fontSize:"9px",fontWeight:700,color:cross?.golden?"#00ff88":cross?.death?"#ff3355":"#7ab0c8"}}>
+                                {cross?.golden?"⭐ GOLDEN CROSS":cross?.death?"💀 DEATH CROSS":cross?.gap>0?"SMA20 > SMA50":"SMA20 < SMA50"}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468"}}>
+                                SMA20 {cross?.gap>=0?"+":""}{cross?.gap}% vs SMA50
+                              </div>
+                            </div>
+
+                            {/* Bollinger + RSI */}
+                            <div style={{padding:"6px 8px",background:bollRsi?.oversold?"#00ff8810":bollRsi?.overbought?"#ff335510":"#050c15",border:`1px solid ${bollRsi?.oversold?"#00ff8840":bollRsi?.overbought?"#ff335540":"#0f2235"}`,borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>BB + RSI</div>
+                              <div style={{fontSize:"9px",fontWeight:700,color:bollRsi?.oversold?"#00ff88":bollRsi?.overbought?"#ff3355":"#7ab0c8"}}>
+                                {bollRsi?.oversold?"▲ SOBREVENTA":bollRsi?.overbought?"▼ SOBRECOMPRA":"Zona neutral"}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468"}}>
+                                RSI {bollRsi?.rsi} · {bollRsi?.oversold?"toca banda inferior":bollRsi?.overbought?"toca banda superior":"dentro de bandas"}
+                              </div>
+                            </div>
+
+                            {/* Volumen en Fibonacci */}
+                            <div style={{padding:"6px 8px",background:volFib?.confirmed?"#ffd70010":"#050c15",border:`1px solid ${volFib?.confirmed?"#ffd70040":"#0f2235"}`,borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>VOL EN FIBONACCI</div>
+                              <div style={{fontSize:"9px",fontWeight:700,color:volFib?.confirmed?"#ffd700":"#7ab0c8"}}>
+                                {volFib?.confirmed?`✓ CONFIRMADO Fib ${volFib?.closestFib}`:`${volFib?.volRatio}x vol promedio`}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468"}}>
+                                {volFib?.confirmed?"Volumen alto en nivel clave":volFib?.distPct<5?`A ${volFib?.distPct}% del nivel Fib`:"Sin confirmación de volumen"}
+                              </div>
+                            </div>
+
+                            {/* Patrón de vela */}
+                            <div style={{padding:"6px 8px",background:candles?.patterns?.length?"#7ab0c810":"#050c15",border:`1px solid ${candles?.patterns?.length?"#7ab0c840":"#0f2235"}`,borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>PATRÓN DE VELA</div>
+                              {candles?.patterns?.length ? candles.patterns.map((p,i)=>(
+                                <div key={i}>
+                                  <div style={{fontSize:"9px",fontWeight:700,color:p.type==="bullish"?"#00ff88":p.type==="bearish"?"#ff3355":"#ffd700"}}>{p.name}</div>
+                                  <div style={{fontSize:"7px",color:"#2e5468"}}>{p.desc}</div>
+                                </div>
+                              )) : (
+                                <>
+                                  <div style={{fontSize:"9px",color:"#7ab0c8"}}>Sin patrón claro</div>
+                                  <div style={{fontSize:"7px",color:"#2e5468"}}>Vela {candles?.isBull?"alcista":"bajista"} normal</div>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Correlación mercado */}
+                            <div style={{padding:"6px 8px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>CORRELACIÓN MERCADO</div>
+                              <div style={{fontSize:"9px",fontWeight:700,color:corr?.type==="alta"?"#ff9040":corr?.type==="inversa"?"#00d4ff":"#7ab0c8"}}>
+                                {corr ? `${corr.corr} (${corr.type})` : "Sin datos SPY"}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468"}}>
+                                {corr?.type==="alta"?"Se mueve con el mercado":corr?.type==="inversa"?"Defensiva — sube cuando cae el mercado":corr?.type==="media"?"Correlación moderada":"Movimiento independiente"}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Señales activas resumen */}
+                          {conf.signals.length > 0 && (
+                            <div style={{padding:"6px 8px",background:"#050c15",borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"4px"}}>SEÑALES ACTIVAS ({conf.signals.length})</div>
+                              <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+                                {conf.signals.map((s,i)=>(
+                                  <span key={i} style={{fontSize:"7px",padding:"2px 6px",background:s.type==="bull"?"#00ff8820":s.type==="bear"?"#ff335520":"#ffd70020",color:s.type==="bull"?"#00ff88":s.type==="bear"?"#ff3355":"#ffd700",borderRadius:"3px",border:`1px solid ${s.type==="bull"?"#00ff8840":s.type==="bear"?"#ff335540":"#ffd70040"}`}}>
+                                    {s.type==="bull"?"▲":s.type==="bear"?"▼":"◆"} {s.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* FIBONACCI */}
                     {(()=>{
