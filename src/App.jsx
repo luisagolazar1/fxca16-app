@@ -3453,6 +3453,93 @@ export default function App() {
                               </div>
                             </div>
                           )}
+
+                          {/* INTERPRETACIÓN AUTOMÁTICA */}
+                          {(()=>{
+                            const fxcaBull = s?.sig?.includes("COMPRA");
+                            const fxcaBear = s?.sig?.includes("VENTA");
+                            const confBull = conf.action.includes("COMPRAR");
+                            const confBear = conf.action.includes("VENDER");
+                            const confWait = conf.action === "ESPERAR";
+                            const incongruencia = (fxcaBull && confBear) || (fxcaBear && confBull);
+                            const alineado = (fxcaBull && confBull) || (fxcaBear && confBear);
+                            const fibPct = (() => {
+                              const d = rowDataRef.current[sel.ticker];
+                              if (!d) return null;
+                              const fib2 = calcFibonacci(d, W);
+                              if (!fib2) return null;
+                              return ((sel.price - fib2.low)/fib2.rng*100).toFixed(0);
+                            })();
+                            const rsiVal = s?.rsi;
+                            const hasDivBear = rsiDiv?.bearish;
+                            const hasDivBull = rsiDiv?.bullish;
+                            const hasCross = cross?.golden || cross?.death;
+
+                            let title = "", color = "", lines = [];
+
+                            if (incongruencia && fxcaBull && confBear) {
+                              title = "⚠️ ALERTA DE AGOTAMIENTO";
+                              color = "#ffd700";
+                              lines = [
+                                `FXCA16 detecta momentum alcista de corto plazo — el precio sube con fuerza.`,
+                                hasDivBear ? `Sin embargo, la Divergencia RSI Bajista indica que el momentum interno se debilita. Cuando el precio hace nuevos máximos pero el RSI no los acompaña, históricamente precede una corrección.` : "",
+                                rsiVal >= 65 ? `El RSI en ${rsiVal} está cerca de zona de sobrecompra (>70). Hay poco margen antes de que el indicador se agote.` : "",
+                                fibPct >= 70 ? `El precio está en el ${fibPct}% del rango Fibonacci — cercano al techo, lejos del piso. El R/R para entrar acá es desfavorable.` : "",
+                                `📌 ACCIÓN SUGERIDA: Si ya tenés posición, subí el stop a la zona de entrada y considerá tomar ganancias parciales en TP1/TP2. Si no tenés posición, esperá un retroceso a Fibonacci 38.2% o 50% para entrar con mejor R/R.`,
+                              ].filter(Boolean);
+                            } else if (incongruencia && fxcaBear && confBull) {
+                              title = "⚠️ POSIBLE REBOTE EN CAÍDA";
+                              color = "#ffd700";
+                              lines = [
+                                `FXCA16 detecta tendencia bajista de corto plazo — el precio cae con presión vendedora.`,
+                                hasDivBull ? `Sin embargo, la Divergencia RSI Alcista sugiere que la caída se está agotando. Cuando el precio hace nuevos mínimos pero el RSI no los acompaña, suele preceder un rebote.` : "",
+                                rsiVal <= 35 ? `El RSI en ${rsiVal} está en zona de sobreventa (<30). El mercado puede estar sobrevendido y listo para recuperar.` : "",
+                                fibPct <= 30 ? `El precio está en el ${fibPct}% del rango Fibonacci — cerca del piso. Los niveles 23.6% y 38.2% suelen actuar como soporte fuerte.` : "",
+                                `📌 ACCIÓN SUGERIDA: No vendas en este punto — la relación riesgo/beneficio es desfavorable. Esperá confirmación del rebote (vela de reversión o volumen creciente) antes de operar.`,
+                              ].filter(Boolean);
+                            } else if (alineado && confBull) {
+                              title = "✅ SEÑAL CONFIRMADA — COMPRA";
+                              color = "#00ff88";
+                              lines = [
+                                `FXCA16 y el análisis de confluencia apuntan en la misma dirección alcista.`,
+                                cross?.golden ? `El Golden Cross (SMA20 cruza SMA50 hacia arriba) confirma el cambio de tendencia a largo plazo. Es una señal de alta confiabilidad.` : "",
+                                bollRsi?.oversold ? `El precio está en zona de sobreventa con RSI bajo y tocando la banda inferior de Bollinger — setup de rebote de alta probabilidad.` : "",
+                                hasDivBull ? `La Divergencia RSI Alcista confirma que la venta se está agotando.` : "",
+                                `📌 ACCIÓN SUGERIDA: Señal alineada. Podés entrar con el sizing normal en el precio de ENTRADA sugerido, stop en el nivel indicado. Objetivo principal TP2.`,
+                              ].filter(Boolean);
+                            } else if (alineado && confBear) {
+                              title = "🔴 SEÑAL CONFIRMADA — VENTA";
+                              color = "#ff3355";
+                              lines = [
+                                `FXCA16 y el análisis de confluencia confirman presión bajista.`,
+                                cross?.death ? `El Death Cross (SMA20 cruza SMA50 hacia abajo) indica cambio de tendencia bajista a largo plazo.` : "",
+                                bollRsi?.overbought ? `El precio está sobrecomprado tocando la banda superior de Bollinger con RSI alto — alta probabilidad de corrección.` : "",
+                                hasDivBear ? `La Divergencia RSI Bajista confirma agotamiento del movimiento alcista.` : "",
+                                `📌 ACCIÓN SUGERIDA: Si tenés posición larga, es momento de considerar reducirla. El sistema no opera en short, pero evitá comprar en este punto.`,
+                              ].filter(Boolean);
+                            } else if (confWait) {
+                              title = "⏳ SEÑAL DÉBIL — ESPERAR";
+                              color = "#ffd700";
+                              lines = [
+                                `Las señales no tienen suficiente confluencia para recomendar una acción clara.`,
+                                `El score de ${conf.score}% indica que hay más ruido que señal en este momento.`,
+                                `📌 ACCIÓN SUGERIDA: Esperá que se definan más señales. Revisá esta acción al cambiar la ventana de días o después de la próxima actualización de datos.`,
+                              ];
+                            } else {
+                              return null;
+                            }
+
+                            return (
+                              <div style={{marginTop:"8px",padding:"10px 12px",background:`${color}08`,border:`1px solid ${color}30`,borderRadius:"6px",borderLeft:`3px solid ${color}`}}>
+                                <div style={{fontSize:"9px",fontWeight:700,color,marginBottom:"8px",letterSpacing:".05em"}}>{title}</div>
+                                {lines.map((l,i)=>(
+                                  <div key={i} style={{fontSize:"8px",color:l.startsWith("📌")?"#ffd700":"#8ab0c8",lineHeight:"1.7",marginBottom:"4px"}}>
+                                    {l}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })()}
