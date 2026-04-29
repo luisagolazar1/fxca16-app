@@ -3171,6 +3171,44 @@ export default function App() {
                             </div>
                           </div>
 
+                          {/* Barra visual de posición */}
+                          {(()=>{
+                            const posPct = ((px - fib.low) / fib.rng * 100).toFixed(1);
+                            return (
+                              <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginBottom:"4px"}}>
+                                  <span>MIN {FP(fib.low,moneda)}</span>
+                                  <span style={{color:"#ffd700",fontWeight:700}}>PRECIO ACTUAL: {posPct}% del rango</span>
+                                  <span>MAX {FP(fib.high,moneda)}</span>
+                                </div>
+                                <div style={{position:"relative",height:"12px",background:"#0c1826",borderRadius:"6px",overflow:"visible"}}>
+                                  {/* Líneas de Fibonacci */}
+                                  {[0.236,0.382,0.5,0.618,0.786].map(f=>(
+                                    <div key={f} style={{position:"absolute",left:`${f*100}%`,top:0,bottom:0,width:"1px",background:"#ffd70030"}}/>
+                                  ))}
+                                  {/* Barra de progreso */}
+                                  <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${posPct}%`,background:`linear-gradient(90deg,#ff3355,#ffd700,#00ff88)`,borderRadius:"6px",opacity:.7}}/>
+                                  {/* Indicador de precio */}
+                                  <div style={{
+                                    position:"absolute",
+                                    left:`${posPct}%`,
+                                    top:"-3px",bottom:"-3px",
+                                    width:"3px",
+                                    background:"#fff",
+                                    borderRadius:"2px",
+                                    transform:"translateX(-50%)",
+                                    boxShadow:"0 0 6px #fff8"
+                                  }}/>
+                                </div>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginTop:"4px"}}>
+                                  {[0,23.6,38.2,50,61.8,78.6,100].map(f=>(
+                                    <span key={f} style={{color: Math.abs(f-posPct)<5?"#ffd700":"#1e4058"}}>{f}%</span>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {/* Tabla de niveles */}
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
                             {/* Retrocesos */}
@@ -3180,19 +3218,25 @@ export default function App() {
                               </div>
                               {fib.levels.map(l => {
                                 const pct = ((l.value - px)/px*100).toFixed(1);
-                                const isCurrent = Math.abs(l.value - px)/px < 0.005;
+                                const distPct = Math.abs(l.value - px)/px;
+                                const isCurrent = distPct < 0.02; // dentro del 2%
+                                const isNearest = l.label === fib.closest?.label;
                                 const isAbove = l.value > px;
                                 return (
                                   <div key={l.label} style={{
-                                    display:"flex",justifyContent:"space-between",
-                                    padding:"3px 5px",marginBottom:"2px",
-                                    background: isCurrent?"#ffd70015":isAbove?"#00ff8808":"#ff335508",
-                                    border: isCurrent?"1px solid #ffd70040":"1px solid transparent",
-                                    borderRadius:"3px",fontSize:"8px"
+                                    display:"flex",justifyContent:"space-between",alignItems:"center",
+                                    padding: isNearest?"5px 8px":"3px 5px",marginBottom:"2px",
+                                    background: isNearest?"#ffd70025":isCurrent?"#ffd70010":isAbove?"#00ff8808":"#ff335508",
+                                    border: isNearest?"2px solid #ffd700":"1px solid transparent",
+                                    borderRadius:"4px",fontSize:"8px",
+                                    boxShadow: isNearest?"0 0 8px #ffd70030":"none",
                                   }}>
-                                    <span style={{color:"#ffd700",fontWeight: isCurrent?700:400}}>{l.label}</span>
-                                    <span style={{color:"#d0ecff"}}>{FP(l.value,moneda)}</span>
-                                    <span style={{color:+pct>=0?"#00ff88":"#ff3355",fontSize:"7px"}}>{+pct>=0?"+":""}{pct}%</span>
+                                    <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                                      {isNearest && <span style={{color:"#ffd700",fontSize:"10px"}}>◀</span>}
+                                      <span style={{color:"#ffd700",fontWeight:isNearest?700:400,fontSize:isNearest?"10px":"8px"}}>{l.label}</span>
+                                    </div>
+                                    <span style={{color:isNearest?"#fff":"#d0ecff",fontWeight:isNearest?700:400}}>{FP(l.value,moneda)}</span>
+                                    <span style={{color:+pct>=0?"#00ff88":"#ff3355",fontSize:"7px",fontWeight:isNearest?700:400}}>{+pct>=0?"+":""}{pct}%</span>
                                   </div>
                                 );
                               })}
