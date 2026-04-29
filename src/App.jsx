@@ -103,7 +103,6 @@ const TICKERS_USA = [
   { ticker:"LLY",   name:"Eli Lilly",          sector:"Salud"       },
   { ticker:"CAH",   name:"Cardinal Health",    sector:"Salud"       },
   // ── CONSUMO ──
-  { ticker:"AMZN",  name:"Amazon",             sector:"Consumo"     },
   { ticker:"WMT",   name:"Walmart",            sector:"Consumo"     },
   { ticker:"KO",    name:"Coca-Cola",          sector:"Consumo"     },
   { ticker:"PEP",   name:"PepsiCo",            sector:"Consumo"     },
@@ -3235,7 +3234,10 @@ export default function App() {
             {tab==="cat"&&(()=>{
               // Obtener todos los sectores únicos
               const allSectors = ["Todos", ...new Set(rows.map(r=>r.sector).filter(Boolean).sort())];
-              const filtered = catSector==="Todos" ? rows : rows.filter(r=>r.sector===catSector);
+              // Deduplicar por ticker (un ticker puede aparecer en múltiples sectores)
+              const seen = new Set();
+              const allRows = rows.filter(r => { if(seen.has(r.ticker)) return false; seen.add(r.ticker); return true; });
+              const filtered = catSector==="Todos" ? allRows : allRows.filter(r=>r.sector===catSector);
               const withSig = filtered.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL");
               const sorted = [...filtered].sort((a,b)=>(b.sig?.final_sc||0)-(a.sig?.final_sc||0));
               return (
