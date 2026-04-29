@@ -1843,6 +1843,9 @@ export default function App() {
   const [editingWL, setEditingWL] = useState(null); // id en edición de nombre
   const [editWLName,setEditWLName]= useState("");
   const [wlInput,   setWlInput]   = useState(""); // add ticker to watchlist
+  const [cmpA,      setCmpA]      = useState(""); // ticker A para comparar
+  const [cmpB,      setCmpB]      = useState(""); // ticker B para comparar
+  const [catSector, setCatSector] = useState("Todos"); // sector activo
 
   const saveWatchlists = (wls) => {
     setWatchlists(wls);
@@ -2732,7 +2735,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Top P80"],["rank","🏆 Ranking"],["det","🔍 Detalle"],["watch","⭐ Seguimiento"],["opt","⚙️ Optimizar"],["sim","💡 Simulador"],["learn","🧠 Aprendizaje"]].map(([k,l])=>
+              {[["opp","🎯 Top P80"],["rank","🏆 Ranking"],["det","🔍 Detalle"],["watch","⭐ Seguimiento"],["cat","📂 Categorías"],["cmp","⚖️ Comparar"],["opt","⚙️ Optimizar"],["sim","💡 Simulador"],["learn","🧠 Aprendizaje"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
@@ -3226,6 +3229,189 @@ export default function App() {
                 )}
               </div>
             )}
+
+
+            {/* ══ TAB: CATEGORÍAS ══ */}
+            {tab==="cat"&&(()=>{
+              // Obtener todos los sectores únicos
+              const allSectors = ["Todos", ...new Set(rows.map(r=>r.sector).filter(Boolean).sort())];
+              const filtered = catSector==="Todos" ? rows : rows.filter(r=>r.sector===catSector);
+              const withSig = filtered.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL");
+              const sorted = [...filtered].sort((a,b)=>(b.sig?.final_sc||0)-(a.sig?.final_sc||0));
+              return (
+                <div className="fade">
+                  {/* Selector de sectores */}
+                  <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"12px"}}>
+                    {allSectors.map(s=>{
+                      const count = s==="Todos" ? rows.length : rows.filter(r=>r.sector===s).length;
+                      const hasSig = s==="Todos"
+                        ? rows.some(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL")
+                        : rows.filter(r=>r.sector===s).some(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL");
+                      return (
+                        <button key={s} className={`btn ${catSector===s?"on":"off"}`}
+                          onClick={()=>setCatSector(s)}
+                          style={{position:"relative",padding:"6px 12px",fontSize:"9px"}}>
+                          {s} <span style={{opacity:.6}}>({count})</span>
+                          {hasSig && s!=="Todos" && <span style={{position:"absolute",top:"-3px",right:"-3px",width:"7px",height:"7px",background:"#00ff88",borderRadius:"50%",display:"block"}}/>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Stats del sector */}
+                  {catSector!=="Todos"&&(
+                    <div style={{display:"flex",gap:"10px",padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",fontSize:"9px",marginBottom:"10px",flexWrap:"wrap"}}>
+                      <span style={{color:"#7ab0c8",fontWeight:700}}>📂 {catSector}</span>
+                      <span style={{color:"#1e4058"}}>|</span>
+                      <span>{filtered.length} acciones</span>
+                      <span style={{color:"#00ff88"}}>▲ {filtered.filter(r=>r.sig?.sig?.includes("COMPRA")).length} compra</span>
+                      <span style={{color:"#ff3355"}}>▼ {filtered.filter(r=>r.sig?.sig?.includes("VENTA")).length} venta</span>
+                      <span style={{color:"#ffd700"}}>⭐ {withSig.length} señales P80</span>
+                    </div>
+                  )}
+
+                  {/* Cards del sector */}
+                  <div className="grid-opp">
+                    {sorted.map(r=>{
+                      const s=r.sig; if(!s) return null;
+                      const g=GR(r.bt.hr);
+                      const hasPulse = s.above_p80 && s.sig!=="NEUTRAL";
+                      return (
+                        <div key={r.ticker} className="card" style={{padding:"11px",cursor:"pointer",
+                          borderLeft:`3px solid ${hasPulse?SC[s.sig]:"#0f2235"}`,
+                          opacity:hasPulse?1:0.6}}
+                          onClick={()=>{setSel(r);setTab("det");}}>
+                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"5px"}}>
+                            <div>
+                              <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:hasPulse?SC[s.sig]:"#7ab0c8"}}>{r.ticker}</span>
+                                <span style={{fontSize:"7px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 4px",borderRadius:"3px"}}>{r.moneda}</span>
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5060"}}>{r.name}</div>
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              {hasPulse
+                                ? <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,fontSize:"8px"}}>{s.sig}</span>
+                                : <span style={{fontSize:"8px",color:"#1e4058"}}>NEUTRAL</span>
+                              }
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:"#d0ecff",marginTop:"2px"}}>{FP(r.price,r.moneda)}</div>
+                            </div>
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px"}}>
+                            {[{l:"SCORE",v:s.final_sc,c:"#00d4ff"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff88":"#ffd700"}].map(m=>
+                              <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
+                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:m.c}}>{m.v}</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ══ TAB: COMPARAR ══ */}
+            {tab==="cmp"&&(()=>{
+              const tickerList = rows.map(r=>r.ticker).sort();
+              const rA = rows.find(r=>r.ticker===cmpA);
+              const rB = rows.find(r=>r.ticker===cmpB);
+
+              const CompareCard = ({r, label}) => {
+                if (!r) return (
+                  <div className="card" style={{padding:"20px",textAlign:"center",flex:1}}>
+                    <div style={{fontSize:"28px",marginBottom:"8px"}}>📊</div>
+                    <div style={{fontSize:"9px",color:"#1e4058"}}>Seleccioná {label}</div>
+                  </div>
+                );
+                const s=r.sig; if(!s) return null;
+                const buy=s.sig.includes("COMPRA");
+                return (
+                  <div className="card" style={{flex:1,padding:"13px",borderTop:`3px solid ${SC[s.sig]}`}}>
+                    <div style={{textAlign:"center",marginBottom:"10px"}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:SC[s.sig]}}>{r.ticker}</div>
+                      <div style={{fontSize:"8px",color:"#2e5060",marginBottom:"4px"}}>{r.name}</div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:"#d0ecff"}}>{FP(r.price,r.moneda)}</div>
+                      <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,marginTop:"4px",display:"inline-block"}}>{s.sig}</span>
+                    </div>
+                    <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
+                    <div style={{marginTop:"10px"}}>
+                      {[
+                        {l:"SCORE",v:s.final_sc,c:"#00d4ff",best:"high"},
+                        {l:"CONF %",v:s.conf,c:SC[s.sig],best:"high"},
+                        {l:"FX",v:s.fx_sc,c:"#00d4ff",best:"high"},
+                        {l:"EVO",v:s.evo_sc,c:"#ff9040",best:"high"},
+                        {l:"R/R",v:s.rr,c:s.rr>=2?"#00ff88":"#ffd700",best:"high"},
+                        {l:"RSI",v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff88":"#ffd700",best:"mid"},
+                        {l:"ROC 10h",v:`${s.roc10>=0?"+":""}${s.roc10}%`,c:s.roc10>1.5?"#00ff88":s.roc10<-1.5?"#ff3355":"#ffd700",best:"high"},
+                        {l:"VOL 24H",v:`${s.vol_24h}x`,c:s.vol_24h>=1.5?"#00ff88":"#ffd700",best:"high"},
+                        {l:"ENTRADA",v:FP(s.entry,r.moneda),c:buy?"#00ff88":"#ff9040",best:null},
+                        {l:"STOP",v:FP(s.sl,r.moneda),c:"#ff3355",best:null},
+                        {l:"TP2",v:FP(s.tp2,r.moneda),c:"#00ff88",best:null},
+                        {l:"TENDENCIA",v:s.trend,c:TC[s.trend],best:null},
+                      ].map(x=>(
+                        <div key={x.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #091520",fontSize:"9px"}}>
+                          <span style={{color:"#2e5060"}}>{x.l}</span>
+                          <span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button className="btn off" style={{marginTop:"8px",width:"100%",fontSize:"8px",color:"#ffd700",borderColor:"#ffd70020"}}
+                      onClick={()=>addToWatchlist(activeWL,r.ticker)}>⭐ Agregar a seguimiento</button>
+                  </div>
+                );
+              };
+
+              return (
+                <div className="fade">
+                  {/* Selectores */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"12px"}}>
+                    {[{val:cmpA,set:setCmpA,label:"Acción A"},{val:cmpB,set:setCmpB,label:"Acción B"}].map(({val,set,label})=>(
+                      <div key={label}>
+                        <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"4px"}}>{label}</div>
+                        <select value={val} onChange={e=>set(e.target.value)}
+                          style={{width:"100%",background:"#07101a",color:"#00d4ff",border:"1px solid #0f2235",borderRadius:"4px",padding:"6px 8px",fontSize:"10px",outline:"none"}}>
+                          <option value="">— Seleccioná —</option>
+                          {tickerList.map(t=>(
+                            <option key={t} value={t}>{t} — {rows.find(r=>r.ticker===t)?.name||""}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Comparación side by side */}
+                  {(cmpA||cmpB) ? (
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+                      <CompareCard r={rA} label="Acción A"/>
+                      <CompareCard r={rB} label="Acción B"/>
+                    </div>
+                  ) : (
+                    <div style={{textAlign:"center",padding:"40px",color:"#1a3848"}}>
+                      <div style={{fontSize:"32px",marginBottom:"8px"}}>⚖️</div>
+                      <div style={{fontSize:"11px"}}>Seleccioná dos acciones para comparar</div>
+                    </div>
+                  )}
+
+                  {/* Ganador si hay ambos */}
+                  {rA&&rB&&(()=>{
+                    const sA=rA.sig, sB=rB.sig;
+                    if(!sA||!sB) return null;
+                    const winner = sA.final_sc > sB.final_sc ? rA : rB;
+                    const diff = Math.abs((sA.final_sc||0)-(sB.final_sc||0));
+                    return (
+                      <div style={{marginTop:"12px",padding:"12px",background:"#07101a",border:`1px solid ${SC[winner.sig?.sig]||"#0f2235"}40`,borderRadius:"6px",textAlign:"center"}}>
+                        <div style={{fontSize:"9px",color:"#1e4058",marginBottom:"4px"}}>MEJOR SEÑAL</div>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"28px",color:SC[winner.sig?.sig]}}>{winner.ticker}</div>
+                        <div style={{fontSize:"9px",color:"#7ab0c8"}}>Score {Math.max(sA.final_sc,sB.final_sc)} vs {Math.min(sA.final_sc,sB.final_sc)} (+{diff} pts)</div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
 
             {/* OPTIMIZADOR */}
             {tab==="opt"&&(
