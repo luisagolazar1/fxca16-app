@@ -4368,46 +4368,225 @@ export default function App() {
               const rA = rows.find(r=>r.ticker===cmpA);
               const rB = rows.find(r=>r.ticker===cmpB);
 
-              const CompareCard = ({r, label}) => {
-                if (!r) return (
-                  <div className="card" style={{padding:"20px",textAlign:"center",flex:1}}>
-                    <div style={{fontSize:"28px",marginBottom:"8px"}}>📊</div>
-                    <div style={{fontSize:"9px",color:"#4a7a9b"}}>Seleccioná {label}</div>
+              // Calcular análisis completo para un ticker
+              const calcFull = (r) => {
+                if (!r) return null;
+                const data    = rowDataRef.current[r.ticker];
+                const s       = r.sig;
+                const moneda  = r.moneda||"USD";
+                const px      = r.price||0;
+                if (!data||!s) return null;
+                const fib_    = calcFibonacci(data, W);
+                const rsiDiv_ = detectRSIDivergence(data);
+                const volFib_ = checkVolumeAtFib(data, fib_?.levels);
+                const cross_  = detectCross(data);
+                const boll_   = detectBollingerRSISetup(data);
+                const cand_   = detectCandlePattern(data);
+                const conf_   = calcConfluence(s, rsiDiv_, volFib_, cross_, boll_, cand_, null);
+                const mtf_    = calcMultiTimeframe(data, W);
+                const reg_    = detectTickerRegime(data);
+                const atrB_   = calcATRBands(data);
+                const vp_     = calcVolumeProfile(data);
+                const wf_     = backtestWalkForward(data, W);
+                const sq_     = calcSignalQuality(data, s, W);
+                const events_ = getUpcomingEvents(r.ticker, moneda);
+                const ps_     = calcPositionSizing(s, conf_, 1000000);
+                const fxScore    = s?.final_sc||0;
+                const fxcaConf   = s?.conf||0;
+                const fxBull     = s?.sig?.includes("COMPRA");
+                const fxBear     = s?.sig?.includes("VENTA");
+                const fxColor    = fxBull?"#00ff88":fxBear?"#ff3355":"#ffd700";
+                const fxRating   = fxScore>=75?3:fxScore>=55?2:fxScore>=40?1:0;
+                const confScore  = conf_?.score||0;
+                const confDir    = conf_?.action?.includes("COMPRAR")?"bull":conf_?.action?.includes("VENDER")?"bear":"neutral";
+                const confColor  = confDir==="bull"?"#00ff88":confDir==="bear"?"#ff3355":"#ffd700";
+                const confRating = confScore>=70?3:confScore>=50?2:confScore>=35?1:0;
+                const mtfBull    = mtf_?.filter(f=>f.dir==="bull").length||0;
+                const mtfBear    = mtf_?.filter(f=>f.dir==="bear").length||0;
+                const mtfAlign   = Math.max(mtfBull,mtfBear);
+                const regPhase   = reg_?.phase||"";
+                const regBull    = ["Markup","Acumulación","Recuperación"].includes(regPhase);
+                const regBear    = ["Markdown","Distribución"].includes(regPhase);
+                const estScore   = mtfAlign*25+(regBull?20:regBear?0:10)+(atrB_?.breakoutUp?15:0);
+                const estRating  = estScore>=70?3:estScore>=45?2:estScore>=20?1:0;
+                const estColor   = regBull&&mtfAlign>=2?"#00ff88":regBear||mtfAlign<=1?"#ff3355":"#ffd700";
+                const hasRisk_   = events_.some(e=>e.type==="earnings"&&e.daysLeft<=5);
+                const wfOk       = wf_&&wf_.hr>=52&&wf_.consistency>=50;
+                const sqOk       = sq_&&sq_.hr>=55;
+                const optRating  = (wfOk?1:0)+(sqOk?1:0)+(!hasRisk_?1:0);
+                const optColor   = optRating>=3?"#00ff88":optRating>=2?"#ffd700":"#ff3355";
+                const totalRating= fxRating+confRating+estRating+optRating;
+                const globalPct  = Math.round(totalRating/12*100);
+                const incongruencia = (fxBull&&confDir==="bear")||(fxBear&&confDir==="bull");
+                const alineado   = (fxBull&&confDir==="bull")||(fxBear&&confDir==="bear");
+                let veredicto, veredictoColor;
+                if(incongruencia&&fxBull){veredicto="ALERTA";veredictoColor="#ffd700";}
+                else if(incongruencia&&fxBear){veredicto="REBOTE";veredictoColor="#ffd700";}
+                else if(alineado&&fxBull&&globalPct>=65){veredicto="COMPRAR";veredictoColor="#00ff88";}
+                else if(alineado&&fxBull&&globalPct>=45){veredicto="MODERAR";veredictoColor="#7ab0c8";}
+                else if(alineado&&fxBear&&globalPct>=55){veredicto="EVITAR";veredictoColor="#ff3355";}
+                else{veredicto="ESPERAR";veredictoColor="#ffd700";}
+                return { s, moneda, px, fxScore, fxcaConf, fxBull, fxBear, fxColor, fxRating,
+                  conf_, confScore, confDir, confColor, confRating,
+                  mtf_, reg_, atrB_, vp_, mtfAlign, regPhase, estColor, estRating,
+                  wf_, sq_, events_, ps_, hasRisk_, optRating, optColor,
+                  totalRating, globalPct, veredicto, veredictoColor,
+                  rsiDiv_, cross_, boll_, cand_, volFib_ };
+              };
+
+              const fA = calcFull(rA);
+              const fB = calcFull(rB);
+
+              const CmpCol = ({r, f, label}) => {
+                if (!r||!f) return (
+                  <div style={{textAlign:"center",padding:"30px 10px",color:"#4a7a9b",background:"#07101a",borderRadius:"6px"}}>
+                    <div style={{fontSize:"24px",marginBottom:"6px"}}>📊</div>
+                    <div style={{fontSize:"9px"}}>Seleccioná {label}</div>
                   </div>
                 );
-                const s=r.sig; if(!s) return null;
-                const buy=s.sig.includes("COMPRA");
+                const {s,moneda,fxScore,fxcaConf,fxColor,fxRating,confScore,confColor,confRating,
+                  estColor,estRating,optColor,optRating,globalPct,veredicto,veredictoColor,
+                  mtf_,reg_,atrB_,vp_,mtfAlign,wf_,sq_,hasRisk_,events_,ps_,
+                  rsiDiv_,cross_,boll_,cand_,volFib_,conf_} = f;
                 return (
-                  <div className="card" style={{flex:1,padding:"13px",borderTop:`3px solid ${SC[s.sig]}`}}>
-                    <div style={{textAlign:"center",marginBottom:"10px"}}>
-                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:SC[s.sig]}}>{r.ticker}</div>
-                      <div style={{fontSize:"8px",color:"#5a8fa8",marginBottom:"4px"}}>{r.name}</div>
-                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:"#e8f4ff"}}>{FP(r.price,r.moneda)}</div>
-                      <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,marginTop:"4px",display:"inline-block"}}>{s.sig}</span>
+                  <div style={{background:"#07101a",borderRadius:"6px",padding:"12px",border:`2px solid ${veredictoColor}40`}}>
+                    {/* Header */}
+                    <div style={{textAlign:"center",marginBottom:"10px",paddingBottom:"8px",borderBottom:"1px solid #0f2235"}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"28px",color:SC[s.sig]||"#e8f4ff"}}>{r.ticker}</div>
+                      <div style={{fontSize:"8px",color:"#5a8fa8",marginBottom:"3px"}}>{r.name}</div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:"#e8f4ff"}}>{FP(r.price,moneda)}</div>
+                      <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,margin:"4px 0",display:"inline-block"}}>{s.sig}</span>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:veredictoColor,marginTop:"4px"}}>{veredicto}</div>
+                      <div style={{height:"5px",background:"#0c1826",borderRadius:"3px",overflow:"hidden",marginTop:"4px"}}>
+                        <div style={{height:"100%",width:`${globalPct}%`,background:`linear-gradient(90deg,#ff3355,#ffd700 40%,#00ff88)`,borderRadius:"3px"}}/>
+                      </div>
+                      <div style={{fontSize:"7px",color:veredictoColor,marginTop:"2px",fontWeight:700}}>{globalPct}% score global</div>
                     </div>
-                    <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
-                    <div style={{marginTop:"10px"}}>
-                      {[
-                        {l:"SCORE",v:s.final_sc,c:"#00d4ff",best:"high"},
-                        {l:"CONF %",v:s.conf,c:SC[s.sig],best:"high"},
-                        {l:"FX",v:s.fx_sc,c:"#00d4ff",best:"high"},
-                        {l:"EVO",v:s.evo_sc,c:"#ff9040",best:"high"},
-                        {l:"R/R",v:s.rr,c:s.rr>=2?"#00ff88":"#ffd700",best:"high"},
-                        {l:"RSI",v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff88":"#ffd700",best:"mid"},
-                        {l:"ROC 10h",v:`${s.roc10>=0?"+":""}${s.roc10}%`,c:s.roc10>1.5?"#00ff88":s.roc10<-1.5?"#ff3355":"#ffd700",best:"high"},
-                        {l:"VOL 24H",v:`${s.vol_24h}x`,c:s.vol_24h>=1.5?"#00ff88":"#ffd700",best:"high"},
-                        {l:"ENTRADA",v:FP(s.entry,r.moneda),c:buy?"#00ff88":"#ff9040",best:null},
-                        {l:"STOP",v:FP(s.sl,r.moneda),c:"#ff3355",best:null},
-                        {l:"TP2",v:FP(s.tp2,r.moneda),c:"#00ff88",best:null},
-                        {l:"TENDENCIA",v:s.trend,c:TC[s.trend],best:null},
-                      ].map(x=>(
-                        <div key={x.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #091520",fontSize:"9px"}}>
-                          <span style={{color:"#5a8fa8"}}>{x.l}</span>
-                          <span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+
+                    {/* ① FXCA16 */}
+                    <div style={{marginBottom:"8px",padding:"7px",background:"#050c15",borderRadius:"4px",border:`1px solid ${fxColor}20`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+                        <span style={{fontSize:"7px",color:"#4a7a9b"}}>① FXCA16</span>
+                        <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"7px",height:"7px",borderRadius:"2px",background:i<fxRating?fxColor:"#0c1826"}}/>)}</div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"2px",marginBottom:"4px"}}>
+                        {[{l:"CONF",v:`${fxcaConf}%`,c:fxcaConf>=80?"#00ff88":"#ffd700"},{l:"FX",v:s?.fx_sc||0,c:"#00d4ff"},{l:"EVO",v:s?.evo_sc||0,c:"#ff9040"},
+                          {l:"RSI",v:s?.rsi||"—",c:s?.rsi>70?"#ff3355":s?.rsi<30?"#00ff88":"#ffd700"},{l:"R/R",v:`${s?.rr||0}x`,c:s?.rr>=2?"#00ff88":"#ffd700"},{l:"ROC",v:`${s?.roc10>=0?"+":""}${s?.roc10||0}%`,c:s?.roc10>=0?"#00ff88":"#ff3355"},
+                        ].map(x=>(
+                          <div key={x.l} style={{textAlign:"center",padding:"2px",background:"#07101a",borderRadius:"2px"}}>
+                            <div style={{fontSize:"5px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:x.c}}>{x.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {[{l:"Tendencia",v:s?.trend||"—",c:TC?.[s?.trend]||"#ffd700"},{l:"Vol 24h",v:`${s?.vol_24h||0}x`,c:s?.vol_24h>=1.3?"#00ff88":"#a0cce0"},{l:"EVO Prob",v:s?.evo_prob||0,c:s?.evo_prob>=0.6?"#ff9040":"#a0cce0"}].map(x=>(
+                        <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px",marginBottom:"1px"}}>
+                          <span style={{color:"#4a7a9b"}}>{x.l}</span><span style={{color:x.c,fontWeight:600}}>{x.v}</span>
                         </div>
                       ))}
                     </div>
-                    <button className="btn off" style={{marginTop:"8px",width:"100%",fontSize:"8px",color:"#ffd700",borderColor:"#ffd70020"}}
+
+                    {/* ② CONFLUENCIA */}
+                    <div style={{marginBottom:"8px",padding:"7px",background:"#050c15",borderRadius:"4px",border:`1px solid ${confColor}20`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+                        <span style={{fontSize:"7px",color:"#4a7a9b"}}>② CONFLUENCIA</span>
+                        <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"7px",height:"7px",borderRadius:"2px",background:i<confRating?confColor:"#0c1826"}}/>)}</div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"2px",marginBottom:"4px"}}>
+                        {[{l:"SCORE",v:`${confScore}%`,c:confColor},{l:"▲ BULL",v:conf_?.bull||0,c:"#00ff88"},{l:"▼ BEAR",v:conf_?.bear||0,c:"#ff3355"}].map(x=>(
+                          <div key={x.l} style={{textAlign:"center",padding:"2px",background:"#07101a",borderRadius:"2px"}}>
+                            <div style={{fontSize:"5px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:x.c}}>{x.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {[
+                        {l:"RSI Div",v:rsiDiv_?.bullish?"▲ Alcista":rsiDiv_?.bearish?"▼ Bajista":"Sin señal",c:rsiDiv_?.bullish?"#00ff88":rsiDiv_?.bearish?"#ff3355":"#5a8fa8"},
+                        {l:"Medias",v:cross_?.golden?"⭐ Golden":cross_?.death?"💀 Death":cross_?.gap>=0?"SMA20>50":"SMA20<50",c:cross_?.golden?"#00ff88":cross_?.death?"#ff3355":"#a0cce0"},
+                        {l:"BB+RSI",v:boll_?.oversold?"▲ Sobreventa":boll_?.overbought?"▼ Sobrecompra":"Neutral",c:boll_?.oversold?"#00ff88":boll_?.overbought?"#ff3355":"#5a8fa8"},
+                        {l:"Vela",v:cand_?.patterns?.length?cand_.patterns[0].name:"Sin patrón",c:cand_?.patterns?.[0]?.type==="bullish"?"#00ff88":cand_?.patterns?.[0]?.type==="bearish"?"#ff3355":"#5a8fa8"},
+                      ].map(x=>(
+                        <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px",marginBottom:"1px"}}>
+                          <span style={{color:"#4a7a9b"}}>{x.l}</span><span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ③ ESTRUCTURAL */}
+                    <div style={{marginBottom:"8px",padding:"7px",background:"#050c15",borderRadius:"4px",border:`1px solid ${estColor}20`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+                        <span style={{fontSize:"7px",color:"#4a7a9b"}}>③ ESTRUCTURAL</span>
+                        <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"7px",height:"7px",borderRadius:"2px",background:i<estRating?estColor:"#0c1826"}}/>)}</div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"2px",marginBottom:"4px"}}>
+                        {[
+                          {l:"7D",v:mtf_?.[0]?.dir==="bull"?"▲":mtf_?.[0]?.dir==="bear"?"▼":"◆",c:mtf_?.[0]?.dir==="bull"?"#00ff88":mtf_?.[0]?.dir==="bear"?"#ff3355":"#ffd700"},
+                          {l:"30D",v:mtf_?.[1]?.dir==="bull"?"▲":mtf_?.[1]?.dir==="bear"?"▼":"◆",c:mtf_?.[1]?.dir==="bull"?"#00ff88":mtf_?.[1]?.dir==="bear"?"#ff3355":"#ffd700"},
+                          {l:"60D",v:mtf_?.[2]?.dir==="bull"?"▲":mtf_?.[2]?.dir==="bear"?"▼":"◆",c:mtf_?.[2]?.dir==="bull"?"#00ff88":mtf_?.[2]?.dir==="bear"?"#ff3355":"#ffd700"},
+                        ].map(x=>(
+                          <div key={x.l} style={{textAlign:"center",padding:"2px",background:"#07101a",borderRadius:"2px"}}>
+                            <div style={{fontSize:"5px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {[
+                        {l:"Weinstein",v:reg_?.phase||"—",c:reg_?.color||"#a0cce0"},
+                        {l:"ATR",v:atrB_?.breakoutUp?"✓ Breakout":atrB_?.falseBreakUp?"⚠ Falso":"Normal",c:atrB_?.breakoutUp?"#00ff88":atrB_?.falseBreakUp?"#ffd700":"#5a8fa8"},
+                        {l:"POC",v:vp_?`${FP(vp_.poc,moneda)} (${vp_.pctFromPoc>=0?"+":""}${vp_.pctFromPoc}%)`:"—",c:Math.abs(vp_?.pctFromPoc||99)<3?"#ffd700":"#a0cce0"},
+                        {l:"Volumen",v:reg_?.volExpanding?"▲ Expand":reg_?.volContracting?"▼ Contrae":"Estable",c:reg_?.volExpanding?"#00ff88":reg_?.volContracting?"#ff3355":"#ffd700"},
+                      ].map(x=>(
+                        <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px",marginBottom:"1px"}}>
+                          <span style={{color:"#4a7a9b"}}>{x.l}</span><span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ④ OPTIMIZACIÓN */}
+                    <div style={{marginBottom:"8px",padding:"7px",background:"#050c15",borderRadius:"4px",border:`1px solid ${optColor}20`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+                        <span style={{fontSize:"7px",color:"#4a7a9b"}}>④ OPTIMIZACIÓN</span>
+                        <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"7px",height:"7px",borderRadius:"2px",background:i<optRating?optColor:"#0c1826"}}/>)}</div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"2px",marginBottom:"4px"}}>
+                        {[
+                          {l:"WF WIN%",v:wf_?`${wf_.hr}%`:"—",c:wf_&&wf_.hr>=55?"#00ff88":wf_&&wf_.hr>=45?"#ffd700":"#ff3355"},
+                          {l:"HIST WIN%",v:sq_&&sq_.total>=3?`${sq_.hr}%`:"—",c:sq_&&sq_.hr>=60?"#00ff88":sq_&&sq_.hr>=45?"#ffd700":"#ff3355"},
+                          {l:"RET HIST",v:sq_&&sq_.total>=3?`${sq_.avgRet>=0?"+":""}${sq_.avgRet}%`:"—",c:sq_&&sq_.avgRet>0?"#00ff88":"#ff3355"},
+                        ].map(x=>(
+                          <div key={x.l} style={{textAlign:"center",padding:"2px",background:"#07101a",borderRadius:"2px"}}>
+                            <div style={{fontSize:"5px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:x.c}}>{x.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {[
+                        {l:"Consist. WF",v:wf_?`${wf_.consistency}%`:"—",c:wf_&&wf_.consistency>=60?"#00ff88":"#ffd700"},
+                        {l:"Máx suba hist",v:sq_&&sq_.total>=3?`+${sq_.avgMaxRet}%`:"—",c:"#00ff88"},
+                        {l:"Máx baja hist",v:sq_&&sq_.total>=3?`${sq_.avgMaxDD}%`:"—",c:"#ff3355"},
+                        {l:"Eventos",v:hasRisk_?`⚠ Earnings ${events_.find(e=>e.type==="earnings")?.daysLeft}d`:events_.length?events_[0].name:"Sin eventos",c:hasRisk_?"#ff3355":events_.length?"#ffd700":"#00ff88"},
+                      ].map(x=>(
+                        <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px",marginBottom:"1px"}}>
+                          <span style={{color:"#4a7a9b"}}>{x.l}</span><span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Niveles y sizing */}
+                    <div style={{padding:"7px",background:"#050c15",borderRadius:"4px"}}>
+                      {[
+                        {l:"ENTRADA",v:FP(s?.entry,moneda),c:"#00d4ff"},
+                        {l:"STOP",v:FP(s?.sl,moneda),c:"#ff3355"},
+                        {l:"TP1",v:FP(s?.tp1,moneda),c:"#7ab0c8"},
+                        {l:"TP2",v:FP(s?.tp2,moneda),c:"#00ff88"},
+                        {l:"SIZING",v:ps_?ps_.level:"—",c:ps_?.levelColor||"#ffd700"},
+                      ].map(x=>(
+                        <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px",marginBottom:"2px"}}>
+                          <span style={{color:"#4a7a9b"}}>{x.l}</span><span style={{color:x.c,fontWeight:700}}>{x.v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button className="btn off" style={{marginTop:"6px",width:"100%",fontSize:"8px",color:"#ffd700",borderColor:"#ffd70020"}}
                       onClick={()=>addToWatchlist(activeWL,r.ticker)}>⭐ Agregar a seguimiento</button>
                   </div>
                 );
@@ -4421,7 +4600,7 @@ export default function App() {
                       <div key={label}>
                         <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"4px"}}>{label}</div>
                         <select value={val} onChange={e=>set(e.target.value)}
-                          style={{width:"100%",background:"#07101a",color:"#00d4ff",border:"1px solid #0f2235",borderRadius:"4px",padding:"6px 8px",fontSize:"10px",outline:"none"}}>
+                          style={{width:"100%",background:"#07101a",color:"#00d4ff",border:"1px solid #1e3a50",borderRadius:"4px",padding:"6px 8px",fontSize:"10px",outline:"none"}}>
                           <option value="">— Seleccioná —</option>
                           {tickerList.map(t=>(
                             <option key={t} value={t}>{t} — {rows.find(r=>r.ticker===t)?.name||""}</option>
@@ -4431,11 +4610,10 @@ export default function App() {
                     ))}
                   </div>
 
-                  {/* Comparación side by side */}
                   {(cmpA||cmpB) ? (
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
-                      <CompareCard r={rA} label="Acción A"/>
-                      <CompareCard r={rB} label="Acción B"/>
+                      <CmpCol r={rA} f={fA} label="Acción A"/>
+                      <CmpCol r={rB} f={fB} label="Acción B"/>
                     </div>
                   ) : (
                     <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b"}}>
@@ -4444,20 +4622,23 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Ganador si hay ambos */}
-                  {rA&&rB&&(()=>{
-                    const sA=rA.sig, sB=rB.sig;
-                    if(!sA||!sB) return null;
-                    const winner = sA.final_sc > sB.final_sc ? rA : rB;
-                    const diff = Math.abs((sA.final_sc||0)-(sB.final_sc||0));
-                    return (
-                      <div style={{marginTop:"12px",padding:"12px",background:"#07101a",border:`1px solid ${SC[winner.sig?.sig]||"#1e3a50"}40`,borderRadius:"6px",textAlign:"center"}}>
-                        <div style={{fontSize:"9px",color:"#4a7a9b",marginBottom:"4px"}}>MEJOR SEÑAL</div>
-                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"28px",color:SC[winner.sig?.sig]}}>{winner.ticker}</div>
-                        <div style={{fontSize:"9px",color:"#a0cce0"}}>Score {Math.max(sA.final_sc,sB.final_sc)} vs {Math.min(sA.final_sc,sB.final_sc)} (+{diff} pts)</div>
+                  {/* Ganador */}
+                  {fA&&fB&&(
+                    <div style={{marginTop:"12px",padding:"12px",background:"#07101a",borderRadius:"6px",border:`1px solid ${fA.globalPct>fB.globalPct?fA.veredictoColor:fB.veredictoColor}40`,textAlign:"center"}}>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"4px"}}>MEJOR OPORTUNIDAD</div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"26px",color:fA.globalPct>fB.globalPct?fA.veredictoColor:fB.veredictoColor}}>
+                        {fA.globalPct>fB.globalPct?cmpA:fB.globalPct>fA.globalPct?cmpB:"EMPATE"}
                       </div>
-                    );
-                  })()}
+                      <div style={{fontSize:"8px",color:"#a0cce0",marginTop:"2px"}}>
+                        Score {fA.globalPct}% vs {fB.globalPct}% · Diferencia {Math.abs(fA.globalPct-fB.globalPct)} pts
+                      </div>
+                      {fA.globalPct!==fB.globalPct&&(
+                        <div style={{fontSize:"8px",color:"#ffd700",marginTop:"4px"}}>
+                          📌 {fA.globalPct>fB.globalPct?cmpA:cmpB} tiene mejor veredicto ({fA.globalPct>fB.globalPct?fA.veredicto:fB.veredicto}) y mayor score global.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })()}
