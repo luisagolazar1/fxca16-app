@@ -1425,7 +1425,7 @@ function calcSignalQuality(data, sig, W=7) {
     const win     = isBuy ? ret > 0 : ret < 0;
     similar.push({ ret:+(ret*100).toFixed(2), maxRet:+(maxRet*100).toFixed(2), maxDD:+(maxDD*100).toFixed(2), win });
   }
-  if (similar.length < 3) return { similar: [], hr:0, avgRet:0, avgMaxRet:0, avgMaxDD:0, quality:"INSUFICIENTE", qualityColor:"#1e4058" };
+  if (similar.length < 3) return { similar: [], hr:0, avgRet:0, avgMaxRet:0, avgMaxDD:0, quality:"INSUFICIENTE", qualityColor:"#4a7a9b" };
   const wins    = similar.filter(s=>s.win).length;
   const hr      = +(wins/similar.length*100).toFixed(1);
   const avgRet  = +(similar.reduce((a,s)=>a+s.ret,0)/similar.length).toFixed(2);
@@ -1433,7 +1433,7 @@ function calcSignalQuality(data, sig, W=7) {
   const avgMaxDD  = +(similar.reduce((a,s)=>a+s.maxDD,0)/similar.length).toFixed(2);
   let quality, qualityColor;
   if (hr >= 65 && avgRet > 1.5)      { quality="ALTA";        qualityColor="#00ff88"; }
-  else if (hr >= 55 && avgRet > 0.5) { quality="MEDIA-ALTA";  qualityColor="#7ab0c8"; }
+  else if (hr >= 55 && avgRet > 0.5) { quality="MEDIA-ALTA";  qualityColor="#a0cce0"; }
   else if (hr >= 45)                  { quality="MEDIA";        qualityColor="#ffd700"; }
   else                                { quality="BAJA";          qualityColor="#ff3355"; }
   return { similar: similar.slice(-10), total:similar.length, wins, hr, avgRet, avgMaxRet, avgMaxDD, quality, qualityColor };
@@ -1504,7 +1504,7 @@ function calcPositionSizing(sig, conf, capital=1000000) {
   // Nivel de sizing
   let level, levelColor;
   if (finalRisk >= 0.018)      { level="SIZING COMPLETO (++)", levelColor="#00ff88"; }
-  else if (finalRisk >= 0.012) { level="SIZING ALTO (+)",      levelColor="#7ab0c8"; }
+  else if (finalRisk >= 0.012) { level="SIZING ALTO (+)",      levelColor="#a0cce0"; }
   else if (finalRisk >= 0.008) { level="SIZING NORMAL",        levelColor="#ffd700"; }
   else if (finalRisk >= 0.005) { level="SIZING REDUCIDO (-)",  levelColor="#ff9040"; }
   else                          { level="SIZING MÍNIMO (--)",   levelColor="#ff3355"; }
@@ -1650,7 +1650,7 @@ function detectTickerRegime(data) {
   const volExpanding = volRecent > volPrev * 1.1;
   const volContracting = volRecent < volPrev * 0.9;
 
-  let phase = "neutral", desc = "", action = "", color = "#7ab0c8";
+  let phase = "neutral", desc = "", action = "", color = "#a0cce0";
 
   if (slopeFlat && px > sma150 && volExpanding) {
     phase = "Acumulación"; color = "#00d4ff";
@@ -2300,7 +2300,7 @@ function Curve({curve,w=80,h=32}) {
 function ScoreBar({fx, evo, final_sc}) {
   return (
     <div style={{marginTop:"6px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:"8px",color:"#2e5468",marginBottom:"3px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"8px",color:"#5a8fa8",marginBottom:"3px"}}>
         <span>FX <span style={{color:"#00d4ff"}}>{fx}</span></span>
         <span>EVO <span style={{color:"#ff9040"}}>{evo}</span></span>
         <span>COMBINADO <span style={{color:"#00ff9d"}}>{final_sc}</span></span>
@@ -2355,9 +2355,9 @@ function CsvLoader({ onLoad, csvStatus, onClear, embeddedDate }) {
 
   return (
     <div style={{marginBottom:"20px",padding:"14px 16px",background:"#07101a",border:"1px solid #0f2235",borderRadius:"6px",maxWidth:"480px",margin:"0 auto 20px"}}>
-      <div style={{fontSize:"9px",color:"#1e4058",letterSpacing:".12em",marginBottom:"8px"}}>📋 CARGAR CSV (OPCIONAL)</div>
+      <div style={{fontSize:"9px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"8px"}}>📋 CARGAR CSV (OPCIONAL)</div>
       <div style={{fontSize:"9px",color:"#2e5068",marginBottom:"10px",lineHeight:"1.8",background:"#050c15",padding:"8px",borderRadius:"4px"}}>
-        <strong style={{color:"#7ab0c8"}}>Cómo cargar:</strong><br/>
+        <strong style={{color:"#a0cce0"}}>Cómo cargar:</strong><br/>
         1. Abrí el CSV en Notepad / VS Code<br/>
         2. <kbd style={{background:"#0c1826",padding:"1px 5px",borderRadius:"2px",color:"#00d4ff"}}>Ctrl+A</kbd> → <kbd style={{background:"#0c1826",padding:"1px 5px",borderRadius:"2px",color:"#00d4ff"}}>Ctrl+C</kbd><br/>
         3. Tocá abajo y pegá → <strong style={{color:"#00ff9d"}}>⚙️ PROCESAR</strong>
@@ -2367,8 +2367,8 @@ function CsvLoader({ onLoad, csvStatus, onClear, embeddedDate }) {
         onChange={e=>{setCsvText(e.target.value);setMsg("");}}
         placeholder="Pegá el contenido del CSV acá (Ctrl+V / mantené presionado en móvil)..."
         rows={4}
-        style={{width:"100%",boxSizing:"border-box",background:"#020508",color:"#7ab0c8",
-          border:`1px solid ${csvText?"#00d4ff60":"#0f2235"}`,borderRadius:"4px",
+        style={{width:"100%",boxSizing:"border-box",background:"#020508",color:"#a0cce0",
+          border:`1px solid ${csvText?"#00d4ff60":"#1e3a50"}`,borderRadius:"4px",
           padding:"8px",fontSize:"8px",fontFamily:"monospace",resize:"vertical",outline:"none"}}
       />
       {csvText.trim()&&<div style={{fontSize:"8px",color:"#2e5068",marginTop:"3px"}}>{csvText.trim().split("\n").length.toLocaleString()} líneas</div>}
@@ -2381,7 +2381,7 @@ function CsvLoader({ onLoad, csvStatus, onClear, embeddedDate }) {
       >
         {loading?"⏳ Procesando...":"⚙️ PROCESAR CSV"}
       </button>
-      <div style={{marginTop:"8px",fontSize:"8px",color:"#142030",textAlign:"center"}}>
+      <div style={{marginTop:"8px",fontSize:"8px",color:"#4a7a9b",textAlign:"center"}}>
         Sin CSV → usa datos USA embebidos hasta {embeddedDate}
       </div>
     </div>
@@ -2515,7 +2515,7 @@ export default function App() {
     return maxDate ? `${maxDate} ${String(maxHour).padStart(2,"0")}:00hs` : "";
   }, []);
 
-  const LC={sys:"#00d4ff",ok:"#00ff9d",warn:"#ffd700",err:"#ff3355",info:"#7ab0c8",dim:"#2e5468"};
+  const LC={sys:"#00d4ff",ok:"#00ff9d",warn:"#ffd700",err:"#ff3355",info:"#a0cce0",dim:"#5a8fa8"};
   const lg=useCallback((msg,type="info")=>{
     const t=new Date().toLocaleTimeString("es-AR");
     setLogs(p=>[...p.slice(-250),{msg,type,t}]);
@@ -3208,7 +3208,7 @@ export default function App() {
   `;
 
   return (
-    <div style={{fontFamily:"'Space Mono',monospace",background:"#03070e",minHeight:"100vh",color:"#8ab0c8",position:"relative"}}>
+    <div style={{fontFamily:"'Space Mono',monospace",background:"#03070e",minHeight:"100vh",color:"#b0d4e8",position:"relative"}}>
       <div className="grid-bg"/>
       <style>{CSS}</style>
 
@@ -3221,10 +3221,10 @@ export default function App() {
               <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:"#e0f4ff",letterSpacing:".14em",lineHeight:1}}>
                 FXCA16
               </div>
-              <div style={{fontSize:"8px",color:"#1a3a50",letterSpacing:".12em"}}>MERVAL · SISTEMA COMBINADO · P80 THRESHOLD</div>
+              <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>MERVAL · SISTEMA COMBINADO · P80 THRESHOLD</div>
             </div>
           </div>
-          <div style={{display:"flex",gap:"14px",fontSize:"9px",color:"#1e4058",alignItems:"center"}}>
+          <div style={{display:"flex",gap:"14px",fontSize:"9px",color:"#4a7a9b",alignItems:"center"}}>
             {fase==="load"&&<span style={{color:"#ffd700",fontFamily:"'Bebas Neue'",fontSize:"20px",letterSpacing:".05em"}}>🔍 {secs}s</span>}
             {fase==="done"&&secs>0&&<span style={{fontSize:"9px",color:"#ffd700"}}>📡 actualizando {secs}s<span className="blink">…</span></span>}
             <span style={{background:mkt==="USA"?"#1a6eff18":mkt==="MERVAL"?"#ffe04018":"rgba(184,200,216,0.08)",color:mkt==="USA"?"#3d8bff":mkt==="MERVAL"?"#ffe040":"#b8c8d8",border:`1px solid ${mkt==="USA"?"#1a6eff40":mkt==="MERVAL"?"#ffe04040":"rgba(184,200,216,0.25)"}`,padding:"2px 9px",borderRadius:"3px",fontSize:"9px",fontWeight:700}}>{mkt==="USA"?"🇺🇸 USA":mkt==="MERVAL"?"🇦🇷 MERVAL":"🌎 TODOS"}</span>
@@ -3247,12 +3247,12 @@ export default function App() {
             <div style={{marginBottom:"8px"}}>
               <img src={logoUrl} alt="FXCA16" style={{width:"200px",height:"200px",objectFit:"contain",filter:"drop-shadow(0 0 20px rgba(26,110,255,0.4))",display:"block",margin:"0 auto"}}/>
             </div>
-            <div style={{fontSize:"10px",color:"#7ab0c8",letterSpacing:".2em",marginBottom:"6px",fontWeight:700}}>SISTEMA COMBINADO · MERVAL ARGENTINA</div>
+            <div style={{fontSize:"10px",color:"#a0cce0",letterSpacing:".2em",marginBottom:"6px",fontWeight:700}}>SISTEMA COMBINADO · MERVAL ARGENTINA</div>
             <div style={{display:"flex",justifyContent:"center",gap:"16px",fontSize:"9px",marginBottom:"28px",flexWrap:"wrap"}}>
-              <span style={{color:"#00d4ff",fontWeight:700}}>FX-TÉCNICO <span style={{color:"#8ab0c8"}}>65% · RSI+MACD+Bollinger</span></span>
-              <span style={{color:"#1e4058"}}>|</span>
-              <span style={{color:"#ff9040",fontWeight:700}}>EVO-SCORE <span style={{color:"#8ab0c8"}}>35% · Score+Vol+Momentum</span></span>
-              <span style={{color:"#2e5468"}}>|</span>
+              <span style={{color:"#00d4ff",fontWeight:700}}>FX-TÉCNICO <span style={{color:"#b0d4e8"}}>65% · RSI+MACD+Bollinger</span></span>
+              <span style={{color:"#4a7a9b"}}>|</span>
+              <span style={{color:"#ff9040",fontWeight:700}}>EVO-SCORE <span style={{color:"#b0d4e8"}}>35% · Score+Vol+Momentum</span></span>
+              <span style={{color:"#5a8fa8"}}>|</span>
               <span style={{color:"#ffd700",fontWeight:700}}>Umbral P80</span>
             </div>
             <div style={{display:"flex",justifyContent:"center",gap:"8px",marginBottom:"20px"}}>
@@ -3262,7 +3262,7 @@ export default function App() {
             </div>
 
             <div style={{marginBottom:"22px"}}>
-              <div style={{fontSize:"8px",color:"#1a3a50",marginBottom:"8px",letterSpacing:".12em"}}>VENTANA ANÁLISIS</div>
+              <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"8px",letterSpacing:".12em"}}>VENTANA ANÁLISIS</div>
               <div style={{display:"flex",gap:"6px",justifyContent:"center"}}>
                 {[5,7,10,14,21,30,45,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"7px 14px",fontSize:"11px"}}>{d}d</button>)}
               </div>
@@ -3305,16 +3305,16 @@ export default function App() {
                   {rows.map(r=>(
                     <div key={r.ticker} style={{padding:"4px",background:r.fromCsv?"#00d4ff0a":"#00ff9d0a",border:`1px solid ${r.fromCsv?"#00d4ff28":"#00ff9d28"}`,borderRadius:"3px",textAlign:"center"}}>
                       <div style={{fontSize:"8px",color:r.fromCsv?"#00d4ff":"#00ff9d",fontWeight:700}}>{r.ticker}</div>
-                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:"#d0ecff"}}>{FP(r.price,mkt)}</div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:"#e8f4ff"}}>{FP(r.price,mkt)}</div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
             <div>
-              <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"4px"}}>TERMINAL</div>
+              <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>TERMINAL</div>
               <div ref={logRef} style={{background:"#020508",border:"1px solid #091520",borderRadius:"5px",height:"420px",overflowY:"auto",padding:"8px",fontSize:"9px",lineHeight:"1.9",fontFamily:"'Space Mono',monospace"}}>
-                {logs.map((l,i)=><div key={i} style={{color:LC[l.type]||"#7ab0c8",wordBreak:"break-all"}}><span style={{color:"#142030",marginRight:"6px"}}>{l.t}</span>{l.msg}</div>)}
+                {logs.map((l,i)=><div key={i} style={{color:LC[l.type]||"#a0cce0",wordBreak:"break-all"}}><span style={{color:"#4a7a9b",marginRight:"6px"}}>{l.t}</span>{l.msg}</div>)}
               </div>
             </div>
           </div>
@@ -3322,11 +3322,11 @@ export default function App() {
 
         {/* RESULTADOS */}
         {fase==="done"&&rows.length===0&&(
-          <div className="fade" style={{textAlign:"center",padding:"50px 16px",color:"#1e4058"}}>
+          <div className="fade" style={{textAlign:"center",padding:"50px 16px",color:"#4a7a9b"}}>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:"28px",color:"#ffd700",marginBottom:"10px"}}>
               ⚙️ CALCULANDO<span className="blink"> █</span>
             </div>
-            <div style={{fontSize:"10px",marginBottom:"8px",color:"#2e5468"}}>Procesando tickers del CSV...</div>
+            <div style={{fontSize:"10px",marginBottom:"8px",color:"#5a8fa8"}}>Procesando tickers del CSV...</div>
             <div style={{background:"#07101a",border:"1px solid #0f2235",borderRadius:"3px",height:"4px",width:"240px",margin:"0 auto",overflow:"hidden"}}>
               <div style={{height:"100%",background:"linear-gradient(90deg,#1a6eff,#00aaff)",animation:"pulse 1s ease-in-out infinite"}}/>
             </div>
@@ -3342,7 +3342,7 @@ export default function App() {
                 {[["USA","🇺🇸"],["MERVAL","🇦🇷"],["TODOS","🌎"]].map(([k,l])=>
                   <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>{setMkt(k);}} style={{padding:"2px 8px",fontSize:"10px"}}>{l}</button>
                 )}
-                <span style={{color:"#0f2235",margin:"0 2px"}}>|</span>
+                <span style={{color:"#1e3a50",margin:"0 2px"}}>|</span>
                 {[5,7,10,14,21,30,45,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"2px 8px"}}>{d}d</button>)}
                 <button className="btn off" onClick={run} style={{marginLeft:"4px"}}>↺</button>
                 {!storedMeta ? null :
@@ -3353,15 +3353,15 @@ export default function App() {
             <div style={{display:"flex",gap:"12px",padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",fontSize:"9px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
               {csvStatus && <span style={{color:"#00ff9d",fontWeight:700,fontSize:"9px"}}>📊 CSV {csvStatus.n}t</span>}
               <span style={{color:nReal>=15?"#00ff9d":nReal>=8?"#ffd700":"#ff9040",fontWeight:700}}>📡 {nReal}/{TICKERS.length} · <span style={{color:"#00d4ff"}}>{priceSrc}</span></span>
-              <span style={{color:"#0f2235"}}>|</span>
+              <span style={{color:"#1e3a50"}}>|</span>
               <span>P80 <strong style={{color:"#00d4ff"}}>≥{stats?.p80}</strong> — top 20%</span>
               {optApplied && <span style={{color:"#00ff9d",fontWeight:700,fontSize:"9px",background:"#00ff9d12",padding:"2px 7px",borderRadius:"3px"}}>🎯 OPT</span>}
               {autoSim && <span style={{color:"#ffd700",fontWeight:700,fontSize:"9px",background:"#ffd70012",padding:"2px 7px",borderRadius:"3px"}}>🤖 AUTO</span>}
-              <span style={{color:"#0f2235"}}>|</span>
+              <span style={{color:"#1e3a50"}}>|</span>
               <span style={{color:MARKET_REGIME.regime==="bull"?"#00ff9d":MARKET_REGIME.regime==="bear"?"#ff3355":"#ffd700",fontWeight:700,fontSize:"9px"}}>
                 {MARKET_REGIME.regime==="bull"?"🐂 BULL":MARKET_REGIME.regime==="bear"?"🐻 BEAR":"◆ NEUTRAL"} {MARKET_REGIME.spyRoc!==0?`SPY vs SMA200: ${MARKET_REGIME.spyRoc>0?"+":""}${MARKET_REGIME.spyRoc}%`:""}
               </span>
-              <span style={{color:"#0f2235"}}>|</span>
+              <span style={{color:"#1e3a50"}}>|</span>
               <span>EF <strong style={{color:stats?.ef>=60?"#00ff9d":"#ff3355"}}>{stats?.ef}%</strong></span>
               <span style={{color:"#00ff9d"}}>▲ {stats?.buy}</span><span style={{color:"#ff3355"}}>▼ {stats?.sell}</span>
             </div>
@@ -3369,7 +3369,7 @@ export default function App() {
             {/* BUSCAR TICKER MANUAL */}
             <div style={{padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",marginBottom:"10px"}}>
               <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{fontSize:"8px",color:"#1a3a50",letterSpacing:".1em"}}>🔍 BUSCAR ACCIÓN</span>
+                <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".1em"}}>🔍 BUSCAR ACCIÓN</span>
                 <input
                   type="text"
                   value={customInput}
@@ -3410,7 +3410,7 @@ export default function App() {
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
                                 <FXCA16Badge score={s.ca15_score}/>
                               </div>
-                              <div style={{fontSize:"8px",color:"#2e5060"}}>{r.name}</div>
+                              <div style={{fontSize:"8px",color:"#5a8fa8"}}>{r.name}</div>
                             </div>
                             <div style={{textAlign:"right"}}>
                               <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,display:"block",marginBottom:"3px"}}>{s.sig}</span>
@@ -3419,13 +3419,13 @@ export default function App() {
                           </div>
                           <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
                           <div style={{background:"#050c15",borderRadius:"4px",padding:"6px 9px",margin:"8px 0",display:"flex",justifyContent:"space-between"}}>
-                            <span style={{fontSize:"8px",color:"#1e4058"}}>PRECIO {r.moneda}</span>
-                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#d0ecff"}}>{FP(r.price,r.moneda)}</span>
+                            <span style={{fontSize:"8px",color:"#4a7a9b"}}>PRECIO {r.moneda}</span>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#e8f4ff"}}>{FP(r.price,r.moneda)}</span>
                           </div>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"3px",marginTop:"6px"}}>
                             {[{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"FX",v:s.fx_sc,c:"#00d4ff"},{l:"EVO",v:s.evo_sc,c:"#ff9040"},{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"}].map(m=>
                               <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>{m.l}</div>
                                 <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:m.c}}>{m.v}</div>
                               </div>
                             )}
@@ -3448,7 +3448,7 @@ export default function App() {
             {/* OPORTUNIDADES TOP P80 */}
             {tab==="opp"&&(
               <div className="fade">
-                {opps.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#1a3848",fontSize:"11px"}}>Sin señales en el top P80 con ventana {W}d.</div>}
+                {opps.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>Sin señales en el top P80 con ventana {W}d.</div>}
                 <div className="grid-opp">
                   {opps.map(r=>{
                     const s=r.sig,buy=s.sig.includes("COMPRA"),g=GR(r.bt.hr);
@@ -3462,7 +3462,7 @@ export default function App() {
                           <span style={{fontSize:"8px",color:MONEDA(r,mkt)==="USD"?"#00d4ff":"#ffd700",background:MONEDA(r,mkt)==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{MONEDA(r,mkt)}</span>
                               <FXCA16Badge score={s.ca15_score}/>
                             </div>
-                            <div style={{fontSize:"8px",color:"#2e5060"}}>{r.name}</div>
+                            <div style={{fontSize:"8px",color:"#5a8fa8"}}>{r.name}</div>
                           </div>
                           <div style={{textAlign:"right"}}>
                             <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,display:"block",marginBottom:"3px"}}>{s.sig}</span>
@@ -3474,17 +3474,17 @@ export default function App() {
                         <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
 
                         <div style={{background:"#050c15",borderRadius:"4px",padding:"6px 9px",margin:"8px 0",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                          <span style={{fontSize:"8px",color:"#1e4058"}}>{MONEDA(r,mkt)==="USD"?"PRECIO USD":"PRECIO ARS"}</span>
+                          <span style={{fontSize:"8px",color:"#4a7a9b"}}>{MONEDA(r,mkt)==="USD"?"PRECIO USD":"PRECIO ARS"}</span>
                           {r.price != null
-                            ? <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:r.fromCsv?"#00d4ff":r.real?"#d0ecff":"#2a4a5a"}}>{FP(r.price,MONEDA(r,mkt))}</span>
-                            : <span style={{fontSize:"10px",color:"#1e4058",fontStyle:"italic"}}>buscando precio…</span>
+                            ? <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:r.fromCsv?"#00d4ff":r.real?"#e8f4ff":"#2a4a5a"}}>{FP(r.price,MONEDA(r,mkt))}</span>
+                            : <span style={{fontSize:"10px",color:"#4a7a9b",fontStyle:"italic"}}>buscando precio…</span>
                           }
                         </div>
 
                         {[{l:"→ ENTRADA",v:s.entry,c:buy?"#00ff9d":"#ff9040"},{l:"🛡 STOP",v:s.sl,c:"#ff3355"},{l:"TP2",v:s.tp2,c:"#00ff9d"},{l:"TP3",v:s.tp3,c:"#00d4ff"}].filter(x=>x.v).map(x=>{
                           const pct=((x.v-r.price)/r.price*100).toFixed(1);
                           return <div key={x.l} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #091520",fontSize:"9px"}}>
-                            <span style={{color:"#2e5060"}}>{x.l}</span>
+                            <span style={{color:"#5a8fa8"}}>{x.l}</span>
                             <div style={{display:"flex",gap:"7px"}}>
                               <span style={{color:x.c,fontWeight:700}}>{FP(x.v,MONEDA(r,mkt))}</span>
                               <span style={{fontSize:"8px",color:+pct>0?"#00ff9d":+pct<0?"#ff3355":"#ffd700"}}>{+pct>0?"+":""}{pct}%</span>
@@ -3495,7 +3495,7 @@ export default function App() {
                         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"3px",marginTop:"8px"}}>
                           {[{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"},{l:"RSI",v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#ffd700"},{l:"EVO",v:s.evo_prob,c:s.evo_prob>=0.6?"#ff9040":"#ffd700"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"EF",v:`${r.bt.hr}%`,c:g.c}].map(m=>
                             <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px",border:"1px solid #0a1d2e"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
+                              <div style={{fontSize:"7px",color:"#4a7a9b"}}>{m.l}</div>
                               <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:m.c}}>{m.v}</div>
                             </div>
                           )}
@@ -3522,17 +3522,17 @@ export default function App() {
                       {srtd.map((r,i)=>{
                         const s=r.sig,g=GR(r.bt.hr);
                         return <tr key={r.ticker} onClick={()=>{setSel(r);setTab("det");}}>
-                          <td style={{color:"#1e4058"}}>{i+1}</td>
+                          <td style={{color:"#4a7a9b"}}>{i+1}</td>
                           <td style={{color:"#00ff9d",fontWeight:700,fontSize:"11px"}}>{r.ticker}</td>
                           <td><span style={{fontSize:"8px",color:MONEDA(r,mkt)==="USD"?"#00d4ff":"#ffd700",fontWeight:700}}>{MONEDA(r,mkt)}</span></td>
-                          <td style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:r.fromCsv?"#00d4ff":r.real?"#d0ecff":"#2e5060"}}>{r.price!=null?FP(r.price,MONEDA(r,mkt)):"—"}</td>
+                          <td style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:r.fromCsv?"#00d4ff":r.real?"#e8f4ff":"#5a8fa8"}}>{r.price!=null?FP(r.price,MONEDA(r,mkt)):"—"}</td>
                           <td>{s?.sig&&s.sig!=="NEUTRAL"?<span className="badge" style={{background:SC[s.sig]+"18",color:SC[s.sig],border:`1px solid ${SC[s.sig]}35`}}>{s.sig}</span>:<span style={{color:s?.corr_dup?"#ff9040":"#ffd700",fontSize:"8px"}}>{s?.corr_dup?`CORR(${s.corr_dup})`:"NEUTRAL"}</span>}</td>
-                          <td style={{fontSize:"9px"}}>{s?.above_p80?<span style={{color:"#00ff9d",fontWeight:700}}>✓</span>:<span style={{color:"#1e4058"}}>─</span>}</td>
+                          <td style={{fontSize:"9px"}}>{s?.above_p80?<span style={{color:"#00ff9d",fontWeight:700}}>✓</span>:<span style={{color:"#4a7a9b"}}>─</span>}</td>
                           <td style={{color:"#00d4ff",fontSize:"10px"}}>{s?.fx_sc??"─"}</td>
                           <td style={{color:"#ff9040",fontSize:"10px"}}>{s?.evo_sc??"─"}</td>
                           <td><FXCA16Badge score={s?.ca15_score??0}/></td>
-                          <td style={{color:s?SC[s.sig]:"#2e5060",fontWeight:700}}>{s?.conf??"─"}%</td>
-                          <td style={{fontSize:"8px",color:s?TC[s.trend]:"#2e5060"}}>{s?`${TI[s.trend]} ${s.trend}`:"─"}</td>
+                          <td style={{color:s?SC[s.sig]:"#5a8fa8",fontWeight:700}}>{s?.conf??"─"}%</td>
+                          <td style={{fontSize:"8px",color:s?TC[s.trend]:"#5a8fa8"}}>{s?`${TI[s.trend]} ${s.trend}`:"─"}</td>
                           <td style={{color:g.c,fontWeight:700}}>{r.bt.hr}%</td>
                           <td style={{color:r.bt.sh>=1?"#00ff9d":"#ffd700"}}>{r.bt.sh}</td>
                           <td style={{color:r.bt.eq>=100?"#00ff9d":"#ff3355",fontWeight:600}}>{r.bt.eq}</td>
@@ -3563,7 +3563,7 @@ export default function App() {
   setSel(r);
 }} style={{color:sel?.ticker===r.ticker?undefined:g.c}}>{r.ticker}{r.real?" 📡":""}</button>;})}
                 </div>
-                {!sel?<div style={{textAlign:"center",padding:"40px",color:"#1a3848"}}>Seleccioná una acción arriba</div>:
+                {!sel?<div style={{textAlign:"center",padding:"40px",color:"#4a7a9b"}}>Seleccioná una acción arriba</div>:
                 (()=>{
                   const s=sel.sig,g=GR(sel.bt.hr),buy=s?.sig?.includes("COMPRA");
                   return <div>
@@ -3576,10 +3576,10 @@ export default function App() {
                           <span style={{fontSize:"9px",color:sel.real?"#00ff9d":"#ffd700",fontWeight:700}}>{sel.real?"📡 REAL":"🔬 SIM"}</span>
                           {s?.above_p80&&<span style={{fontSize:"9px",color:"#ffd700",fontWeight:700,background:"#ffd70015",border:"1px solid #ffd70030",padding:"1px 7px",borderRadius:"3px"}}>TOP P80 ★</span>}
                         </div>
-                        <div style={{fontSize:"9px",color:"#2e5060",marginBottom:"4px"}}>{sel.name} · {sel.sector}</div>
+                        <div style={{fontSize:"9px",color:"#5a8fa8",marginBottom:"4px"}}>{sel.name} · {sel.sector}</div>
                         {sel.price!=null
-  ? <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:sel.fromCsv?"#00d4ff":sel.real?"#d0ecff":"#2a4a5a"}}>{FP(sel.price,MONEDA(sel,mkt))}</div>
-  : <div style={{fontSize:"11px",color:"#1e4058",padding:"8px 0",fontStyle:"italic"}}>⏳ buscando precio real…</div>}
+  ? <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:sel.fromCsv?"#00d4ff":sel.real?"#e8f4ff":"#2a4a5a"}}>{FP(sel.price,MONEDA(sel,mkt))}</div>
+  : <div style={{fontSize:"11px",color:"#4a7a9b",padding:"8px 0",fontStyle:"italic"}}>⏳ buscando precio real…</div>}
                         {s&&<div style={{marginTop:"6px",display:"flex",gap:"8px",flexWrap:"wrap"}}>
                           <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`}}>{s.sig}</span>
                           <span style={{color:TC[s.trend],fontSize:"10px"}}>{TI[s.trend]} {s.trend}</span>
@@ -3593,11 +3593,11 @@ export default function App() {
 
                     {/* Score breakdown */}
                     {s&&<div className="card" style={{padding:"12px",marginBottom:"10px"}}>
-                      <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"10px"}}>SCORE COMBINADO FXCA16</div>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"10px"}}>SCORE COMBINADO FXCA16</div>
                       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"10px"}}>
                         {[{l:"FX-TÉCNICO",v:s.fx_sc,c:"#00d4ff",sub:"RSI+MACD+BB+ATR"},{l:"EVO-SCORE",v:s.evo_sc,c:"#ff9040",sub:"Score+Vol+Mom"},{l:"COMBINADO",v:s.final_sc,c:"#00ff9d",sub:"65% FX + 35% EVO"}].map(x=>
                           <div key={x.l} style={{textAlign:"center",padding:"10px 8px",background:"#050c15",borderRadius:"4px",border:`1px solid ${x.c}20`}}>
-                            <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>{x.l}</div>
+                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>{x.l}</div>
                             <div style={{fontFamily:"'Bebas Neue'",fontSize:"28px",color:x.c,lineHeight:1}}>{x.v}</div>
                             <div style={{fontSize:"7px",color:x.c,opacity:.6,marginTop:"2px"}}>{x.sub}</div>
                           </div>
@@ -3606,7 +3606,7 @@ export default function App() {
                       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px"}}>
                         {[{l:"FXCA16 SCORE",v:`${s.ca15_score}/3`,c:s.ca15_score===3?"#00ff9d":s.ca15_score===2?"#ffd700":"#ff9040"},{l:"EVO PROB",v:s.evo_prob,c:s.evo_prob>=0.65?"#00ff9d":s.evo_prob>=0.5?"#ffd700":"#ff9040"},{l:"VOL 24H",v:`${s.vol_24h}x`,c:s.vol_24h>=1.5?"#00ff9d":s.vol_24h>=1?"#ffd700":"#ff9040"},{l:"PCT 6H",v:`${s.pct6h>=0?"+":""}${(s.pct6h*100).toFixed(2)}%`,c:s.pct6h>0?"#00ff9d":"#ff3355"}].map(x=>
                           <div key={x.l} style={{textAlign:"center",padding:"7px",background:"#050c15",borderRadius:"3px"}}>
-                            <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>{x.l}</div>
+                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>{x.l}</div>
                             <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
                           </div>
                         )}
@@ -3615,11 +3615,11 @@ export default function App() {
 
                     {s&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"10px"}}>
                       <div className="card" style={{padding:"12px"}}>
-                        <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"8px"}}>NIVELES · {W}D</div>
+                        <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"8px"}}>NIVELES · {W}D</div>
                         {[{l:"🛡 STOP",v:s.sl,c:"#ff3355"},{l:"◎ PRECIO",v:s.px,c:"#aec8d8"},{l:"→ ENTRADA",v:s.entry,c:buy?"#00ff9d":"#ff9040"},{l:"TP1",v:s.tp1,c:"#5dffb0"},{l:"TP2",v:s.tp2,c:"#00ff9d"},{l:"TP3",v:s.tp3,c:"#00d4ff"}].filter(x=>x.v).map(x=>{
                           const pct=((x.v-s.px)/s.px*100).toFixed(1);
                           return <div key={x.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 7px",background:"#050c15",borderRadius:"3px",marginBottom:"3px",fontSize:"9px",border:`1px solid ${x.c}15`}}>
-                            <span style={{color:"#2e5060"}}>{x.l}</span>
+                            <span style={{color:"#5a8fa8"}}>{x.l}</span>
                             <div style={{display:"flex",gap:"6px"}}>
                               <span style={{color:x.c,fontFamily:"'Bebas Neue'",fontSize:"13px"}}>${F(x.v)}</span>
                               <span style={{fontSize:"8px",color:+pct>0?"#00ff9d":+pct<0?"#ff3355":"#ffd700"}}>{+pct>0?"+":""}{pct}%</span>
@@ -3627,16 +3627,16 @@ export default function App() {
                           </div>;
                         })}
                         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"4px",marginTop:"8px"}}>
-                          {[{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"},{l:"ATR",v:`$${s.atr}`,c:"#7ab0c8"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]}].map(x=>
+                          {[{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"},{l:"ATR",v:`$${s.atr}`,c:"#a0cce0"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]}].map(x=>
                             <div key={x.l} style={{textAlign:"center",padding:"5px",background:"#050c15",borderRadius:"3px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058"}}>{x.l}</div>
+                              <div style={{fontSize:"7px",color:"#4a7a9b"}}>{x.l}</div>
                               <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
                             </div>
                           )}
                         </div>
                       </div>
                       <div className="card" style={{padding:"12px"}}>
-                        <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"8px"}}>INDICADORES FXCA16</div>
+                        <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"8px"}}>INDICADORES FXCA16</div>
                         {[
                           {l:"ROC 10h",v:`${s.roc10>=0?"+":""}${s.roc10}%`,c:s.roc10>1.5?"#00ff9d":s.roc10<-1.5?"#ff3355":"#ffd700"},
                           {l:"ROC 5h", v:`${s.roc5>=0?"+":""}${s.roc5}%`, c:s.roc5>1?"#00ff9d":s.roc5<-1?"#ff3355":"#ffd700"},
@@ -3646,14 +3646,14 @@ export default function App() {
                           {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
                           {l:"WF peso", v:s.wfWeight,c:s.wfWeight>=1.05?"#00ff9d":s.wfWeight<=0.95?"#ff3355":"#ffd700"},
                           {l:"H-Factor",v:s.hourFactor,c:s.hourFactor>=1?"#00ff9d":s.hourFactor<0.9?"#ff3355":"#ffd700"},
-                          {l:"RSI ref.", v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#2e5468"},
+                          {l:"RSI ref.", v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#5a8fa8"},
                           {l:"SMA 20",  v:`$${s.sma20?.toFixed(0)??"─"}`,c:"#8b5cf6"},
                           {l:"SMA 50",  v:`$${s.sma50?.toFixed(0)??"─"}`,c:"#f59e0b"},
                           {l:"BB Sup.", v:`$${s.boll?.u?.toFixed(0)??"─"}`,c:"#3b82f6"},
                           {l:"BB Inf.", v:`$${s.boll?.l?.toFixed(0)??"─"}`,c:"#3b82f6"},
                         ].map(x=>
                           <div key={x.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #091520",fontSize:"9px"}}>
-                            <span style={{color:"#2e5060"}}>{x.l}</span>
+                            <span style={{color:"#5a8fa8"}}>{x.l}</span>
                             <span style={{color:x.c,fontWeight:600}}>{x.v}</span>
                           </div>
                         )}
@@ -3661,9 +3661,9 @@ export default function App() {
                     </div>}
 
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(85px,1fr))",gap:"5px",marginBottom:"9px"}}>
-                      {[{l:"TRADES",v:sel.bt.n,c:"#8ab0c8"},{l:"WINS",v:sel.bt.hits,c:"#00ff9d"},{l:"LOSSES",v:sel.bt.n-sel.bt.hits,c:"#ff3355"},{l:"EF%",v:`${sel.bt.hr}%`,c:g.c},{l:"AVG RET",v:`${sel.bt.avg>=0?"+":""}${sel.bt.avg}%`,c:sel.bt.avg>=0?"#00ff9d":"#ff3355"},{l:"P.FACTOR",v:`${sel.bt.pf}x`,c:sel.bt.pf>=1.5?"#00ff9d":"#ffd700"},{l:"SHARPE",v:sel.bt.sh,c:sel.bt.sh>=1?"#00ff9d":"#ffd700"},{l:"MAX DD",v:`${sel.bt.dd}%`,c:sel.bt.dd<15?"#00ff9d":"#ff3355"},{l:"EQUITY",v:sel.bt.eq,c:sel.bt.eq>=100?"#00ff9d":"#ff3355"}].map(x=>
+                      {[{l:"TRADES",v:sel.bt.n,c:"#b0d4e8"},{l:"WINS",v:sel.bt.hits,c:"#00ff9d"},{l:"LOSSES",v:sel.bt.n-sel.bt.hits,c:"#ff3355"},{l:"EF%",v:`${sel.bt.hr}%`,c:g.c},{l:"AVG RET",v:`${sel.bt.avg>=0?"+":""}${sel.bt.avg}%`,c:sel.bt.avg>=0?"#00ff9d":"#ff3355"},{l:"P.FACTOR",v:`${sel.bt.pf}x`,c:sel.bt.pf>=1.5?"#00ff9d":"#ffd700"},{l:"SHARPE",v:sel.bt.sh,c:sel.bt.sh>=1?"#00ff9d":"#ffd700"},{l:"MAX DD",v:`${sel.bt.dd}%`,c:sel.bt.dd<15?"#00ff9d":"#ff3355"},{l:"EQUITY",v:sel.bt.eq,c:sel.bt.eq>=100?"#00ff9d":"#ff3355"}].map(x=>
                         <div key={x.l} className="card" style={{padding:"7px"}}>
-                          <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>{x.l}</div>
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>{x.l}</div>
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
                         </div>
                       )}
@@ -3757,7 +3757,7 @@ export default function App() {
                         accion         = `Entrá en $${FP(s?.entry,moneda)} con stop en ${FP(s?.sl,moneda)}. Objetivo principal TP2 ${FP(s?.tp2,moneda)} (+${s?.tp2&&px?(((s.tp2-px)/px*100).toFixed(1)):"-"}%). Sizing: ${ps_?.level||"normal"}.`;
                       } else if (alineado && fxBull && globalPct>=45) {
                         veredicto      = "COMPRAR MODERADO";
-                        veredictoColor = "#7ab0c8";
+                        veredictoColor = "#a0cce0";
                         veredictoDesc  = `Señal mayormente alineada con score global ${globalPct}%. Algunos ejes muestran incertidumbre.`;
                         accion         = `Podés entrar con sizing reducido (50%). Stop en ${FP(s?.sl,moneda)}. Objetivo TP1 ${FP(s?.tp1,moneda)}.`;
                       } else if (alineado && fxBear && globalPct>=55) {
@@ -3777,9 +3777,9 @@ export default function App() {
 
                           {/* VEREDICTO */}
                           <div style={{textAlign:"center",marginBottom:"14px",paddingBottom:"12px",borderBottom:"1px solid #0f2235"}}>
-                            <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".2em",marginBottom:"4px"}}>VEREDICTO FINAL</div>
+                            <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".2em",marginBottom:"4px"}}>VEREDICTO FINAL</div>
                             <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:veredictoColor,lineHeight:1,marginBottom:"6px"}}>{veredicto}</div>
-                            <div style={{fontSize:"8px",color:"#8ab0c8",lineHeight:1.7,marginBottom:"8px",maxWidth:"480px",margin:"0 auto 8px"}}>{veredictoDesc}</div>
+                            <div style={{fontSize:"8px",color:"#b0d4e8",lineHeight:1.7,marginBottom:"8px",maxWidth:"480px",margin:"0 auto 8px"}}>{veredictoDesc}</div>
                             <div style={{padding:"8px 12px",background:`${veredictoColor}12`,border:`1px solid ${veredictoColor}30`,borderRadius:"5px",fontSize:"8px",color:"#ffd700",lineHeight:1.7,textAlign:"left"}}>
                               📌 {accion}
                             </div>
@@ -3799,7 +3799,7 @@ export default function App() {
                             ].map(eje=>(
                               <div key={eje.n} style={{padding:"10px",background:"#050c15",borderRadius:"5px",border:`1px solid ${eje.color}25`}}>
                                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"5px"}}>
-                                  <div style={{fontSize:"7px",color:"#1e4058"}}>{eje.n}</div>
+                                  <div style={{fontSize:"7px",color:"#4a7a9b"}}>{eje.n}</div>
                                   <div style={{display:"flex",gap:"2px"}}>
                                     {[0,1,2].map(i=>(
                                       <div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<eje.rating?eje.color:"#0c1826"}}/>
@@ -3807,21 +3807,21 @@ export default function App() {
                                   </div>
                                 </div>
                                 <div style={{fontFamily:"'Bebas Neue'",fontSize:"15px",color:eje.color,marginBottom:"2px",lineHeight:1}}>{eje.label}</div>
-                                <div style={{fontSize:"7px",color:"#2e5468",lineHeight:1.5}}>{eje.sub}</div>
+                                <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.5}}>{eje.sub}</div>
                               </div>
                             ))}
                           </div>
 
                           {/* BARRA GLOBAL */}
                           <div>
-                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginBottom:"3px"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#4a7a9b",marginBottom:"3px"}}>
                               <span>SCORE GLOBAL</span>
                               <span style={{color:veredictoColor,fontWeight:700}}>{globalPct}% ({totalRating}/{maxRating} puntos)</span>
                             </div>
                             <div style={{height:"6px",background:"#0c1826",borderRadius:"3px",overflow:"hidden"}}>
                               <div style={{height:"100%",width:`${globalPct}%`,background:`linear-gradient(90deg,#ff3355,#ffd700 40%,#00ff88)`,borderRadius:"3px",transition:"width .4s"}}/>
                             </div>
-                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"6px",color:"#1e4058",marginTop:"2px"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"6px",color:"#4a7a9b",marginTop:"2px"}}>
                               <span>EVITAR</span><span>ESPERAR</span><span>MODERAR</span><span>COMPRAR</span>
                             </div>
                           </div>
@@ -3857,19 +3857,19 @@ export default function App() {
                       return (
                         <div className="card" style={{padding:"12px",marginBottom:"9px"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
-                            <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em"}}>
+                            <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>
                               📐 FIBONACCI — últimas {fib.lookback} barras
                             </div>
                             <div style={{display:"flex",gap:"8px",fontSize:"8px"}}>
                               <span style={{color:"#00ff88"}}>MAX {FP(fib.high,moneda)}</span>
-                              <span style={{color:"#1e4058"}}>|</span>
+                              <span style={{color:"#4a7a9b"}}>|</span>
                               <span style={{color:"#ff3355"}}>MIN {FP(fib.low,moneda)}</span>
                             </div>
                           </div>
 
                           {/* Zona de rebote más cercana */}
                           <div style={{padding:"8px",background: isUp?"#00ff8808":"#ff335508",border:`1px solid ${isUp?"#00ff8830":"#ff335530"}`,borderRadius:"4px",marginBottom:"8px"}}>
-                            <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>
+                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>
                               {isUp ? "🔄 SOPORTE MÁS CERCANO (posible rebote alcista)" : "🔄 RESISTENCIA MÁS CERCANA (posible rebote bajista)"}
                             </div>
                             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -3890,7 +3890,7 @@ export default function App() {
                             const posPct = ((px - fib.low) / fib.rng * 100).toFixed(1);
                             return (
                               <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",borderRadius:"4px"}}>
-                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginBottom:"4px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#4a7a9b",marginBottom:"4px"}}>
                                   <span>MIN {FP(fib.low,moneda)}</span>
                                   <span style={{color:"#ffd700",fontWeight:700}}>PRECIO ACTUAL: {posPct}% del rango</span>
                                   <span>MAX {FP(fib.high,moneda)}</span>
@@ -3914,9 +3914,9 @@ export default function App() {
                                     boxShadow:"0 0 6px #fff8"
                                   }}/>
                                 </div>
-                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginTop:"4px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#4a7a9b",marginTop:"4px"}}>
                                   {[0,23.6,38.2,50,61.8,78.6,100].map(f=>(
-                                    <span key={f} style={{color: Math.abs(f-posPct)<5?"#ffd700":"#1e4058"}}>{f}%</span>
+                                    <span key={f} style={{color: Math.abs(f-posPct)<5?"#ffd700":"#4a7a9b"}}>{f}%</span>
                                   ))}
                                 </div>
                               </div>
@@ -3927,7 +3927,7 @@ export default function App() {
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
                             {/* Retrocesos */}
                             <div>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"4px",letterSpacing:".1em"}}>
+                              <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".1em"}}>
                                 {isUp ? "▼ RETROCESOS (soporte)" : "▲ REBOTES (resistencia)"}
                               </div>
                               {fib.levels.map(l => {
@@ -3949,7 +3949,7 @@ export default function App() {
                                       {isNearest && <span style={{color:"#ffd700",fontSize:"10px"}}>◀</span>}
                                       <span style={{color:"#ffd700",fontWeight:isNearest?700:400,fontSize:isNearest?"10px":"8px"}}>{l.label}</span>
                                     </div>
-                                    <span style={{color:isNearest?"#fff":"#d0ecff",fontWeight:isNearest?700:400}}>{FP(l.value,moneda)}</span>
+                                    <span style={{color:isNearest?"#fff":"#e8f4ff",fontWeight:isNearest?700:400}}>{FP(l.value,moneda)}</span>
                                     <span style={{color:+pct>=0?"#00ff88":"#ff3355",fontSize:"7px",fontWeight:isNearest?700:400}}>{+pct>=0?"+":""}{pct}%</span>
                                   </div>
                                 );
@@ -3958,7 +3958,7 @@ export default function App() {
 
                             {/* Extensiones */}
                             <div>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"4px",letterSpacing:".1em"}}>
+                              <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".1em"}}>
                                 {isUp ? "▲ EXTENSIONES (objetivo)" : "▼ EXTENSIONES (objetivo)"}
                               </div>
                               {fib.extensions.map(l => {
@@ -3971,14 +3971,14 @@ export default function App() {
                                     borderRadius:"3px",fontSize:"8px"
                                   }}>
                                     <span style={{color:isUp?"#00d4ff":"#ff9040",fontWeight:700}}>{l.label}</span>
-                                    <span style={{color:"#d0ecff"}}>{FP(l.value,moneda)}</span>
+                                    <span style={{color:"#e8f4ff"}}>{FP(l.value,moneda)}</span>
                                     <span style={{color:+pct>=0?"#00ff88":"#ff3355",fontSize:"7px"}}>{+pct>=0?"+":""}{pct}%</span>
                                   </div>
                                 );
                               })}
 
                               {/* Explicación */}
-                              <div style={{marginTop:"6px",padding:"5px",background:"#050c15",borderRadius:"3px",fontSize:"7px",color:"#2e5468",lineHeight:"1.6"}}>
+                              <div style={{marginTop:"6px",padding:"5px",background:"#050c15",borderRadius:"3px",fontSize:"7px",color:"#5a8fa8",lineHeight:"1.6"}}>
                                 {isUp
                                   ? "📈 Tendencia alcista: los retrocesos son zonas de compra. Las extensiones son objetivos de ganancia."
                                   : "📉 Tendencia bajista: los rebotes son zonas de resistencia. Las extensiones son objetivos de caída."}
@@ -3990,27 +3990,27 @@ export default function App() {
                     })()}
 
                     <div className="card" style={{padding:"10px",marginBottom:"9px"}}>
-                      <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"6px"}}>EQUITY CURVE</div>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"6px"}}>EQUITY CURVE</div>
                       <div style={{overflowX:"auto"}}>
                         <Curve curve={sel.bt.curve} w={Math.min(560, window.innerWidth-60)} h={80}/>
                       </div>
                     </div>
 
                     <div className="card" style={{padding:"10px"}}>
-                      <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"6px"}}>OPERACIONES · {sel.bt.trades.length}</div>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"6px"}}>OPERACIONES · {sel.bt.trades.length}</div>
                       <div style={{overflowX:"auto",maxHeight:"320px",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
                         <table>
                           <thead><tr><th>#</th><th>SEÑAL</th><th>FXCA16</th><th>ENTRADA</th><th>STOP</th><th>SALIDA</th><th>DÍAS</th><th>MOTIVO</th><th>RET</th><th>RES</th></tr></thead>
                           <tbody>{sel.bt.trades.map((t,i)=>
                             <tr key={i} style={{background:t.win?"#00ff9d06":t.reason==="STOP LOSS"?"#ff335506":"transparent"}}>
-                              <td style={{color:"#1e4058"}}>{i+1}</td>
+                              <td style={{color:"#4a7a9b"}}>{i+1}</td>
                               <td><span className="badge" style={{background:SC[t.sig]+"15",color:SC[t.sig],border:`1px solid ${SC[t.sig]}30`,fontSize:"8px"}}>{t.sig}</span></td>
                               <td><FXCA16Badge score={t.ca15}/></td>
                               <td style={{color:"#5dffb0",fontSize:"10px"}}>${F(t.entry)}</td>
                               <td style={{color:"#ff3355",fontSize:"9px"}}>{t.sl?`$${F(t.sl)}`:"─"}</td>
                               <td style={{fontWeight:600,fontSize:"10px"}}>${F(t.exit)}</td>
-                              <td style={{color:"#1e4058"}}>{t.days}d</td>
-                              <td style={{fontSize:"8px",color:t.reason==="TAKE PROFIT"?"#00d4ff":t.reason==="STOP LOSS"?"#ff3355":"#2e5060"}}>{t.reason}</td>
+                              <td style={{color:"#4a7a9b"}}>{t.days}d</td>
+                              <td style={{fontSize:"8px",color:t.reason==="TAKE PROFIT"?"#00d4ff":t.reason==="STOP LOSS"?"#ff3355":"#5a8fa8"}}>{t.reason}</td>
                               <td style={{color:t.ret>=0?"#00ff9d":"#ff3355",fontWeight:700}}>{t.ret>=0?"+":""}{t.ret}%</td>
                               <td><span className="badge" style={{background:t.win?"#00ff9d12":"#ff335512",color:t.win?"#00ff9d":"#ff3355",border:`1px solid ${t.win?"#00ff9d28":"#ff335528"}`,fontSize:"8px"}}>{t.win?"WIN":"LOSS"}</span></td>
                             </tr>
@@ -4050,7 +4050,7 @@ export default function App() {
                         </button>
                       )}
                       <button className="btn off" onClick={()=>{setEditingWL(wl.id);setEditWLName(wl.name);}}
-                        style={{padding:"3px 5px",fontSize:"8px",color:"#7ab0c8"}}>✏️</button>
+                        style={{padding:"3px 5px",fontSize:"8px",color:"#a0cce0"}}>✏️</button>
                       {watchlists.length>1&&(
                         <button className="btn off" onClick={()=>deleteWatchlist(i)}
                           style={{padding:"3px 5px",fontSize:"8px",color:"#ff3355"}}>✕</button>
@@ -4074,15 +4074,15 @@ export default function App() {
                   <button className={`btn ${wlInput.trim()?"on":"off"}`}
                     onClick={()=>{if(wlInput.trim()){addToWatchlist(activeWL,wlInput.trim());setWlInput("");}}}
                     style={{padding:"5px 12px",fontSize:"9px"}}>+ Agregar</button>
-                  <span style={{fontSize:"8px",color:"#1e4058"}}>o hacé click en ⭐ desde cualquier señal</span>
+                  <span style={{fontSize:"8px",color:"#4a7a9b"}}>o hacé click en ⭐ desde cualquier señal</span>
                 </div>
 
                 {/* Tickers de la lista activa */}
                 {(watchlists[activeWL]?.tickers||[]).length===0 ? (
-                  <div style={{textAlign:"center",padding:"40px",color:"#1a3848",fontSize:"11px"}}>
+                  <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
                     <div style={{fontSize:"28px",marginBottom:"8px"}}>⭐</div>
                     <div>Todavía no hay acciones en <strong style={{color:"#ffd700"}}>{watchlists[activeWL]?.name}</strong></div>
-                    <div style={{fontSize:"9px",marginTop:"6px",color:"#1e4058"}}>Agregá tickers desde las señales o escribí arriba</div>
+                    <div style={{fontSize:"9px",marginTop:"6px",color:"#4a7a9b"}}>Agregá tickers desde las señales o escribí arriba</div>
                   </div>
                 ) : (
                   <div className="grid-opp">
@@ -4102,8 +4102,8 @@ export default function App() {
                       if (!r) return (
                         <div key={tk} className="card" style={{padding:"12px",opacity:.5}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:"#7ab0c8"}}>{tk}</span>
-                            <span style={{fontSize:"8px",color:"#1e4058"}}>Sin datos · ejecutá el sistema</span>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:"#a0cce0"}}>{tk}</span>
+                            <span style={{fontSize:"8px",color:"#4a7a9b"}}>Sin datos · ejecutá el sistema</span>
                             <button className="btn off" onClick={()=>removeFromWatchlist(activeWL,tk)}
                               style={{padding:"2px 7px",fontSize:"8px",color:"#ff3355"}}>✕</button>
                           </div>
@@ -4121,7 +4121,7 @@ export default function App() {
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
                                 <FXCA16Badge score={s.ca15_score}/>
                               </div>
-                              <div style={{fontSize:"8px",color:"#2e5060"}}>{r.name}</div>
+                              <div style={{fontSize:"8px",color:"#5a8fa8"}}>{r.name}</div>
                             </div>
                             <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px"}}>
                               <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`}}>{s.sig}</span>
@@ -4131,13 +4131,13 @@ export default function App() {
                           </div>
                           <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
                           <div style={{background:"#050c15",borderRadius:"4px",padding:"5px 8px",margin:"7px 0",display:"flex",justifyContent:"space-between"}}>
-                            <span style={{fontSize:"8px",color:"#1e4058"}}>PRECIO</span>
-                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:"#d0ecff"}}>{FP(r.price,r.moneda)}</span>
+                            <span style={{fontSize:"8px",color:"#4a7a9b"}}>PRECIO</span>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:"#e8f4ff"}}>{FP(r.price,r.moneda)}</span>
                           </div>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"3px"}}>
                             {[{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"FX",v:s.fx_sc,c:"#00d4ff"},{l:"EVO",v:s.evo_sc,c:"#ff9040"},{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"}].map(m=>
                               <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>{m.l}</div>
                                 <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:m.c}}>{m.v}</div>
                               </div>
                             )}
@@ -4184,8 +4184,8 @@ export default function App() {
                   {/* Stats del sector */}
                   {catSector!=="Todos"&&(
                     <div style={{display:"flex",gap:"10px",padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",fontSize:"9px",marginBottom:"10px",flexWrap:"wrap"}}>
-                      <span style={{color:"#7ab0c8",fontWeight:700}}>📂 {catSector}</span>
-                      <span style={{color:"#1e4058"}}>|</span>
+                      <span style={{color:"#a0cce0",fontWeight:700}}>📂 {catSector}</span>
+                      <span style={{color:"#4a7a9b"}}>|</span>
                       <span>{filtered.length} acciones</span>
                       <span style={{color:"#00ff88"}}>▲ {filtered.filter(r=>r.sig?.sig?.includes("COMPRA")).length} compra</span>
                       <span style={{color:"#ff3355"}}>▼ {filtered.filter(r=>r.sig?.sig?.includes("VENTA")).length} venta</span>
@@ -4201,29 +4201,29 @@ export default function App() {
                       const hasPulse = s.above_p80 && s.sig!=="NEUTRAL";
                       return (
                         <div key={r.ticker} className="card" style={{padding:"11px",cursor:"pointer",
-                          borderLeft:`3px solid ${hasPulse?SC[s.sig]:"#0f2235"}`,
+                          borderLeft:`3px solid ${hasPulse?SC[s.sig]:"#1e3a50"}`,
                           opacity:hasPulse?1:0.6}}
                           onClick={()=>{setSel(r);setTab("det");}}>
                           <div style={{display:"flex",justifyContent:"space-between",marginBottom:"5px"}}>
                             <div>
                               <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:hasPulse?SC[s.sig]:"#7ab0c8"}}>{r.ticker}</span>
+                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:hasPulse?SC[s.sig]:"#a0cce0"}}>{r.ticker}</span>
                                 <span style={{fontSize:"7px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 4px",borderRadius:"3px"}}>{r.moneda}</span>
                               </div>
-                              <div style={{fontSize:"7px",color:"#2e5060"}}>{r.name}</div>
+                              <div style={{fontSize:"7px",color:"#5a8fa8"}}>{r.name}</div>
                             </div>
                             <div style={{textAlign:"right"}}>
                               {hasPulse
                                 ? <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,fontSize:"8px"}}>{s.sig}</span>
-                                : <span style={{fontSize:"8px",color:"#1e4058"}}>NEUTRAL</span>
+                                : <span style={{fontSize:"8px",color:"#4a7a9b"}}>NEUTRAL</span>
                               }
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:"#d0ecff",marginTop:"2px"}}>{FP(r.price,r.moneda)}</div>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:"#e8f4ff",marginTop:"2px"}}>{FP(r.price,r.moneda)}</div>
                             </div>
                           </div>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px"}}>
                             {[{l:"SCORE",v:s.final_sc,c:"#00d4ff"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff88":"#ffd700"}].map(m=>
                               <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058"}}>{m.l}</div>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>{m.l}</div>
                                 <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:m.c}}>{m.v}</div>
                               </div>
                             )}
@@ -4246,7 +4246,7 @@ export default function App() {
                 if (!r) return (
                   <div className="card" style={{padding:"20px",textAlign:"center",flex:1}}>
                     <div style={{fontSize:"28px",marginBottom:"8px"}}>📊</div>
-                    <div style={{fontSize:"9px",color:"#1e4058"}}>Seleccioná {label}</div>
+                    <div style={{fontSize:"9px",color:"#4a7a9b"}}>Seleccioná {label}</div>
                   </div>
                 );
                 const s=r.sig; if(!s) return null;
@@ -4255,8 +4255,8 @@ export default function App() {
                   <div className="card" style={{flex:1,padding:"13px",borderTop:`3px solid ${SC[s.sig]}`}}>
                     <div style={{textAlign:"center",marginBottom:"10px"}}>
                       <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:SC[s.sig]}}>{r.ticker}</div>
-                      <div style={{fontSize:"8px",color:"#2e5060",marginBottom:"4px"}}>{r.name}</div>
-                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:"#d0ecff"}}>{FP(r.price,r.moneda)}</div>
+                      <div style={{fontSize:"8px",color:"#5a8fa8",marginBottom:"4px"}}>{r.name}</div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:"#e8f4ff"}}>{FP(r.price,r.moneda)}</div>
                       <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,marginTop:"4px",display:"inline-block"}}>{s.sig}</span>
                     </div>
                     <ScoreBar fx={s.fx_sc} evo={s.evo_sc} final_sc={s.final_sc}/>
@@ -4276,7 +4276,7 @@ export default function App() {
                         {l:"TENDENCIA",v:s.trend,c:TC[s.trend],best:null},
                       ].map(x=>(
                         <div key={x.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #091520",fontSize:"9px"}}>
-                          <span style={{color:"#2e5060"}}>{x.l}</span>
+                          <span style={{color:"#5a8fa8"}}>{x.l}</span>
                           <span style={{color:x.c,fontWeight:600}}>{x.v}</span>
                         </div>
                       ))}
@@ -4293,7 +4293,7 @@ export default function App() {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"12px"}}>
                     {[{val:cmpA,set:setCmpA,label:"Acción A"},{val:cmpB,set:setCmpB,label:"Acción B"}].map(({val,set,label})=>(
                       <div key={label}>
-                        <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"4px"}}>{label}</div>
+                        <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"4px"}}>{label}</div>
                         <select value={val} onChange={e=>set(e.target.value)}
                           style={{width:"100%",background:"#07101a",color:"#00d4ff",border:"1px solid #0f2235",borderRadius:"4px",padding:"6px 8px",fontSize:"10px",outline:"none"}}>
                           <option value="">— Seleccioná —</option>
@@ -4312,7 +4312,7 @@ export default function App() {
                       <CompareCard r={rB} label="Acción B"/>
                     </div>
                   ) : (
-                    <div style={{textAlign:"center",padding:"40px",color:"#1a3848"}}>
+                    <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b"}}>
                       <div style={{fontSize:"32px",marginBottom:"8px"}}>⚖️</div>
                       <div style={{fontSize:"11px"}}>Seleccioná dos acciones para comparar</div>
                     </div>
@@ -4325,10 +4325,10 @@ export default function App() {
                     const winner = sA.final_sc > sB.final_sc ? rA : rB;
                     const diff = Math.abs((sA.final_sc||0)-(sB.final_sc||0));
                     return (
-                      <div style={{marginTop:"12px",padding:"12px",background:"#07101a",border:`1px solid ${SC[winner.sig?.sig]||"#0f2235"}40`,borderRadius:"6px",textAlign:"center"}}>
-                        <div style={{fontSize:"9px",color:"#1e4058",marginBottom:"4px"}}>MEJOR SEÑAL</div>
+                      <div style={{marginTop:"12px",padding:"12px",background:"#07101a",border:`1px solid ${SC[winner.sig?.sig]||"#1e3a50"}40`,borderRadius:"6px",textAlign:"center"}}>
+                        <div style={{fontSize:"9px",color:"#4a7a9b",marginBottom:"4px"}}>MEJOR SEÑAL</div>
                         <div style={{fontFamily:"'Bebas Neue'",fontSize:"28px",color:SC[winner.sig?.sig]}}>{winner.ticker}</div>
-                        <div style={{fontSize:"9px",color:"#7ab0c8"}}>Score {Math.max(sA.final_sc,sB.final_sc)} vs {Math.min(sA.final_sc,sB.final_sc)} (+{diff} pts)</div>
+                        <div style={{fontSize:"9px",color:"#a0cce0"}}>Score {Math.max(sA.final_sc,sB.final_sc)} vs {Math.min(sA.final_sc,sB.final_sc)} (+{diff} pts)</div>
                       </div>
                     );
                   })()}
@@ -4343,7 +4343,7 @@ export default function App() {
                   <button className={`btn ${optRunning?"on":"off"}`} onClick={runOptimizer} disabled={optRunning} style={{padding:"8px 20px"}}>
                     {optRunning?"⏳ Optimizando...":"▶ Ejecutar Optimización"}
                   </button>
-                  <div style={{fontSize:"9px",color:"#1e4058"}}>
+                  <div style={{fontSize:"9px",color:"#4a7a9b"}}>
                     Grid: W × [5,7,10,14] | Peso_FX × [0.5,0.65,0.8] = 12 configs por ticker
                   </div>
                 </div>
@@ -4359,7 +4359,7 @@ export default function App() {
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px",fontSize:"9px"}}>
                             {[{l:"W óptimo",v:r.w_opt,c:"#00d4ff"},{l:"Peso FX",v:r.peso_fx,c:"#ff9040"},{l:"Rendimiento",v:`${r.pct>=0?"+":""}${r.pct}%`,c:r.pct>=0?"#00ff9d":"#ff3355"},{l:"Win Rate",v:`${r.wr}%`,c:r.wr>=50?"#00ff9d":"#ffd700"}].map(x=>(
                               <div key={x.l} style={{padding:"4px 6px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058"}}>{x.l}</div>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>{x.l}</div>
                                 <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
                               </div>
                             ))}
@@ -4373,27 +4373,27 @@ export default function App() {
                         <tbody>
                           {optResults.map((r,i)=>(
                             <tr key={r.ticker} style={{background: optApplied && optParams[r.ticker] ? "#00ff9d05" : "transparent"}}>
-                              <td style={{color:"#1e4058"}}>{i+1}</td>
+                              <td style={{color:"#4a7a9b"}}>{i+1}</td>
                               <td style={{color:"#00ff9d",fontWeight:700}}>{r.ticker}</td>
                               <td style={{color: optApplied?"#00ff9d":"#00d4ff",fontFamily:"'Bebas Neue'",fontSize:"14px"}}>{r.w_opt}</td>
                               <td style={{color:"#ff9040"}}>{r.peso_fx}</td>
                               <td>{r.trades}</td>
                               <td style={{color:"#00ff9d"}}>{r.wins}</td>
                               <td style={{color:r.wr>=50?"#00ff9d":"#ffd700",fontWeight:700}}>{r.wr}%</td>
-                              <td style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:"#d0ecff"}}>{mkt==="USA"?"$"+r.capital.toLocaleString("en-US",{minimumFractionDigits:0}):"$"+r.capital.toLocaleString("es-AR")}</td>
+                              <td style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:"#e8f4ff"}}>{mkt==="USA"?"$"+r.capital.toLocaleString("en-US",{minimumFractionDigits:0}):"$"+r.capital.toLocaleString("es-AR")}</td>
                               <td style={{color:r.pct>=0?"#00ff9d":"#ff3355",fontWeight:700}}>{r.pct>=0?"+":""}{r.pct}%</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                    <div style={{marginTop:"8px",fontSize:"8px",color:"#1e4058"}}>
+                    <div style={{marginTop:"8px",fontSize:"8px",color:"#4a7a9b"}}>
                       💡 Capital inicial simulado: $100.000 | Mismo criterio que el script Python original
                     </div>
                   </>
                 )}
                 {!optResults.length && !optRunning && (
-                  <div style={{textAlign:"center",padding:"40px",color:"#1a3848",fontSize:"11px"}}>
+                  <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
                     Ejecutá el sistema principal primero, luego presioná "Ejecutar Optimización"
                   </div>
                 )}
@@ -4411,7 +4411,7 @@ export default function App() {
 
                   {/* Auto-simulador */}
                   <div style={{display:"flex",gap:"4px",alignItems:"center",background:"#07101a",border:"1px solid #0f2235",borderRadius:"4px",padding:"4px 8px"}}>
-                    <span style={{fontSize:"8px",color:"#1e4058"}}>AUTO cada</span>
+                    <span style={{fontSize:"8px",color:"#4a7a9b"}}>AUTO cada</span>
                     {[1,5,10,30].map(m=>(
                       <button key={m}
                         className={`btn ${autoInterval===m?"on":"off"}`}
@@ -4445,19 +4445,19 @@ export default function App() {
                     </span>
                   )}
                   {autoCount>0 && <span style={{color:"#2e5068"}}>Auto-sims ejecutadas: <strong style={{color:"#00d4ff"}}>{autoCount}</strong></span>}
-                  <span style={{color:"#1e4058"}}>5 USA + 5 Merval aleatorios · espectro 1.5 años · evalúa vs realidad</span>
+                  <span style={{color:"#4a7a9b"}}>5 USA + 5 Merval aleatorios · espectro 1.5 años · evalúa vs realidad</span>
                 </div>
 
                 {/* Historial de accuracy */}
                 {simHistory.length>0&&(
                   <div className="card" style={{padding:"10px",marginBottom:"10px"}}>
-                    <div style={{fontSize:"8px",color:"#1e4058",marginBottom:"6px"}}>📈 HISTORIAL DE SIMULACIONES ({simHistory.length})</div>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"6px"}}>📈 HISTORIAL DE SIMULACIONES ({simHistory.length})</div>
                     <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"6px"}}>
                       {simHistory.slice(-20).reverse().map((s,i)=>(
                         <div key={i} style={{textAlign:"center",padding:"4px 8px",background:s.accuracy>=60?"#00ff9d0a":"#ff335508",border:`1px solid ${s.accuracy>=60?"#00ff9d30":"#ff335530"}`,borderRadius:"3px",minWidth:"52px"}}>
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:s.accuracy>=60?"#00ff9d":"#ff3355"}}>{s.accuracy}%</div>
-                          <div style={{fontSize:"7px",color:"#1e4058"}}>{s.mesesRange||`${s.meses||"?"}m`}</div>
-                          <div style={{fontSize:"6px",color:"#142030"}}>{s.runAt?.slice(5,10)}</div>
+                          <div style={{fontSize:"7px",color:"#4a7a9b"}}>{s.mesesRange||`${s.meses||"?"}m`}</div>
+                          <div style={{fontSize:"6px",color:"#4a7a9b"}}>{s.runAt?.slice(5,10)}</div>
                         </div>
                       ))}
                     </div>
@@ -4475,7 +4475,7 @@ export default function App() {
                       const nDyn = Object.keys(dynParamsRef.current).length;
                       return (
                         <div>
-                          <div style={{fontSize:"9px",color:"#2e5468",display:"flex",gap:"12px",flexWrap:"wrap"}}>
+                          <div style={{fontSize:"9px",color:"#5a8fa8",display:"flex",gap:"12px",flexWrap:"wrap"}}>
                             <span>Promedio: <strong style={{color:"#00d4ff"}}>{avgAcc}%</strong></span>
                             {trendVal && <span style={{color:+trendVal>=0?"#00ff9d":"#ff3355"}}>
                               Tendencia: {+trendVal>=0?"+":""}{trendVal}% {learning?"📈 APRENDIENDO":"📉"}
@@ -4496,7 +4496,7 @@ export default function App() {
                                 fill="none" stroke="#00d4ff" strokeWidth="1" opacity="0.4"
                               />}
                             </svg>
-                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#4a7a9b"}}>
                               <span>Sim 1</span><span>Sim {n}</span>
                             </div>
                           </div>}
@@ -4509,7 +4509,7 @@ export default function App() {
                 {/* Resultados de la última simulación */}
                 {simResults.length>0&&(
                   <div>
-                    <div style={{fontSize:"9px",color:"#1e4058",marginBottom:"6px"}}>
+                    <div style={{fontSize:"9px",color:"#4a7a9b",marginBottom:"6px"}}>
                       ÚLTIMA SIMULACIÓN — fechas individuales por ticker — Accuracy: <strong style={{color:simResults.filter(r=>r.hit).length/simResults.length>=0.6?"#00ff9d":"#ffd700"}}>{(simResults.filter(r=>r.hit).length/simResults.length*100).toFixed(0)}%</strong>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"8px"}}>
@@ -4522,38 +4522,38 @@ export default function App() {
                                 <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#e0f4ff"}}>{r.ticker}</span>
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",marginLeft:"6px",fontWeight:700}}>{r.moneda}</span>
                                 <span style={{fontSize:"8px",color:"#2e5068",marginLeft:"4px"}}>{r.panel}</span>
-                                <div style={{fontSize:"7px",color:"#1e4058",marginTop:"2px"}}>📅 {r.simDate} · <span style={{color:"#ffd700"}}>{r.simDateLabel}</span></div>
+                                <div style={{fontSize:"7px",color:"#4a7a9b",marginTop:"2px"}}>📅 {r.simDate} · <span style={{color:"#ffd700"}}>{r.simDateLabel}</span></div>
                               </div>
                               <span style={{fontSize:"9px",color:r.hit?"#00ff9d":"#ff3355",fontWeight:700}}>{r.hit?"✓ ACIERTO":"✗ FALLO"}</span>
                             </div>
                             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px",fontSize:"9px",marginBottom:"6px"}}>
                               <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#1e4058",fontSize:"7px"}}>PREDICCIÓN</div>
+                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>PREDICCIÓN</div>
                                 <div style={{color:r.predicted.includes("COMPRA")?"#00ff9d":r.predicted.includes("VENTA")?"#ff3355":"#ffd700",fontWeight:700}}>{r.predicted}</div>
                               </div>
                               <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#1e4058",fontSize:"7px"}}>RETORNO REAL</div>
+                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>RETORNO REAL</div>
                                 <div style={{color:r.actualRet>=0?"#00ff9d":"#ff3355",fontWeight:700}}>{r.actualRet>=0?"+":""}{r.actualRet}%</div>
                               </div>
                               <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#1e4058",fontSize:"7px"}}>SCORE</div>
+                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>SCORE</div>
                                 <div style={{color:"#00d4ff"}}>{r.score}</div>
                               </div>
                               <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#1e4058",fontSize:"7px"}}>EVO PROB</div>
+                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>EVO PROB</div>
                                 <div style={{color:"#ff9040"}}>{r.evoProb}</div>
                               </div>
                             </div>
                             {fund&&(
                               <div style={{padding:"5px",background:"#050c15",borderRadius:"3px",fontSize:"8px"}}>
-                                <div style={{color:"#1e4058",marginBottom:"3px"}}>FUNDAMENTALES</div>
+                                <div style={{color:"#4a7a9b",marginBottom:"3px"}}>FUNDAMENTALES</div>
                                 <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                                  {fund.pe && <span style={{color:"#7ab0c8"}}>P/E: <strong>{fund.pe}</strong></span>}
+                                  {fund.pe && <span style={{color:"#a0cce0"}}>P/E: <strong>{fund.pe}</strong></span>}
                                   {fund.rev_growth!=null && <span style={{color:fund.rev_growth>0?"#00ff9d":"#ff3355"}}>Rev: <strong>{fund.rev_growth}%</strong></span>}
                                   {fund.news_sentiment && <span style={{color:fund.news_sentiment==="positive"?"#00ff9d":fund.news_sentiment==="negative"?"#ff3355":"#ffd700"}}>📰 {fund.news_sentiment}</span>}
                                   {fund.analyst && <span style={{color:fund.analyst==="buy"?"#00ff9d":fund.analyst==="sell"?"#ff3355":"#ffd700"}}>👥 {fund.analyst}</span>}
                                 </div>
-                                {fund.summary&&<div style={{color:"#2e5468",marginTop:"3px",fontSize:"7px"}}>{fund.summary}</div>}
+                                {fund.summary&&<div style={{color:"#5a8fa8",marginTop:"3px",fontSize:"7px"}}>{fund.summary}</div>}
                               </div>
                             )}
                           </div>
@@ -4564,7 +4564,7 @@ export default function App() {
                 )}
 
                 {!simResults.length&&!simRunning&&(
-                  <div style={{textAlign:"center",padding:"40px",color:"#1a3848",fontSize:"11px"}}>
+                  <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
                     Presioná "🎲 NUEVA SIMULACIÓN" para empezar
                   </div>
                 )}
@@ -4586,7 +4586,7 @@ export default function App() {
                   {/* Vista por ticker */}
                   {learnView==="tickers"&&(
                     !hasTickers ? (
-                      <div style={{textAlign:"center",padding:"40px",color:"#1a3848",fontSize:"11px"}}>
+                      <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
                         Ejecutá simulaciones para generar aprendizaje
                       </div>
                     ) : (
@@ -4605,15 +4605,15 @@ export default function App() {
                                   <tr key={tk}>
                                     <td style={{color:"#00ff9d",fontWeight:700}}>{tk}</td>
                                     <td style={{fontSize:"9px",color:isUSA?"#00d4ff":"#ffd700"}}>{isUSA?"🇺🇸":"🇦🇷"}</td>
-                                    <td style={{color:"#7ab0c8"}}>{v.totalSims}</td>
+                                    <td style={{color:"#a0cce0"}}>{v.totalSims}</td>
                                     <td style={{color:v.winRate>=0.6?"#00ff9d":v.winRate>=0.4?"#ffd700":"#ff3355",fontWeight:700}}>{(v.winRate*100).toFixed(0)}%</td>
                                     <td style={{color:"#00d4ff",fontFamily:"'Bebas Neue'",fontSize:"14px"}}>{v.bestW}</td>
                                     <td style={{color:dynConf>0?"#00ff9d":dynConf<0?"#ff3355":"#ffd700"}}>{dynConf>0?"+":""}{dynConf.toFixed(2)}</td>
-                                    <td style={{fontSize:"8px",color:"#1e4058"}}>{v.sessions?.slice(-1)[0]?.simDate||"—"}</td>
+                                    <td style={{fontSize:"8px",color:"#4a7a9b"}}>{v.sessions?.slice(-1)[0]?.simDate||"—"}</td>
                                     <td style={{fontSize:"8px"}}>
                                       {dynParamsRef.current[tk]
                                         ? <span style={{color:"#00ff9d",fontSize:"7px",fontWeight:700}}>✓ ACTIVO</span>
-                                        : <span style={{color:"#1e4058",fontSize:"7px"}}>pendiente</span>}
+                                        : <span style={{color:"#4a7a9b",fontSize:"7px"}}>pendiente</span>}
                                     </td>
                                   </tr>
                                 );
@@ -4627,7 +4627,7 @@ export default function App() {
                   {/* Historial de simulaciones */}
                   {learnView==="history"&&(
                     !hasSims ? (
-                      <div style={{textAlign:"center",padding:"40px",color:"#1a3848",fontSize:"11px"}}>
+                      <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
                         Sin historial aún
                       </div>
                     ) : (
@@ -4640,7 +4640,7 @@ export default function App() {
                                 <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:s.accuracy>=60?"#00ff9d":"#ff3355"}}>{s.accuracy}%</span>
                                 <span style={{fontSize:"8px",color:"#2e5068",marginLeft:"8px"}}>{s.hits}/{s.total} aciertos</span>
                               </div>
-                              <div style={{fontSize:"8px",color:"#1e4058",textAlign:"right"}}>
+                              <div style={{fontSize:"8px",color:"#4a7a9b",textAlign:"right"}}>
                                 <div>{s.runAt?.slice(0,16).replace("T"," ")}</div>
                                 <div style={{color:"#2e5068"}}>Rango: {s.mesesRange||"—"}</div>
                               </div>
@@ -4661,7 +4661,7 @@ export default function App() {
                                         <td style={{color:"#00ff9d",fontWeight:700}}>{r.ticker}</td>
                                         <td style={{color:r.moneda==="USD"?"#00d4ff":"#ffd700",fontSize:"7px"}}>{r.moneda==="USD"?"🇺🇸":"🇦🇷"}</td>
                                         <td style={{color:"#2e5068"}}>{r.simDate}</td>
-                                        <td style={{color:"#1e4058"}}>{r.mesesBack?.toFixed(1)||"—"}m</td>
+                                        <td style={{color:"#4a7a9b"}}>{r.mesesBack?.toFixed(1)||"—"}m</td>
                                         <td style={{color:r.predicted?.includes("COMPRA")?"#00ff9d":r.predicted?.includes("VENTA")?"#ff3355":"#ffd700",fontWeight:700,fontSize:"7px"}}>{r.predicted?.replace(" FUERTE","★")}</td>
                                         <td style={{color:r.actualRet>0?"#00ff9d":r.actualRet<0?"#ff3355":"#ffd700",fontWeight:700}}>{r.actualRet>0?"+":""}{r.actualRet}%</td>
                                         <td style={{color:"#00d4ff"}}>{r.score}</td>
@@ -4682,7 +4682,7 @@ export default function App() {
               );
             })()}
 
-                        <div style={{marginTop:"12px",padding:"6px 10px",background:"#050c15",borderRadius:"4px",fontSize:"8px",color:"#0f2235"}}>
+                        <div style={{marginTop:"12px",padding:"6px 10px",background:"#050c15",borderRadius:"4px",fontSize:"8px",color:"#1e3a50"}}>
               ⚠️ FXCA16 · Precios vía Anthropic Web Search · Histórico sintético · Umbral dinámico P80 · No es asesoramiento financiero.
             </div>
           </div>
