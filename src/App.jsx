@@ -3794,17 +3794,39 @@ export default function App() {
                                 <div style={{fontSize:"7px",color:"#4a7a9b"}}>① FXCA16</div>
                                 <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<fxRating?fxColor:"#0c1826"}}/>)}</div>
                               </div>
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:fxColor,marginBottom:"5px",lineHeight:1}}>{fxLabel}</div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px"}}>
-                                {[{l:"CONF",v:`${fxcaConf}%`,c:fxcaConf>=80?"#00ff88":"#ffd700"},{l:"FX",v:s?.fx_sc||0,c:"#00d4ff"},{l:"EVO",v:s?.evo_sc||0,c:"#ff9040"}].map(x=>(
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:fxColor,marginBottom:"6px",lineHeight:1}}>{fxLabel}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"5px"}}>
+                                {[
+                                  {l:"CONF",    v:`${fxcaConf}%`,  c:fxcaConf>=80?"#00ff88":"#ffd700"},
+                                  {l:"FX",      v:s?.fx_sc||0,     c:"#00d4ff"},
+                                  {l:"EVO",     v:s?.evo_sc||0,    c:"#ff9040"},
+                                  {l:"RSI",     v:s?.rsi||"—",     c:(s?.rsi>70)?"#ff3355":(s?.rsi<30)?"#00ff88":"#ffd700"},
+                                  {l:"MACD",    v:s?.macd_h>=0?"▲":"▼", c:s?.macd_h>=0?"#00ff88":"#ff3355"},
+                                  {l:"R/R",     v:`${s?.rr||0}x`,  c:(s?.rr>=2)?"#00ff88":"#ffd700"},
+                                ].map(x=>(
                                   <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
                                     <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
                                     <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:x.c}}>{x.v}</div>
                                   </div>
                                 ))}
                               </div>
-                              <div style={{marginTop:"4px",fontSize:"7px",color:"#5a8fa8"}}>
-                                RSI {s?.rsi||"—"} · ROC {s?.roc10>=0?"+":""}{s?.roc10||0}% · Tendencia: <span style={{color:TC?.[s?.trend]||"#ffd700"}}>{s?.trend||"—"}</span>
+                              <div style={{borderTop:"1px solid #0f2235",paddingTop:"4px",display:"flex",flexDirection:"column",gap:"2px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                  <span style={{color:"#4a7a9b"}}>Tendencia</span>
+                                  <span style={{color:TC?.[s?.trend]||"#ffd700",fontWeight:600}}>{s?.trend||"—"}</span>
+                                </div>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                  <span style={{color:"#4a7a9b"}}>ROC 10h</span>
+                                  <span style={{color:(s?.roc10>=0)?"#00ff88":"#ff3355",fontWeight:600}}>{s?.roc10>=0?"+":""}{s?.roc10||0}%</span>
+                                </div>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                  <span style={{color:"#4a7a9b"}}>Vol 24h</span>
+                                  <span style={{color:(s?.vol_24h>=1.3)?"#00ff88":"#a0cce0",fontWeight:600}}>{s?.vol_24h||0}x prom.</span>
+                                </div>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                  <span style={{color:"#4a7a9b"}}>EVO Prob.</span>
+                                  <span style={{color:(s?.evo_prob>=0.6)?"#ff9040":"#a0cce0",fontWeight:600}}>{s?.evo_prob||0}</span>
+                                </div>
                               </div>
                             </div>
 
@@ -3814,17 +3836,32 @@ export default function App() {
                                 <div style={{fontSize:"7px",color:"#4a7a9b"}}>② CONFLUENCIA</div>
                                 <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<confRating?confColor:"#0c1826"}}/>)}</div>
                               </div>
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:confColor,marginBottom:"5px",lineHeight:1}}>{confLabel}</div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"4px"}}>
-                                {[{l:"SCORE",v:`${confScore}%`,c:confColor},{l:"▲ ALCIST",v:conf_?.bull||0,c:"#00ff88"},{l:"▼ BAJIST",v:conf_?.bear||0,c:"#ff3355"}].map(x=>(
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:confColor,marginBottom:"6px",lineHeight:1}}>{confLabel}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"5px"}}>
+                                {[
+                                  {l:"SCORE",   v:`${confScore}%`,    c:confColor},
+                                  {l:"▲ BULL",  v:conf_?.bull||0,     c:"#00ff88"},
+                                  {l:"▼ BEAR",  v:conf_?.bear||0,     c:"#ff3355"},
+                                ].map(x=>(
                                   <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
                                     <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
                                     <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:x.c}}>{x.v}</div>
                                   </div>
                                 ))}
                               </div>
-                              <div style={{fontSize:"7px",color:"#5a8fa8"}}>
-                                {rsiDiv_?.bullish?"▲ Div RSI alcista":rsiDiv_?.bearish?"▼ Div RSI bajista":"Sin divergencia"} · {cross_?.golden?"⭐ Golden Cross":cross_?.death?"💀 Death Cross":cross_?.gap>=0?"SMA20>50":"SMA20<50"}
+                              <div style={{borderTop:"1px solid #0f2235",paddingTop:"4px",display:"flex",flexDirection:"column",gap:"2px"}}>
+                                {[
+                                  {l:"RSI Divergencia", v:rsiDiv_?.bullish?"▲ Alcista":rsiDiv_?.bearish?"▼ Bajista":"Sin señal", c:rsiDiv_?.bullish?"#00ff88":rsiDiv_?.bearish?"#ff3355":"#5a8fa8"},
+                                  {l:"Cruce medias",    v:cross_?.golden?"⭐ Golden Cross":cross_?.death?"💀 Death Cross":cross_?.gap>=0?"SMA20 > SMA50":"SMA20 < SMA50", c:cross_?.golden?"#00ff88":cross_?.death?"#ff3355":"#a0cce0"},
+                                  {l:"BB + RSI",        v:boll_?.oversold?"▲ Sobreventa":boll_?.overbought?"▼ Sobrecompra":"Zona neutral", c:boll_?.oversold?"#00ff88":boll_?.overbought?"#ff3355":"#5a8fa8"},
+                                  {l:"Vol en Fib",      v:volFib_?.confirmed?`✓ Fib ${volFib_?.closestFib} (${volFib_?.volRatio}x)`:`${volFib_?.volRatio||"—"}x vol`, c:volFib_?.confirmed?"#ffd700":"#5a8fa8"},
+                                  {l:"Patrón vela",     v:cand_?.patterns?.length?cand_.patterns[0].name:"Sin patrón", c:cand_?.patterns?.[0]?.type==="bullish"?"#00ff88":cand_?.patterns?.[0]?.type==="bearish"?"#ff3355":"#5a8fa8"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                    <span style={{color:"#4a7a9b"}}>{x.l}</span>
+                                    <span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
@@ -3834,21 +3871,32 @@ export default function App() {
                                 <div style={{fontSize:"7px",color:"#4a7a9b"}}>③ ESTRUCTURAL</div>
                                 <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<estRating?estColor:"#0c1826"}}/>)}</div>
                               </div>
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:estColor,marginBottom:"5px",lineHeight:1}}>{estLabel}</div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"4px"}}>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:estColor,marginBottom:"6px",lineHeight:1}}>{estLabel}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"5px"}}>
                                 {[
-                                  {l:"TIMEFRAMES",v:`${mtfAlign}/3`,c:mtfAlign===3?"#00ff88":mtfAlign===2?"#ffd700":"#ff3355"},
-                                  {l:"ATR BAND",v:atrB_?.breakoutUp?"▲ BREAK":atrB_?.breakoutDown?"▼ BREAK":atrB_?.falseBreakUp?"⚠ FALSO":"NORMAL",c:atrB_?.breakoutUp?"#00ff88":atrB_?.breakoutDown?"#ff3355":atrB_?.falseBreakUp?"#ffd700":"#5a8fa8"},
-                                  {l:"VOL PROF",v:vp_?`${vp_.pctFromPoc>=0?"+":""}${vp_.pctFromPoc}%`:"—",c:Math.abs(vp_?.pctFromPoc||0)<3?"#ffd700":"#5a8fa8"},
+                                  {l:"TF 7D",  v:mtf_?.[0]?.dir==="bull"?"▲":mtf_?.[0]?.dir==="bear"?"▼":"◆", c:mtf_?.[0]?.dir==="bull"?"#00ff88":mtf_?.[0]?.dir==="bear"?"#ff3355":"#ffd700"},
+                                  {l:"TF 30D", v:mtf_?.[1]?.dir==="bull"?"▲":mtf_?.[1]?.dir==="bear"?"▼":"◆", c:mtf_?.[1]?.dir==="bull"?"#00ff88":mtf_?.[1]?.dir==="bear"?"#ff3355":"#ffd700"},
+                                  {l:"TF 60D", v:mtf_?.[2]?.dir==="bull"?"▲":mtf_?.[2]?.dir==="bear"?"▼":"◆", c:mtf_?.[2]?.dir==="bull"?"#00ff88":mtf_?.[2]?.dir==="bear"?"#ff3355":"#ffd700"},
                                 ].map(x=>(
                                   <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
                                     <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
-                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:x.c,lineHeight:1.2}}>{x.v}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
                                   </div>
                                 ))}
                               </div>
-                              <div style={{fontSize:"7px",color:"#5a8fa8"}}>
-                                POC {vp_?FP(vp_.poc,moneda):"—"} · SMA150 {reg_?FP(reg_.sma150,moneda):"—"} · Vol {reg_?.volExpanding?"▲ expand":reg_?.volContracting?"▼ contrae":"→ estable"}
+                              <div style={{borderTop:"1px solid #0f2235",paddingTop:"4px",display:"flex",flexDirection:"column",gap:"2px"}}>
+                                {[
+                                  {l:"Fase Weinstein",  v:reg_?.phase||"—",                     c:reg_?.color||"#a0cce0"},
+                                  {l:"ATR Bands",       v:atrB_?.breakoutUp?"✓ Breakout alcista":atrB_?.breakoutDown?"✓ Breakout bajista":atrB_?.falseBreakUp?"⚠ Falso breakout":atrB_?.falseBreakDown?"⚠ Trampa bajista":"Dentro de bandas", c:atrB_?.breakoutUp?"#00ff88":atrB_?.breakoutDown?"#ff3355":atrB_?.falseBreakUp||atrB_?.falseBreakDown?"#ffd700":"#5a8fa8"},
+                                  {l:"POC (Control)",   v:vp_?`${FP(vp_.poc,moneda)} (${vp_.pctFromPoc>=0?"+":""}${vp_.pctFromPoc}%)`:"—", c:Math.abs(vp_?.pctFromPoc||99)<3?"#ffd700":"#a0cce0"},
+                                  {l:"Value Area",      v:vp_?`${FP(vp_.vaL,moneda)} — ${FP(vp_.vaH,moneda)}`:"—", c:vp_?.inValueArea?"#00ff88":"#5a8fa8"},
+                                  {l:"Volumen",         v:reg_?.volExpanding?"▲ Expandiendo":reg_?.volContracting?"▼ Contrayendo":"→ Estable", c:reg_?.volExpanding?"#00ff88":reg_?.volContracting?"#ff3355":"#ffd700"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                    <span style={{color:"#4a7a9b"}}>{x.l}</span>
+                                    <span style={{color:x.c,fontWeight:600,textAlign:"right",maxWidth:"55%"}}>{x.v}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
@@ -3858,12 +3906,12 @@ export default function App() {
                                 <div style={{fontSize:"7px",color:"#4a7a9b"}}>④ OPTIMIZACIÓN</div>
                                 <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<optRating?optColor:"#0c1826"}}/>)}</div>
                               </div>
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:optColor,marginBottom:"5px",lineHeight:1}}>{sq_?.quality||"SIN DATOS"}</div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"4px"}}>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:optColor,marginBottom:"6px",lineHeight:1}}>{sq_?.quality||"SIN DATOS"}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"5px"}}>
                                 {[
-                                  {l:"WF WIN%",v:wf_?`${wf_.hr}%`:"—",c:wf_&&wf_.hr>=55?"#00ff88":wf_&&wf_.hr>=45?"#ffd700":"#ff3355"},
-                                  {l:"HIST WIN%",v:sq_&&sq_.total>=3?`${sq_.hr}%`:"—",c:sq_&&sq_.hr>=60?"#00ff88":sq_&&sq_.hr>=45?"#ffd700":"#ff3355"},
-                                  {l:"RET HIST",v:sq_&&sq_.total>=3?`${sq_.avgRet>=0?"+":""}${sq_.avgRet}%`:"—",c:sq_&&sq_.avgRet>0?"#00ff88":"#ff3355"},
+                                  {l:"WF WIN%",   v:wf_?`${wf_.hr}%`:"—",          c:wf_&&wf_.hr>=55?"#00ff88":wf_&&wf_.hr>=45?"#ffd700":"#ff3355"},
+                                  {l:"HIST WIN%", v:sq_&&sq_.total>=3?`${sq_.hr}%`:"—", c:sq_&&sq_.hr>=60?"#00ff88":sq_&&sq_.hr>=45?"#ffd700":"#ff3355"},
+                                  {l:"RET HIST",  v:sq_&&sq_.total>=3?`${sq_.avgRet>=0?"+":""}${sq_.avgRet}%`:"—", c:sq_&&sq_.avgRet>0?"#00ff88":"#ff3355"},
                                 ].map(x=>(
                                   <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
                                     <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
@@ -3871,10 +3919,20 @@ export default function App() {
                                   </div>
                                 ))}
                               </div>
-                              <div style={{fontSize:"7px",color:hasRisk_?"#ff3355":"#5a8fa8"}}>
-                                {hasRisk_
-                                  ? `⚠️ Earnings en ${events_.find(e=>e.type==="earnings")?.daysLeft}d — sizing reducido`
-                                  : `Sin eventos de riesgo · Consist. ${wf_?wf_.consistency+"%":"—"}`}
+                              <div style={{borderTop:"1px solid #0f2235",paddingTop:"4px",display:"flex",flexDirection:"column",gap:"2px"}}>
+                                {[
+                                  {l:"Consistencia WF",  v:wf_?`${wf_.consistency}% ventanas positivas`:"Sin datos",   c:wf_&&wf_.consistency>=60?"#00ff88":wf_&&wf_.consistency>=40?"#ffd700":"#ff3355"},
+                                  {l:"Setups similares", v:sq_&&sq_.total>=3?`${sq_.total} encontrados`:"Insuficiente", c:sq_&&sq_.total>=5?"#00ff88":"#ffd700"},
+                                  {l:"Máx subida hist.", v:sq_&&sq_.total>=3?`+${sq_.avgMaxRet}%`:"—",                  c:"#00ff88"},
+                                  {l:"Máx caída hist.",  v:sq_&&sq_.total>=3?`${sq_.avgMaxDD}%`:"—",                   c:"#ff3355"},
+                                  {l:"Eventos próximos", v:events_.length?events_.map(e=>`${e.name} (${e.daysLeft<=0?"HOY":e.daysLeft+"d"})`).join(" · "):"Sin eventos",
+                                    c:hasRisk_?"#ff3355":events_.length?"#ffd700":"#00ff88"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                    <span style={{color:"#4a7a9b"}}>{x.l}</span>
+                                    <span style={{color:x.c,fontWeight:600,textAlign:"right",maxWidth:"55%"}}>{x.v}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
