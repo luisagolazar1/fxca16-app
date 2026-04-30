@@ -3669,558 +3669,181 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* ══ CONFLUENCIA DE SEÑALES ══ */}
+                    {/* ══ VEREDICTO FINAL ══ */}
                     {(()=>{
                       const data = rowDataRef.current[sel.ticker];
                       if (!data || data.length < 30) return null;
                       const s = sel.sig;
-                      const fib = calcFibonacci(data, W);
-                      const rsiDiv  = detectRSIDivergence(data);
-                      const volFib  = checkVolumeAtFib(data, fib?.levels);
-                      const cross   = detectCross(data);
-                      const bollRsi = detectBollingerRSISetup(data);
-                      const candles = detectCandlePattern(data);
-                      const spyData = rowDataRef.current["SPY"] || rowDataRef.current["GGAL"];
-                      const corr    = calcMarketCorrelation(data, spyData);
-                      const conf    = calcConfluence(s, rsiDiv, volFib, cross, bollRsi, candles, corr);
-                      const actionColor = conf.action.includes("COMPRAR")?"#00ff88":conf.action.includes("VENDER")?"#ff3355":"#ffd700";
-
-                      return (
-                        <div className="card" style={{padding:"12px",marginBottom:"9px",border:`1px solid ${actionColor}30`}}>
-                          {/* Header con acción recomendada */}
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
-                            <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em"}}>🎯 CONFLUENCIA DE SEÑALES</div>
-                            <div style={{textAlign:"right"}}>
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:actionColor,lineHeight:1}}>{conf.action}</div>
-                              <div style={{fontSize:"8px",color:"#1e4058"}}>{conf.bull} alcistas · {conf.bear} bajistas</div>
-                            </div>
-                          </div>
-
-                          {/* Barra de confluencia */}
-                          <div style={{marginBottom:"10px"}}>
-                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginBottom:"3px"}}>
-                              <span>BAJISTA</span>
-                              <span style={{color:actionColor,fontWeight:700}}>CONFLUENCIA {conf.score}%</span>
-                              <span>ALCISTA</span>
-                            </div>
-                            <div style={{height:"8px",background:"#0c1826",borderRadius:"4px",overflow:"hidden",display:"flex"}}>
-                              <div style={{width:`${conf.total>0?(conf.bear/conf.total*100):50}%`,background:"#ff3355",opacity:.8,transition:"width .3s"}}/>
-                              <div style={{width:`${conf.total>0?(conf.bull/conf.total*100):50}%`,background:"#00ff88",opacity:.8,transition:"width .3s"}}/>
-                            </div>
-                          </div>
-
-                          {/* Señales individuales */}
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px",marginBottom:"10px"}}>
-                            {/* RSI Divergencia */}
-                            <div style={{padding:"6px 8px",background:rsiDiv?.bullish?"#00ff8810":rsiDiv?.bearish?"#ff335510":"#050c15",border:`1px solid ${rsiDiv?.bullish?"#00ff8840":rsiDiv?.bearish?"#ff335540":"#0f2235"}`,borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>RSI DIVERGENCIA</div>
-                              <div style={{fontSize:"9px",fontWeight:700,color:rsiDiv?.bullish?"#00ff88":rsiDiv?.bearish?"#ff3355":"#7ab0c8"}}>
-                                {rsiDiv?.bullish?"▲ ALCISTA":rsiDiv?.bearish?"▼ BAJISTA":"— Sin señal"}
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468"}}>
-                                {rsiDiv?.bullish?"Precio cae, RSI sube → rebote":rsiDiv?.bearish?"Precio sube, RSI baja → corrección":"No hay divergencia activa"}
-                              </div>
-                            </div>
-
-                            {/* Golden/Death Cross */}
-                            <div style={{padding:"6px 8px",background:cross?.golden?"#00ff8810":cross?.death?"#ff335510":"#050c15",border:`1px solid ${cross?.golden?"#00ff8840":cross?.death?"#ff335540":"#0f2235"}`,borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>CRUCE DE MEDIAS</div>
-                              <div style={{fontSize:"9px",fontWeight:700,color:cross?.golden?"#00ff88":cross?.death?"#ff3355":"#7ab0c8"}}>
-                                {cross?.golden?"⭐ GOLDEN CROSS":cross?.death?"💀 DEATH CROSS":cross?.gap>0?"SMA20 > SMA50":"SMA20 < SMA50"}
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468"}}>
-                                SMA20 {cross?.gap>=0?"+":""}{cross?.gap}% vs SMA50
-                              </div>
-                            </div>
-
-                            {/* Bollinger + RSI */}
-                            <div style={{padding:"6px 8px",background:bollRsi?.oversold?"#00ff8810":bollRsi?.overbought?"#ff335510":"#050c15",border:`1px solid ${bollRsi?.oversold?"#00ff8840":bollRsi?.overbought?"#ff335540":"#0f2235"}`,borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>BB + RSI</div>
-                              <div style={{fontSize:"9px",fontWeight:700,color:bollRsi?.oversold?"#00ff88":bollRsi?.overbought?"#ff3355":"#7ab0c8"}}>
-                                {bollRsi?.oversold?"▲ SOBREVENTA":bollRsi?.overbought?"▼ SOBRECOMPRA":"Zona neutral"}
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468"}}>
-                                RSI {bollRsi?.rsi} · {bollRsi?.oversold?"toca banda inferior":bollRsi?.overbought?"toca banda superior":"dentro de bandas"}
-                              </div>
-                            </div>
-
-                            {/* Volumen en Fibonacci */}
-                            <div style={{padding:"6px 8px",background:volFib?.confirmed?"#ffd70010":"#050c15",border:`1px solid ${volFib?.confirmed?"#ffd70040":"#0f2235"}`,borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>VOL EN FIBONACCI</div>
-                              <div style={{fontSize:"9px",fontWeight:700,color:volFib?.confirmed?"#ffd700":"#7ab0c8"}}>
-                                {volFib?.confirmed?`✓ CONFIRMADO Fib ${volFib?.closestFib}`:`${volFib?.volRatio}x vol promedio`}
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468"}}>
-                                {volFib?.confirmed?"Volumen alto en nivel clave":volFib?.distPct<5?`A ${volFib?.distPct}% del nivel Fib`:"Sin confirmación de volumen"}
-                              </div>
-                            </div>
-
-                            {/* Patrón de vela */}
-                            <div style={{padding:"6px 8px",background:candles?.patterns?.length?"#7ab0c810":"#050c15",border:`1px solid ${candles?.patterns?.length?"#7ab0c840":"#0f2235"}`,borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>PATRÓN DE VELA</div>
-                              {candles?.patterns?.length ? candles.patterns.map((p,i)=>(
-                                <div key={i}>
-                                  <div style={{fontSize:"9px",fontWeight:700,color:p.type==="bullish"?"#00ff88":p.type==="bearish"?"#ff3355":"#ffd700"}}>{p.name}</div>
-                                  <div style={{fontSize:"7px",color:"#2e5468"}}>{p.desc}</div>
-                                </div>
-                              )) : (
-                                <>
-                                  <div style={{fontSize:"9px",color:"#7ab0c8"}}>Sin patrón claro</div>
-                                  <div style={{fontSize:"7px",color:"#2e5468"}}>Vela {candles?.isBull?"alcista":"bajista"} normal</div>
-                                </>
-                              )}
-                            </div>
-
-                            {/* Correlación mercado */}
-                            <div style={{padding:"6px 8px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>CORRELACIÓN MERCADO</div>
-                              <div style={{fontSize:"9px",fontWeight:700,color:corr?.type==="alta"?"#ff9040":corr?.type==="inversa"?"#00d4ff":"#7ab0c8"}}>
-                                {corr ? `${corr.corr} (${corr.type})` : "Sin datos SPY"}
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468"}}>
-                                {corr?.type==="alta"?"Se mueve con el mercado":corr?.type==="inversa"?"Defensiva — sube cuando cae el mercado":corr?.type==="media"?"Correlación moderada":"Movimiento independiente"}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Señales activas resumen */}
-                          {conf.signals.length > 0 && (
-                            <div style={{padding:"6px 8px",background:"#050c15",borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"4px"}}>SEÑALES ACTIVAS ({conf.signals.length})</div>
-                              <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
-                                {conf.signals.map((s,i)=>(
-                                  <span key={i} style={{fontSize:"7px",padding:"2px 6px",background:s.type==="bull"?"#00ff8820":s.type==="bear"?"#ff335520":"#ffd70020",color:s.type==="bull"?"#00ff88":s.type==="bear"?"#ff3355":"#ffd700",borderRadius:"3px",border:`1px solid ${s.type==="bull"?"#00ff8840":s.type==="bear"?"#ff335540":"#ffd70040"}`}}>
-                                    {s.type==="bull"?"▲":s.type==="bear"?"▼":"◆"} {s.name}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* INTERPRETACIÓN AUTOMÁTICA */}
-                          {(()=>{
-                            const fxcaBull = s?.sig?.includes("COMPRA");
-                            const fxcaBear = s?.sig?.includes("VENTA");
-                            const confBull = conf.action.includes("COMPRAR");
-                            const confBear = conf.action.includes("VENDER");
-                            const confWait = conf.action === "ESPERAR";
-                            const incongruencia = (fxcaBull && confBear) || (fxcaBear && confBull);
-                            const alineado = (fxcaBull && confBull) || (fxcaBear && confBear);
-                            const fibPct = (() => {
-                              const d = rowDataRef.current[sel.ticker];
-                              if (!d) return null;
-                              const fib2 = calcFibonacci(d, W);
-                              if (!fib2) return null;
-                              return ((sel.price - fib2.low)/fib2.rng*100).toFixed(0);
-                            })();
-                            const rsiVal = s?.rsi;
-                            const hasDivBear = rsiDiv?.bearish;
-                            const hasDivBull = rsiDiv?.bullish;
-                            const hasCross = cross?.golden || cross?.death;
-
-                            let title = "", color = "", lines = [];
-
-                            if (incongruencia && fxcaBull && confBear) {
-                              title = "⚠️ ALERTA DE AGOTAMIENTO";
-                              color = "#ffd700";
-                              lines = [
-                                `FXCA16 detecta momentum alcista de corto plazo — el precio sube con fuerza.`,
-                                hasDivBear ? `Sin embargo, la Divergencia RSI Bajista indica que el momentum interno se debilita. Cuando el precio hace nuevos máximos pero el RSI no los acompaña, históricamente precede una corrección.` : "",
-                                rsiVal >= 65 ? `El RSI en ${rsiVal} está cerca de zona de sobrecompra (>70). Hay poco margen antes de que el indicador se agote.` : "",
-                                fibPct >= 70 ? `El precio está en el ${fibPct}% del rango Fibonacci — cercano al techo, lejos del piso. El R/R para entrar acá es desfavorable.` : "",
-                                `📌 ACCIÓN SUGERIDA: Si ya tenés posición, subí el stop a la zona de entrada y considerá tomar ganancias parciales en TP1/TP2. Si no tenés posición, esperá un retroceso a Fibonacci 38.2% o 50% para entrar con mejor R/R.`,
-                              ].filter(Boolean);
-                            } else if (incongruencia && fxcaBear && confBull) {
-                              title = "⚠️ POSIBLE REBOTE EN CAÍDA";
-                              color = "#ffd700";
-                              lines = [
-                                `FXCA16 detecta tendencia bajista de corto plazo — el precio cae con presión vendedora.`,
-                                hasDivBull ? `Sin embargo, la Divergencia RSI Alcista sugiere que la caída se está agotando. Cuando el precio hace nuevos mínimos pero el RSI no los acompaña, suele preceder un rebote.` : "",
-                                rsiVal <= 35 ? `El RSI en ${rsiVal} está en zona de sobreventa (<30). El mercado puede estar sobrevendido y listo para recuperar.` : "",
-                                fibPct <= 30 ? `El precio está en el ${fibPct}% del rango Fibonacci — cerca del piso. Los niveles 23.6% y 38.2% suelen actuar como soporte fuerte.` : "",
-                                `📌 ACCIÓN SUGERIDA: No vendas en este punto — la relación riesgo/beneficio es desfavorable. Esperá confirmación del rebote (vela de reversión o volumen creciente) antes de operar.`,
-                              ].filter(Boolean);
-                            } else if (alineado && confBull) {
-                              title = "✅ SEÑAL CONFIRMADA — COMPRA";
-                              color = "#00ff88";
-                              lines = [
-                                `FXCA16 y el análisis de confluencia apuntan en la misma dirección alcista.`,
-                                cross?.golden ? `El Golden Cross (SMA20 cruza SMA50 hacia arriba) confirma el cambio de tendencia a largo plazo. Es una señal de alta confiabilidad.` : "",
-                                bollRsi?.oversold ? `El precio está en zona de sobreventa con RSI bajo y tocando la banda inferior de Bollinger — setup de rebote de alta probabilidad.` : "",
-                                hasDivBull ? `La Divergencia RSI Alcista confirma que la venta se está agotando.` : "",
-                                `📌 ACCIÓN SUGERIDA: Señal alineada. Podés entrar con el sizing normal en el precio de ENTRADA sugerido, stop en el nivel indicado. Objetivo principal TP2.`,
-                              ].filter(Boolean);
-                            } else if (alineado && confBear) {
-                              title = "🔴 SEÑAL CONFIRMADA — VENTA";
-                              color = "#ff3355";
-                              lines = [
-                                `FXCA16 y el análisis de confluencia confirman presión bajista.`,
-                                cross?.death ? `El Death Cross (SMA20 cruza SMA50 hacia abajo) indica cambio de tendencia bajista a largo plazo.` : "",
-                                bollRsi?.overbought ? `El precio está sobrecomprado tocando la banda superior de Bollinger con RSI alto — alta probabilidad de corrección.` : "",
-                                hasDivBear ? `La Divergencia RSI Bajista confirma agotamiento del movimiento alcista.` : "",
-                                `📌 ACCIÓN SUGERIDA: Si tenés posición larga, es momento de considerar reducirla. El sistema no opera en short, pero evitá comprar en este punto.`,
-                              ].filter(Boolean);
-                            } else if (confWait) {
-                              title = "⏳ SEÑAL DÉBIL — ESPERAR";
-                              color = "#ffd700";
-                              lines = [
-                                `Las señales no tienen suficiente confluencia para recomendar una acción clara.`,
-                                `El score de ${conf.score}% indica que hay más ruido que señal en este momento.`,
-                                `📌 ACCIÓN SUGERIDA: Esperá que se definan más señales. Revisá esta acción al cambiar la ventana de días o después de la próxima actualización de datos.`,
-                              ];
-                            } else {
-                              return null;
-                            }
-
-                            return (
-                              <div style={{marginTop:"8px",padding:"10px 12px",background:`${color}08`,border:`1px solid ${color}30`,borderRadius:"6px",borderLeft:`3px solid ${color}`}}>
-                                <div style={{fontSize:"9px",fontWeight:700,color,marginBottom:"8px",letterSpacing:".05em"}}>{title}</div>
-                                {lines.map((l,i)=>(
-                                  <div key={i} style={{fontSize:"8px",color:l.startsWith("📌")?"#ffd700":"#8ab0c8",lineHeight:"1.7",marginBottom:"4px"}}>
-                                    {l}
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      );
-                    })()}
-
-                    {/* ══ ANÁLISIS AVANZADO ══ */}
-                    {(()=>{
-                      const data = rowDataRef.current[sel.ticker];
-                      if (!data || data.length < 50) return null;
                       const moneda = sel.moneda || "USD";
                       const px = sel.price || data[data.length-1].close;
-                      const atrB = calcATRBands(data);
-                      const vp   = calcVolumeProfile(data);
-                      const mtf  = calcMultiTimeframe(data, W);
-                      const reg  = detectTickerRegime(data);
 
-                      // Contar timeframes alineados
-                      const mtfBull = mtf?.filter(f=>f.dir==="bull").length || 0;
-                      const mtfBear = mtf?.filter(f=>f.dir==="bear").length || 0;
-                      const mtfAlign = Math.max(mtfBull, mtfBear);
-                      const mtfDir = mtfBull > mtfBear ? "bull" : mtfBear > mtfBull ? "bear" : "neutral";
-                      const mtfColor = mtfDir==="bull"?"#00ff88":mtfDir==="bear"?"#ff3355":"#ffd700";
+                      // ── Calcular los 4 ejes ──
+                      // 1. FXCA16
+                      const fxScore   = s?.final_sc || 0;
+                      const fxcaConf  = s?.conf || 0;
+                      const fxBull    = s?.sig?.includes("COMPRA");
+                      const fxBear    = s?.sig?.includes("VENTA");
+                      const fxLabel   = fxBull ? (s?.sig?.includes("FUERTE")?"COMPRA FUERTE":"COMPRA") : fxBear ? (s?.sig?.includes("FUERTE")?"VENTA FUERTE":"VENTA") : "NEUTRAL";
+                      const fxColor   = fxBull?"#00ff88":fxBear?"#ff3355":"#ffd700";
+                      const fxRating  = fxScore>=75?3:fxScore>=55?2:fxScore>=40?1:0;
 
-                      return (
-                        <div className="card" style={{padding:"12px",marginBottom:"9px"}}>
-                          <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"10px"}}>
-                            🔬 ANÁLISIS ESTRUCTURAL AVANZADO
-                          </div>
+                      // 2. CONFLUENCIA
+                      const fib_      = calcFibonacci(data, W);
+                      const rsiDiv_   = detectRSIDivergence(data);
+                      const volFib_   = checkVolumeAtFib(data, fib_?.levels);
+                      const cross_    = detectCross(data);
+                      const boll_     = detectBollingerRSISetup(data);
+                      const cand_     = detectCandlePattern(data);
+                      const conf_     = calcConfluence(s, rsiDiv_, volFib_, cross_, boll_, cand_, null);
+                      const confScore = conf_?.score || 0;
+                      const confDir   = conf_?.action?.includes("COMPRAR")?"bull":conf_?.action?.includes("VENDER")?"bear":"neutral";
+                      const confColor = confDir==="bull"?"#00ff88":confDir==="bear"?"#ff3355":"#ffd700";
+                      const confRating= confScore>=70?3:confScore>=50?2:confScore>=35?1:0;
+                      const confLabel = conf_?.action || "ESPERAR";
+                      // Incongruencia entre FXCA16 y Confluencia
+                      const incongruencia = (fxBull && confDir==="bear") || (fxBear && confDir==="bull");
+                      const alineado      = (fxBull && confDir==="bull") || (fxBear && confDir==="bear");
 
-                          {/* MULTI-TIMEFRAME */}
-                          <div style={{marginBottom:"10px"}}>
-                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>📊 CONFLUENCIA MULTI-TIMEFRAME</div>
-                              <div style={{fontSize:"9px",fontWeight:700,color:mtfColor}}>
-                                {mtfAlign}/3 {mtfDir==="bull"?"ALCISTAS":mtfDir==="bear"?"BAJISTAS":"MIXTOS"}
-                              </div>
-                            </div>
-                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px"}}>
-                              {mtf?.map(f=>{
-                                const c = f.dir==="bull"?"#00ff88":f.dir==="bear"?"#ff3355":"#ffd700";
-                                return (
-                                  <div key={f.w} style={{padding:"6px",background:`${c}10`,border:`1px solid ${c}30`,borderRadius:"4px",textAlign:"center"}}>
-                                    <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>{f.label}</div>
-                                    <div style={{fontSize:"10px",fontWeight:700,color:c}}>
-                                      {f.dir==="bull"?"▲":f.dir==="bear"?"▼":"◆"}
-                                    </div>
-                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:c}}>{f.score}</div>
-                                    <div style={{fontSize:"7px",color:"#2e5468"}}>{f.sig?.sig?.replace(" FUERTE","").replace(" MODERADO","") || "NEUTRAL"}</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {mtfAlign===3&&(
-                              <div style={{marginTop:"5px",padding:"4px 8px",background:`${mtfColor}15`,borderRadius:"3px",fontSize:"7px",color:mtfColor,fontWeight:700}}>
-                                ⭐ SEÑAL TRIPLE CONFIRMADA — Los 3 timeframes coinciden. Confiabilidad muy alta.
-                              </div>
-                            )}
-                            {mtfAlign===2&&(
-                              <div style={{marginTop:"5px",padding:"4px 8px",background:"#ffd70010",borderRadius:"3px",fontSize:"7px",color:"#ffd700"}}>
-                                2 de 3 timeframes alineados — señal moderadamente confiable.
-                              </div>
-                            )}
-                            {mtfAlign<=1&&(
-                              <div style={{marginTop:"5px",padding:"4px 8px",background:"#1e405810",borderRadius:"3px",fontSize:"7px",color:"#1e4058"}}>
-                                Timeframes contradictorios — mercado en indefinición. Esperá.
-                              </div>
-                            )}
-                          </div>
+                      // 3. ANÁLISIS ESTRUCTURAL
+                      const mtf_      = calcMultiTimeframe(data, W);
+                      const reg_      = detectTickerRegime(data);
+                      const atrB_     = calcATRBands(data);
+                      const vp_       = calcVolumeProfile(data);
+                      const mtfBull   = mtf_?.filter(f=>f.dir==="bull").length||0;
+                      const mtfBear   = mtf_?.filter(f=>f.dir==="bear").length||0;
+                      const mtfAlign  = Math.max(mtfBull,mtfBear);
+                      const mtfDir_   = mtfBull>mtfBear?"bull":mtfBear>mtfBull?"bear":"neutral";
+                      const regPhase  = reg_?.phase||"";
+                      const regBull   = ["Markup","Acumulación","Recuperación"].includes(regPhase);
+                      const regBear   = ["Markdown","Distribución"].includes(regPhase);
+                      const estScore  = mtfAlign*25 + (regBull?20:regBear?0:10) + (atrB_?.breakoutUp?15:0);
+                      const estRating = estScore>=70?3:estScore>=45?2:estScore>=20?1:0;
+                      const estColor  = regBull&&mtfAlign>=2?"#00ff88":regBear||mtfAlign<=1?"#ff3355":"#ffd700";
+                      const estLabel  = regPhase||"Sin datos";
 
-                          {/* RÉGIMEN DEL TICKER */}
-                          {reg&&(
-                            <div style={{marginBottom:"10px",padding:"8px 10px",background:`${reg.color}10`,border:`1px solid ${reg.color}30`,borderRadius:"5px"}}>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>📈 FASE WEINSTEIN</div>
-                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:reg.color}}>{reg.phase.toUpperCase()}</div>
-                              </div>
-                              <div style={{fontSize:"8px",color:"#8ab0c8",lineHeight:"1.6",marginBottom:"4px"}}>{reg.desc}</div>
-                              <div style={{fontSize:"8px",color:"#ffd700",fontWeight:600}}>📌 {reg.action}</div>
-                              <div style={{display:"flex",gap:"8px",marginTop:"6px",fontSize:"7px",color:"#1e4058"}}>
-                                <span>SMA20 {FP(reg.sma20,moneda)}</span>
-                                <span>SMA50 {FP(reg.sma50,moneda)}</span>
-                                <span>SMA150 {FP(reg.sma150,moneda)}</span>
-                                <span style={{color:reg.volExpanding?"#00ff88":reg.volContracting?"#ff3355":"#ffd700"}}>
-                                  VOL {reg.volExpanding?"▲ expandiendo":reg.volContracting?"▼ contrayendo":"→ estable"}
-                                </span>
-                              </div>
-                            </div>
-                          )}
+                      // 4. OPTIMIZACIÓN
+                      const wf_       = backtestWalkForward(data, W);
+                      const sq_       = calcSignalQuality(data, s, W);
+                      const events_   = getUpcomingEvents(sel.ticker, moneda);
+                      const ps_       = calcPositionSizing(s, conf_, 1000000);
+                      const hasRisk_  = events_.some(e=>e.type==="earnings"&&e.daysLeft<=5);
+                      const wfOk      = wf_ && wf_.hr>=52 && wf_.consistency>=50;
+                      const sqOk      = sq_ && sq_.hr>=55;
+                      const optRating = (wfOk?1:0)+(sqOk?1:0)+(!hasRisk_?1:0);
+                      const optColor  = optRating>=3?"#00ff88":optRating>=2?"#ffd700":"#ff3355";
+                      const optLabel  = hasRisk_?`⚠️ Earnings en ${events_.find(e=>e.type==="earnings")?.daysLeft}d`:wfOk&&sqOk?"✓ Backtest consistente":!wfOk?"Backtest débil":"Calidad media";
 
-                          {/* ATR BANDS */}
-                          {atrB&&(
-                            <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em",marginBottom:"6px"}}>⚡ ATR BANDS — Breakout genuino vs falso</div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"6px"}}>
-                                {[
-                                  {l:"BANDA SUP",v:FP(atrB.upper,moneda),c:"#ff3355",sub:`${atrB.pctFromUpper>=0?"+":""}${atrB.pctFromUpper}%`},
-                                  {l:"MEDIA ATR",v:FP(atrB.mid,moneda),c:"#7ab0c8",sub:`${atrB.pctFromMid>=0?"+":""}${atrB.pctFromMid}%`},
-                                  {l:"BANDA INF",v:FP(atrB.lower,moneda),c:"#00ff88",sub:`${atrB.pctFromLower>=0?"+":""}${atrB.pctFromLower}%`},
-                                ].map(x=>(
-                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#07101a",borderRadius:"3px"}}>
-                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
-                                    <div style={{fontSize:"9px",color:x.c,fontWeight:600}}>{x.v}</div>
-                                    <div style={{fontSize:"7px",color:x.c,opacity:.7}}>{x.sub}</div>
-                                  </div>
-                                ))}
-                              </div>
-                              {atrB.breakoutUp&&<div style={{padding:"4px 8px",background:"#00ff8815",border:"1px solid #00ff8840",borderRadius:"3px",fontSize:"8px",color:"#00ff88",fontWeight:700}}>✅ BREAKOUT ALCISTA GENUINO — Precio supera banda con volumen {atrB.volRatio}x. Alta probabilidad de continuación.</div>}
-                              {atrB.breakoutDown&&<div style={{padding:"4px 8px",background:"#ff335515",border:"1px solid #ff335540",borderRadius:"3px",fontSize:"8px",color:"#ff3355",fontWeight:700}}>⬇️ BREAKOUT BAJISTA GENUINO — Precio rompe banda inferior con volumen {atrB.volRatio}x. Señal de continuación bajista.</div>}
-                              {atrB.falseBreakUp&&<div style={{padding:"4px 8px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px",fontSize:"8px",color:"#ffd700"}}>⚠️ POSIBLE FALSO BREAKOUT ALCISTA — Precio sobre banda pero sin volumen ({atrB.volRatio}x). Alta probabilidad de regreso a la media.</div>}
-                              {atrB.falseBreakDown&&<div style={{padding:"4px 8px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px",fontSize:"8px",color:"#ffd700"}}>⚠️ POSIBLE FALSO BREAKOUT BAJISTA — Precio bajo banda pero sin volumen ({atrB.volRatio}x). Puede ser una trampa bajista.</div>}
-                              {!atrB.breakoutUp&&!atrB.breakoutDown&&!atrB.falseBreakUp&&!atrB.falseBreakDown&&(
-                                <div style={{fontSize:"7px",color:"#1e4058"}}>Precio dentro de las bandas ATR — movimiento normal sin breakout.</div>
-                              )}
-                            </div>
-                          )}
+                      // ── VEREDICTO GLOBAL ──
+                      const totalRating = fxRating + confRating + estRating + optRating;
+                      const maxRating   = 3+3+3+3;
+                      const globalPct   = Math.round(totalRating/maxRating*100);
 
-                          {/* VOLUME PROFILE */}
-                          {vp&&(
-                            <div style={{padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em",marginBottom:"6px"}}>📦 VOLUME PROFILE — Niveles de mayor interés</div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"6px"}}>
-                                <div style={{textAlign:"center",padding:"4px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px"}}>
-                                  <div style={{fontSize:"6px",color:"#1e4058"}}>POC (Control)</div>
-                                  <div style={{fontSize:"11px",color:"#ffd700",fontWeight:700}}>{FP(vp.poc,moneda)}</div>
-                                  <div style={{fontSize:"7px",color:"#ffd700",opacity:.7}}>{vp.pctFromPoc>=0?"+":""}{vp.pctFromPoc}% del precio</div>
-                                </div>
-                                <div style={{textAlign:"center",padding:"4px",background:"#00ff8810",borderRadius:"3px"}}>
-                                  <div style={{fontSize:"6px",color:"#1e4058"}}>VA Alto</div>
-                                  <div style={{fontSize:"11px",color:"#00ff88",fontWeight:600}}>{FP(vp.vaH,moneda)}</div>
-                                  <div style={{fontSize:"7px",color:"#1e4058"}}>resistencia</div>
-                                </div>
-                                <div style={{textAlign:"center",padding:"4px",background:"#ff335510",borderRadius:"3px"}}>
-                                  <div style={{fontSize:"6px",color:"#1e4058"}}>VA Bajo</div>
-                                  <div style={{fontSize:"11px",color:"#ff3355",fontWeight:600}}>{FP(vp.vaL,moneda)}</div>
-                                  <div style={{fontSize:"7px",color:"#1e4058"}}>soporte</div>
-                                </div>
-                              </div>
-                              {/* Barra visual del perfil */}
-                              <div style={{display:"flex",gap:"1px",alignItems:"flex-end",height:"30px",marginBottom:"4px"}}>
-                                {vp.profile.map((v,i)=>{
-                                  const maxV = Math.max(...vp.profile);
-                                  const h = Math.max(4, (v/maxV)*28);
-                                  const priceAtBin = vp.low + i*vp.binSize + vp.binSize/2;
-                                  const isPoc = i === vp.profile.indexOf(maxV);
-                                  const isValue = priceAtBin >= vp.vaL && priceAtBin <= vp.vaH;
-                                  const isCurrent = Math.abs(priceAtBin - px)/px < vp.binSize/px;
-                                  return (
-                                    <div key={i} style={{flex:1,height:`${h}px`,background:isPoc?"#ffd700":isCurrent?"#00d4ff":isValue?"#00ff8840":"#1e405840",borderRadius:"1px",transition:"height .3s"}}/>
-                                  );
-                                })}
-                              </div>
-                              <div style={{fontSize:"7px",color:"#1e4058"}}>
-                                {vp.inValueArea
-                                  ? `✓ Precio dentro del Value Area (VA) — zona de mayor liquidez y actividad.`
-                                  : vp.abovePoc
-                                  ? `Precio por encima del POC — zona de menor liquidez, movimiento más rápido posible.`
-                                  : `Precio por debajo del POC — buscará volver al nivel de control (${FP(vp.poc,moneda)}).`}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                      let veredicto, veredictoColor, veredictoDesc, accion;
 
-                    {/* ══ ETAPA 2: OPTIMIZACIÓN ══ */}
-                    {(()=>{
-                      const data  = rowDataRef.current[sel.ticker];
-                      if (!data || data.length < 100) return null;
-                      const s       = sel.sig;
-                      const moneda  = sel.moneda || "USD";
-                      const wf      = backtestWalkForward(data, W);
-                      const sq      = calcSignalQuality(data, s, W);
-                      const events  = getUpcomingEvents(sel.ticker, moneda);
-                      // Calcular confluencia para sizing
-                      const fib2    = calcFibonacci(data, W);
-                      const rsiDiv2 = detectRSIDivergence(data);
-                      const volFib2 = checkVolumeAtFib(data, fib2?.levels);
-                      const cross2  = detectCross(data);
-                      const boll2   = detectBollingerRSISetup(data);
-                      const cand2   = detectCandlePattern(data);
-                      const conf2   = calcConfluence(s, rsiDiv2, volFib2, cross2, boll2, cand2, null);
-                      const ps2     = calcPositionSizing(s, conf2, 1000000);
-                      const hasRisk = events.some(e=>e.type==="earnings"&&e.daysLeft<=5);
+                      if (incongruencia && fxBull) {
+                        veredicto      = "ALERTA — AGOTAMIENTO";
+                        veredictoColor = "#ffd700";
+                        veredictoDesc  = `FXCA16 muestra momentum alcista (score ${fxScore}) pero la confluencia detecta señales de agotamiento. El precio puede estar cerca de un techo.`;
+                        accion         = `No entres ahora. Si tenés posición, subí el stop a la entrada. Esperá retroceso a Fib 38.2% (${fib_?FP(fib_.levels?.find(l=>l.label==="38.2%")?.value,moneda):"—"}) para re-evaluar.`;
+                      } else if (incongruencia && fxBear) {
+                        veredicto      = "POSIBLE REBOTE";
+                        veredictoColor = "#ffd700";
+                        veredictoDesc  = `FXCA16 muestra presión bajista pero la confluencia detecta señales de rebote. La caída puede estar agotándose.`;
+                        accion         = `No vendas en este punto. Esperá confirmación del rebote con vela de reversión y volumen antes de actuar.`;
+                      } else if (alineado && fxBull && globalPct>=65) {
+                        veredicto      = "COMPRAR";
+                        veredictoColor = "#00ff88";
+                        veredictoDesc  = `Señal alineada entre todos los ejes. Score global ${globalPct}%. ${mtfAlign===3?"Triple confirmación multi-timeframe.":""} ${regBull?"Fase Weinstein "+regPhase+".":""}`;
+                        accion         = `Entrá en $${FP(s?.entry,moneda)} con stop en ${FP(s?.sl,moneda)}. Objetivo principal TP2 ${FP(s?.tp2,moneda)} (+${s?.tp2&&px?(((s.tp2-px)/px*100).toFixed(1)):"-"}%). Sizing: ${ps_?.level||"normal"}.`;
+                      } else if (alineado && fxBull && globalPct>=45) {
+                        veredicto      = "COMPRAR MODERADO";
+                        veredictoColor = "#7ab0c8";
+                        veredictoDesc  = `Señal mayormente alineada con score global ${globalPct}%. Algunos ejes muestran incertidumbre.`;
+                        accion         = `Podés entrar con sizing reducido (50%). Stop en ${FP(s?.sl,moneda)}. Objetivo TP1 ${FP(s?.tp1,moneda)}.`;
+                      } else if (alineado && fxBear && globalPct>=55) {
+                        veredicto      = "EVITAR / REDUCIR";
+                        veredictoColor = "#ff3355";
+                        veredictoDesc  = `Señal bajista confirmada en múltiples ejes. Score global ${globalPct}%. ${regBear?"Fase Weinstein "+regPhase+".":""}`;
+                        accion         = `No abras posiciones largas. Si tenés posición, considerá reducir o salir. El sistema no opera en short.`;
+                      } else {
+                        veredicto      = "ESPERAR";
+                        veredictoColor = "#ffd700";
+                        veredictoDesc  = `Los ejes no tienen suficiente alineación para recomendar una acción clara. Score global ${globalPct}%.`;
+                        accion         = `Revisá esta acción en ${W>=14?"unos días":"la próxima sesión"} o cambiá la ventana de análisis.`;
+                      }
 
                       return (
-                        <div className="card" style={{padding:"12px",marginBottom:"9px",border:`1px solid ${hasRisk?"#ff335530":"#0f2235"}`}}>
-                          <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"10px"}}>
-                            ⚙️ OPTIMIZACIÓN — Calidad, Eventos y Sizing
+                        <div className="card" style={{padding:"14px",marginBottom:"9px",border:`2px solid ${veredictoColor}40`,boxShadow:`0 0 20px ${veredictoColor}10`}}>
+
+                          {/* VEREDICTO */}
+                          <div style={{textAlign:"center",marginBottom:"14px",paddingBottom:"12px",borderBottom:"1px solid #0f2235"}}>
+                            <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".2em",marginBottom:"4px"}}>VEREDICTO FINAL</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:veredictoColor,lineHeight:1,marginBottom:"6px"}}>{veredicto}</div>
+                            <div style={{fontSize:"8px",color:"#8ab0c8",lineHeight:1.7,marginBottom:"8px",maxWidth:"480px",margin:"0 auto 8px"}}>{veredictoDesc}</div>
+                            <div style={{padding:"8px 12px",background:`${veredictoColor}12`,border:`1px solid ${veredictoColor}30`,borderRadius:"5px",fontSize:"8px",color:"#ffd700",lineHeight:1.7,textAlign:"left"}}>
+                              📌 {accion}
+                            </div>
                           </div>
 
-                          {/* FILTRO DE EVENTOS */}
-                          {events.length > 0 ? (
-                            <div style={{marginBottom:"10px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em",marginBottom:"5px"}}>📅 EVENTOS PRÓXIMOS</div>
-                              {events.map((ev,i)=>(
-                                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",marginBottom:"4px",
-                                  background:ev.type==="earnings"?"#ff335515":"#ffd70010",
-                                  border:`1px solid ${ev.type==="earnings"?"#ff335540":"#ffd70030"}`,borderRadius:"4px"}}>
-                                  <div>
-                                    <div style={{fontSize:"9px",fontWeight:700,color:ev.type==="earnings"?"#ff3355":"#ffd700"}}>{ev.name}</div>
-                                    <div style={{fontSize:"7px",color:"#2e5468",marginTop:"1px"}}>
-                                      {ev.type==="earnings"
-                                        ? "⚠️ Alta volatilidad esperada — el precio puede moverse ±10% o más."
-                                        : "Evento macro — puede afectar al mercado en general."}
-                                    </div>
+                          {/* 4 EJES */}
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"8px",marginBottom:"12px"}}>
+                            {[
+                              { n:"① FXCA16",         label:fxLabel,   score:fxScore,   rating:fxRating,   color:fxColor,
+                                sub:`Conf ${fxcaConf}% · FX ${s?.fx_sc||0} · EVO ${s?.evo_sc||0}` },
+                              { n:"② CONFLUENCIA",     label:confLabel, score:confScore, rating:confRating,  color:confColor,
+                                sub:`${conf_?.bull||0} alcistas · ${conf_?.bear||0} bajistas · ${conf_?.total||0} señales` },
+                              { n:"③ ESTRUCTURAL",     label:estLabel,  score:estScore,  rating:estRating,   color:estColor,
+                                sub:`${mtfAlign}/3 TF · ${atrB_?.breakoutUp?"Breakout ✓":atrB_?.falseBreakUp?"Falso Break ⚠":"Sin breakout"}` },
+                              { n:"④ OPTIMIZACIÓN",    label:optLabel,  score:optRating*33, rating:optRating, color:optColor,
+                                sub:`WF ${wf_?wf_.hr+"%":"—"} · Calidad ${sq_?.quality||"—"} · ${hasRisk_?"⚠ Eventos":"Sin eventos"}` },
+                            ].map(eje=>(
+                              <div key={eje.n} style={{padding:"10px",background:"#050c15",borderRadius:"5px",border:`1px solid ${eje.color}25`}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"5px"}}>
+                                  <div style={{fontSize:"7px",color:"#1e4058"}}>{eje.n}</div>
+                                  <div style={{display:"flex",gap:"2px"}}>
+                                    {[0,1,2].map(i=>(
+                                      <div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<eje.rating?eje.color:"#0c1826"}}/>
+                                    ))}
                                   </div>
-                                  <div style={{textAlign:"right",minWidth:"60px"}}>
-                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:ev.daysLeft<=2?"#ff3355":"#ffd700"}}>
-                                      {ev.daysLeft<=0?"HOY":ev.daysLeft===1?"MAÑANA":`${ev.daysLeft}d`}
-                                    </div>
-                                  </div>
+                                </div>
+                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"15px",color:eje.color,marginBottom:"2px",lineHeight:1}}>{eje.label}</div>
+                                <div style={{fontSize:"7px",color:"#2e5468",lineHeight:1.5}}>{eje.sub}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* BARRA GLOBAL */}
+                          <div>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#1e4058",marginBottom:"3px"}}>
+                              <span>SCORE GLOBAL</span>
+                              <span style={{color:veredictoColor,fontWeight:700}}>{globalPct}% ({totalRating}/{maxRating} puntos)</span>
+                            </div>
+                            <div style={{height:"6px",background:"#0c1826",borderRadius:"3px",overflow:"hidden"}}>
+                              <div style={{height:"100%",width:`${globalPct}%`,background:`linear-gradient(90deg,#ff3355,#ffd700 40%,#00ff88)`,borderRadius:"3px",transition:"width .4s"}}/>
+                            </div>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"6px",color:"#1e4058",marginTop:"2px"}}>
+                              <span>EVITAR</span><span>ESPERAR</span><span>MODERAR</span><span>COMPRAR</span>
+                            </div>
+                          </div>
+
+                          {/* SIZING Y EVENTOS inline */}
+                          {(ps_||events_.length>0)&&(
+                            <div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #0f2235",display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+                              {ps_&&<div style={{fontSize:"8px",padding:"4px 10px",background:`${ps_.levelColor}15`,border:`1px solid ${ps_.levelColor}30`,borderRadius:"4px",color:ps_.levelColor,fontWeight:700}}>
+                                💰 {ps_.level} · {ps_.riskPct}% riesgo · ${ps_.riskAmount.toLocaleString()}
+                              </div>}
+                              {events_.map((ev,i)=>(
+                                <div key={i} style={{fontSize:"8px",padding:"4px 10px",background:ev.type==="earnings"?"#ff335515":"#ffd70010",border:`1px solid ${ev.type==="earnings"?"#ff335540":"#ffd70030"}`,borderRadius:"4px",color:ev.type==="earnings"?"#ff3355":"#ffd700"}}>
+                                  📅 {ev.name} — {ev.daysLeft<=0?"HOY":ev.daysLeft===1?"MAÑANA":`${ev.daysLeft}d`}
                                 </div>
                               ))}
-                              {hasRisk && (
-                                <div style={{padding:"5px 8px",background:"#ff335510",borderRadius:"3px",fontSize:"7px",color:"#ff9040"}}>
-                                  📌 Earnings en menos de 5 días — operá con sizing reducido o esperá el resultado antes de entrar.
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div style={{marginBottom:"10px",padding:"6px 10px",background:"#00ff8808",border:"1px solid #00ff8820",borderRadius:"4px"}}>
-                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>📅 EVENTOS PRÓXIMOS</div>
-                              <div style={{fontSize:"8px",color:"#00ff88"}}>✓ Sin eventos de riesgo en los próximos 7 días. Ambiente favorable para operar.</div>
-                            </div>
-                          )}
-
-                          {/* CALIDAD HISTÓRICA */}
-                          {sq && sq.total >= 3 && (
-                            <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>🔬 CALIDAD HISTÓRICA DE SEÑAL</div>
-                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:sq.qualityColor}}>{sq.quality}</div>
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468",marginBottom:"6px"}}>
-                                Encontré <strong style={{color:"#7ab0c8"}}>{sq.total} setups similares</strong> en el historial de {sel.ticker}. Cuando esta acción tuvo esta configuración en el pasado:
-                              </div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"5px"}}>
-                                {[
-                                  {l:"WIN RATE",v:`${sq.hr}%`,c:sq.hr>=60?"#00ff88":sq.hr>=45?"#ffd700":"#ff3355"},
-                                  {l:"RET PROMEDIO",v:`${sq.avgRet>=0?"+":""}${sq.avgRet}%`,c:sq.avgRet>0?"#00ff88":"#ff3355"},
-                                  {l:"MAX SUBA",v:`+${sq.avgMaxRet}%`,c:"#00ff88"},
-                                  {l:"MAX BAJA",v:`${sq.avgMaxDD}%`,c:"#ff3355"},
-                                ].map(x=>(
-                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#07101a",borderRadius:"3px"}}>
-                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
-                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
-                                  </div>
-                                ))}
-                              </div>
-                              <div style={{marginTop:"6px",fontSize:"7px",color:"#2e5468"}}>
-                                {sq.hr>=65&&sq.avgRet>1
-                                  ? `✅ Setup de alta calidad. Históricamente rentable en ${sq.hr}% de los casos con retorno promedio de ${sq.avgRet}%.`
-                                  : sq.hr>=50
-                                  ? `⚠️ Setup de calidad media. Win rate de ${sq.hr}%. Usá sizing normal o reducido.`
-                                  : `❌ Setup de baja calidad histórica. Este tipo de señal ha funcionado solo en ${sq.hr}% de los casos anteriores. Considerá no operar.`}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* WALK-FORWARD */}
-                          {wf && (
-                            <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>📊 BACKTEST WALK-FORWARD ({wf.total} ventanas)</div>
-                                <div style={{fontSize:"8px",color:wf.hr>=55?"#00ff88":wf.hr>=45?"#ffd700":"#ff3355",fontWeight:700}}>
-                                  WF Score {wf.wfScore}
-                                </div>
-                              </div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"5px",marginBottom:"6px"}}>
-                                {[
-                                  {l:"WIN RATE",v:`${wf.hr}%`,c:wf.hr>=55?"#00ff88":wf.hr>=45?"#ffd700":"#ff3355"},
-                                  {l:"RET PROM.",v:`${wf.avgRet>=0?"+":""}${wf.avgRet}%`,c:wf.avgRet>0?"#00ff88":"#ff3355"},
-                                  {l:"CONSIST.",v:`${wf.consistency}%`,c:wf.consistency>=60?"#00ff88":"#ffd700"},
-                                  {l:"VENTANAS",v:wf.total,c:"#7ab0c8"},
-                                ].map(x=>(
-                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#07101a",borderRadius:"3px"}}>
-                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
-                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
-                                  </div>
-                                ))}
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468"}}>
-                                {wf.hr>=55&&wf.consistency>=60
-                                  ? `✅ Backtest consistente. El sistema funcionó en ${wf.consistency}% de las ventanas históricas — señal robusta.`
-                                  : wf.hr>=45
-                                  ? `⚠️ Resultados mixtos. Consistencia de ${wf.consistency}%. El sistema funciona pero con variabilidad.`
-                                  : `❌ Backtest débil en esta acción. El sistema no ha demostrado consistencia en el historial.`}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* POSITION SIZING */}
-                          {ps2 && (
-                            <div style={{padding:"8px 10px",background:`${ps2.levelColor}10`,border:`1px solid ${ps2.levelColor}30`,borderRadius:"5px"}}>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>💰 POSITION SIZING DINÁMICO</div>
-                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:ps2.levelColor}}>{ps2.level}</div>
-                              </div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"6px"}}>
-                                {[
-                                  {l:"RIESGO %",v:`${ps2.riskPct}%`,c:ps2.levelColor},
-                                  {l:"MONTO RIESGO",v:`$${ps2.riskAmount.toLocaleString()}`,c:"#d0ecff"},
-                                  {l:"% CARTERA",v:`${ps2.pctCapital}%`,c:"#7ab0c8"},
-                                ].map(x=>(
-                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
-                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
-                                  </div>
-                                ))}
-                              </div>
-                              <div style={{marginBottom:"6px",padding:"5px 8px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"3px"}}>FACTORES DE AJUSTE</div>
-                                <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-                                  {[
-                                    {l:`FXCA16 ${ps2.fxcaConf}%`,v:`×${ps2.fxMultiplier}`,c:ps2.fxMultiplier>=1.2?"#00ff88":ps2.fxMultiplier>=1?"#ffd700":"#ff3355"},
-                                    {l:`Confluencia ${ps2.confScore}%`,v:`×${ps2.confMultiplier}`,c:ps2.confMultiplier>=1.2?"#00ff88":ps2.confMultiplier>=1?"#ffd700":"#ff3355"},
-                                    {l:"Tipo señal",v:`×${ps2.sigMultiplier}`,c:ps2.sigMultiplier>1?"#00ff88":"#ffd700"},
-                                    hasRisk?{l:"Earnings",v:"×0.5",c:"#ff3355"}:null,
-                                  ].filter(Boolean).map((x,i)=>(
-                                    <div key={i} style={{fontSize:"7px",padding:"2px 6px",background:"#07101a",borderRadius:"3px"}}>
-                                      <span style={{color:"#2e5468"}}>{x.l} </span>
-                                      <span style={{color:x.c,fontWeight:700}}>{x.v}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              <div style={{fontSize:"7px",color:"#2e5468"}}>
-                                {ps2.riskPct>=1.5
-                                  ? `✅ Señal de alta confianza — el sistema recomienda sizing elevado. Confianza ${ps2.fxcaConf}% + Confluencia ${ps2.confScore}%.`
-                                  : ps2.riskPct>=0.8
-                                  ? `⚠️ Señal moderada — sizing normal. Esperá confirmación antes de agregar más.`
-                                  : `❌ Señal débil o contraria — sizing mínimo. No es momento de entrar con fuerza.`}
-                              </div>
                             </div>
                           )}
                         </div>
                       );
                     })()}
 
+                    {/* FIBONACCI */}
                     {/* FIBONACCI */}
                     {(()=>{
                       const fibData = rowDataRef.current[sel.ticker];
