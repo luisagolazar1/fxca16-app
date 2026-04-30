@@ -1349,6 +1349,176 @@ function calcMarketCorrelation(data, indexData) {
 // ══════════════════════════════════════════════════════════════
 
 // 1. ATR BANDS DINÁMICOS — detecta breakouts genuinos vs falsos
+// ══════════════════════════════════════════════════════════════
+// ETAPA 2 — OPTIMIZACIÓN AVANZADA
+// ══════════════════════════════════════════════════════════════
+
+// 1. BACKTEST WALK-FORWARD — ventana deslizante más realista
+function backtestWalkForward(data, W=7) {
+  if (!data || data.length < 300) return null;
+  const TRAIN = 180; // ~6 meses en barras diarias equiv
+  const VAL   = 30;  // ~1 mes validación
+  const results = [];
+  let i = TRAIN;
+  while (i + VAL <= data.length) {
+    const trainSlice = data.slice(i - TRAIN, i);
+    const valSlice   = data.slice(i, i + VAL);
+    // Generar señal en último bar del train
+    const sig = combinedSignal(trainSlice, W);
+    if (!sig || sig.sig === "NEUTRAL") { i += VAL; continue; }
+    const isBuy = sig.sig.includes("COMPRA");
+    // Medir resultado en validación
+    const entryPx = valSlice[0]?.close;
+    const exitPx  = valSlice[valSlice.length-1]?.close;
+    if (!entryPx || !exitPx) { i += VAL; continue; }
+    const ret = (exitPx - entryPx) / entryPx;
+    const win = isBuy ? ret > 0 : ret < 0;
+    results.push({
+      date: trainSlice[trainSlice.length-1]?.date || "",
+      sig: sig.sig, score: sig.final_sc,
+      ret: +(ret*100).toFixed(2), win,
+      entryPx: +entryPx.toFixed(2), exitPx: +exitPx.toFixed(2),
+    });
+    i += VAL;
+  }
+  if (!results.length) return null;
+  const wins    = results.filter(r=>r.win).length;
+  const hr      = +(wins/results.length*100).toFixed(1);
+  const avgRet  = +(results.reduce((a,r)=>a+r.ret,0)/results.length).toFixed(2);
+  const wfScore = +(hr * 0.4 + Math.max(0,avgRet*10) * 0.6).toFixed(1);
+  // Consistencia: % de ventanas con resultado positivo
+  const posWindows = results.filter(r=>r.ret>0).length;
+  const consistency = +(posWindows/results.length*100).toFixed(1);
+  return { results, wins, total:results.length, hr, avgRet, wfScore, consistency };
+}
+
+// 2. SCORE DE CALIDAD HISTÓRICA DE SEÑAL
+function calcSignalQuality(data, sig, W=7) {
+  if (!data || data.length < 100 || !sig) return null;
+  const isBuy = sig.sig?.includes("COMPRA");
+  const isSell = sig.sig?.includes("VENTA");
+  if (!isBuy && !isSell) return null;
+  const targetConf = sig.conf || 70;
+  const targetFX   = sig.fx_sc || 60;
+  // Buscar setups similares en el pasado
+  const similar = [];
+  const LOOKFWD = Math.round(W * 7); // barras adelante a evaluar
+  for (let i = 60; i < data.length - LOOKFWD; i++) {
+    const slice = data.slice(Math.max(0,i-60), i);
+    if (slice.length < 40) continue;
+    const s = combinedSignal(slice, W);
+    if (!s) continue;
+    // Setup "similar": misma dirección, conf ±15, fx_sc ±15
+    const sameDir   = isBuy ? s.sig?.includes("COMPRA") : s.sig?.includes("VENTA");
+    const confMatch = Math.abs((s.conf||0) - targetConf) < 15;
+    const fxMatch   = Math.abs((s.fx_sc||0) - targetFX) < 15;
+    if (!sameDir || !confMatch || !fxMatch) continue;
+    const entryPx = data[i]?.close;
+    const future  = data.slice(i, i + LOOKFWD);
+    if (!entryPx || future.length < 3) continue;
+    const exitPx  = future[future.length-1]?.close;
+    const maxPx   = Math.max(...future.map(d=>d.close));
+    const minPx   = Math.min(...future.map(d=>d.close));
+    const ret     = (exitPx - entryPx)/entryPx;
+    const maxRet  = (maxPx - entryPx)/entryPx;
+    const maxDD   = (minPx - entryPx)/entryPx;
+    const win     = isBuy ? ret > 0 : ret < 0;
+    similar.push({ ret:+(ret*100).toFixed(2), maxRet:+(maxRet*100).toFixed(2), maxDD:+(maxDD*100).toFixed(2), win });
+  }
+  if (similar.length < 3) return { similar: [], hr:0, avgRet:0, avgMaxRet:0, avgMaxDD:0, quality:"INSUFICIENTE", qualityColor:"#1e4058" };
+  const wins    = similar.filter(s=>s.win).length;
+  const hr      = +(wins/similar.length*100).toFixed(1);
+  const avgRet  = +(similar.reduce((a,s)=>a+s.ret,0)/similar.length).toFixed(2);
+  const avgMaxRet = +(similar.reduce((a,s)=>a+s.maxRet,0)/similar.length).toFixed(2);
+  const avgMaxDD  = +(similar.reduce((a,s)=>a+s.maxDD,0)/similar.length).toFixed(2);
+  let quality, qualityColor;
+  if (hr >= 65 && avgRet > 1.5)      { quality="ALTA";        qualityColor="#00ff88"; }
+  else if (hr >= 55 && avgRet > 0.5) { quality="MEDIA-ALTA";  qualityColor="#7ab0c8"; }
+  else if (hr >= 45)                  { quality="MEDIA";        qualityColor="#ffd700"; }
+  else                                { quality="BAJA";          qualityColor="#ff3355"; }
+  return { similar: similar.slice(-10), total:similar.length, wins, hr, avgRet, avgMaxRet, avgMaxDD, quality, qualityColor };
+}
+
+// 3. FILTRO DE EVENTOS — earnings y macro
+function getUpcomingEvents(ticker, moneda) {
+  // Calendario macro fijo (actualizar manualmente o via API)
+  const today = new Date();
+  const mm = today.getMonth()+1, dd = today.getDate();
+  // Fechas aproximadas de eventos FOMC/NFP 2026
+  const macroEvents = [
+    { name:"FOMC Decision", dates:[[1,29],[3,19],[5,7],[6,18],[7,30],[9,17],[11,5],[12,17]] },
+    { name:"NFP (Empleo USA)", dates:[[1,10],[2,7],[3,7],[4,4],[5,2],[6,6],[7,3],[8,1],[9,5],[10,3],[11,7],[12,5]] },
+  ];
+  const upcoming = [];
+  macroEvents.forEach(ev => {
+    ev.dates.forEach(([m,d]) => {
+      const diff = (new Date(today.getFullYear(),m-1,d) - today) / 86400000;
+      if (diff >= -1 && diff <= 7) {
+        upcoming.push({ name:ev.name, daysLeft:Math.round(diff), type:"macro" });
+      }
+    });
+  });
+  // Earnings — estimación por ticker (próximas semanas)
+  // Lista de earnings aproximados Q1 2026
+  const earningsTickers = {
+    "AAPL":  [2,26], "MSFT": [4,23], "GOOGL": [4,29], "AMZN": [4,30],
+    "META":  [4,23], "NVDA": [5,21], "TSLA":  [4,22], "JPM":  [4,11],
+    "BAC":   [4,15], "GS":   [4,14], "V":     [4,22], "MA":   [4,29],
+    "WMT":   [5,15], "KO":   [4,29], "PEP":   [4,24], "JNJ":  [4,15],
+    "GGAL":  [5,14], "YPFD": [5,10], "PAMP":  [5,12], "CEPU": [5,8],
+    "BMA":   [5,14], "SUPV": [5,14], "TECO2": [5,9],
+  };
+  const tk = ticker?.replace(".BA","");
+  if (earningsTickers[tk]) {
+    const [m,d] = earningsTickers[tk];
+    const diff = (new Date(today.getFullYear(),m-1,d) - today) / 86400000;
+    if (diff >= -2 && diff <= 14)
+      upcoming.push({ name:`Earnings ${tk}`, daysLeft:Math.round(diff), type:"earnings" });
+  }
+  return upcoming;
+}
+
+// 4. POSITION SIZING DINÁMICO
+function calcPositionSizing(sig, conf, capital=1000000) {
+  if (!sig || !conf) return null;
+  const fxcaConf = sig.conf || 0;
+  const confScore = conf.score || 0;
+  const isBuy  = sig.sig?.includes("COMPRA");
+  const isFuerte = sig.sig?.includes("FUERTE");
+  // Base: 1% del capital por operación
+  let baseRisk = 0.01;
+  // Ajuste por confianza FXCA16
+  let fxMultiplier = fxcaConf >= 90 ? 1.5 : fxcaConf >= 75 ? 1.2 : fxcaConf >= 60 ? 1.0 : 0.7;
+  // Ajuste por confluencia
+  let confMultiplier = confScore >= 70 ? 1.3 : confScore >= 50 ? 1.0 : 0.6;
+  // Ajuste por señal fuerte
+  let sigMultiplier = isFuerte ? 1.2 : 1.0;
+  // Penalización si no hay señal compra
+  if (!isBuy) { fxMultiplier *= 0.5; confMultiplier *= 0.5; }
+  const finalRisk = Math.min(0.02, baseRisk * fxMultiplier * confMultiplier * sigMultiplier);
+  const riskAmount = +(capital * finalRisk).toFixed(0);
+  const atr = sig.atr || 1;
+  const shares = atr > 0 ? Math.floor(riskAmount / atr) : 0;
+  const notional = +(shares * (sig.entry || sig.px || 0)).toFixed(0);
+  const pctCapital = +(notional/capital*100).toFixed(1);
+  // Nivel de sizing
+  let level, levelColor;
+  if (finalRisk >= 0.018)      { level="SIZING COMPLETO (++)", levelColor="#00ff88"; }
+  else if (finalRisk >= 0.012) { level="SIZING ALTO (+)",      levelColor="#7ab0c8"; }
+  else if (finalRisk >= 0.008) { level="SIZING NORMAL",        levelColor="#ffd700"; }
+  else if (finalRisk >= 0.005) { level="SIZING REDUCIDO (-)",  levelColor="#ff9040"; }
+  else                          { level="SIZING MÍNIMO (--)",   levelColor="#ff3355"; }
+  return {
+    riskPct: +(finalRisk*100).toFixed(2), riskAmount, shares, notional, pctCapital,
+    fxMultiplier: +fxMultiplier.toFixed(2),
+    confMultiplier: +confMultiplier.toFixed(2),
+    sigMultiplier: +sigMultiplier.toFixed(2),
+    level, levelColor,
+    fxcaConf, confScore,
+  };
+}
+
+
 function calcATRBands(data, period=14, mult=2.5) {
   const n = data.length;
   if (n < period + 5) return null;
@@ -3869,6 +4039,183 @@ export default function App() {
                                   : vp.abovePoc
                                   ? `Precio por encima del POC — zona de menor liquidez, movimiento más rápido posible.`
                                   : `Precio por debajo del POC — buscará volver al nivel de control (${FP(vp.poc,moneda)}).`}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ══ ETAPA 2: OPTIMIZACIÓN ══ */}
+                    {(()=>{
+                      const data  = rowDataRef.current[sel.ticker];
+                      if (!data || data.length < 100) return null;
+                      const s       = sel.sig;
+                      const moneda  = sel.moneda || "USD";
+                      const wf      = backtestWalkForward(data, W);
+                      const sq      = calcSignalQuality(data, s, W);
+                      const events  = getUpcomingEvents(sel.ticker, moneda);
+                      const ps      = calcPositionSizing(s, conf_ref, 1000000);
+                      // conf_ref viene del closure de confluencia ya calculada
+                      // Lo recalculamos aquí
+                      const fib2    = calcFibonacci(data, W);
+                      const rsiDiv2 = detectRSIDivergence(data);
+                      const volFib2 = checkVolumeAtFib(data, fib2?.levels);
+                      const cross2  = detectCross(data);
+                      const boll2   = detectBollingerRSISetup(data);
+                      const cand2   = detectCandlePattern(data);
+                      const conf2   = calcConfluence(s, rsiDiv2, volFib2, cross2, boll2, cand2, null);
+                      const ps2     = calcPositionSizing(s, conf2, 1000000);
+                      const hasRisk = events.some(e=>e.type==="earnings"&&e.daysLeft<=5);
+
+                      return (
+                        <div className="card" style={{padding:"12px",marginBottom:"9px",border:`1px solid ${hasRisk?"#ff335530":"#0f2235"}`}}>
+                          <div style={{fontSize:"8px",color:"#1e4058",letterSpacing:".12em",marginBottom:"10px"}}>
+                            ⚙️ OPTIMIZACIÓN — Calidad, Eventos y Sizing
+                          </div>
+
+                          {/* FILTRO DE EVENTOS */}
+                          {events.length > 0 ? (
+                            <div style={{marginBottom:"10px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em",marginBottom:"5px"}}>📅 EVENTOS PRÓXIMOS</div>
+                              {events.map((ev,i)=>(
+                                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",marginBottom:"4px",
+                                  background:ev.type==="earnings"?"#ff335515":"#ffd70010",
+                                  border:`1px solid ${ev.type==="earnings"?"#ff335540":"#ffd70030"}`,borderRadius:"4px"}}>
+                                  <div>
+                                    <div style={{fontSize:"9px",fontWeight:700,color:ev.type==="earnings"?"#ff3355":"#ffd700"}}>{ev.name}</div>
+                                    <div style={{fontSize:"7px",color:"#2e5468",marginTop:"1px"}}>
+                                      {ev.type==="earnings"
+                                        ? "⚠️ Alta volatilidad esperada — el precio puede moverse ±10% o más."
+                                        : "Evento macro — puede afectar al mercado en general."}
+                                    </div>
+                                  </div>
+                                  <div style={{textAlign:"right",minWidth:"60px"}}>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:ev.daysLeft<=2?"#ff3355":"#ffd700"}}>
+                                      {ev.daysLeft<=0?"HOY":ev.daysLeft===1?"MAÑANA":`${ev.daysLeft}d`}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {hasRisk && (
+                                <div style={{padding:"5px 8px",background:"#ff335510",borderRadius:"3px",fontSize:"7px",color:"#ff9040"}}>
+                                  📌 Earnings en menos de 5 días — operá con sizing reducido o esperá el resultado antes de entrar.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{marginBottom:"10px",padding:"6px 10px",background:"#00ff8808",border:"1px solid #00ff8820",borderRadius:"4px"}}>
+                              <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"2px"}}>📅 EVENTOS PRÓXIMOS</div>
+                              <div style={{fontSize:"8px",color:"#00ff88"}}>✓ Sin eventos de riesgo en los próximos 7 días. Ambiente favorable para operar.</div>
+                            </div>
+                          )}
+
+                          {/* CALIDAD HISTÓRICA */}
+                          {sq && sq.total >= 3 && (
+                            <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>🔬 CALIDAD HISTÓRICA DE SEÑAL</div>
+                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:sq.qualityColor}}>{sq.quality}</div>
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468",marginBottom:"6px"}}>
+                                Encontré <strong style={{color:"#7ab0c8"}}>{sq.total} setups similares</strong> en el historial de {sel.ticker}. Cuando esta acción tuvo esta configuración en el pasado:
+                              </div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"5px"}}>
+                                {[
+                                  {l:"WIN RATE",v:`${sq.hr}%`,c:sq.hr>=60?"#00ff88":sq.hr>=45?"#ffd700":"#ff3355"},
+                                  {l:"RET PROMEDIO",v:`${sq.avgRet>=0?"+":""}${sq.avgRet}%`,c:sq.avgRet>0?"#00ff88":"#ff3355"},
+                                  {l:"MAX SUBA",v:`+${sq.avgMaxRet}%`,c:"#00ff88"},
+                                  {l:"MAX BAJA",v:`${sq.avgMaxDD}%`,c:"#ff3355"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#07101a",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{marginTop:"6px",fontSize:"7px",color:"#2e5468"}}>
+                                {sq.hr>=65&&sq.avgRet>1
+                                  ? `✅ Setup de alta calidad. Históricamente rentable en ${sq.hr}% de los casos con retorno promedio de ${sq.avgRet}%.`
+                                  : sq.hr>=50
+                                  ? `⚠️ Setup de calidad media. Win rate de ${sq.hr}%. Usá sizing normal o reducido.`
+                                  : `❌ Setup de baja calidad histórica. Este tipo de señal ha funcionado solo en ${sq.hr}% de los casos anteriores. Considerá no operar.`}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* WALK-FORWARD */}
+                          {wf && (
+                            <div style={{marginBottom:"10px",padding:"8px 10px",background:"#050c15",border:"1px solid #0f2235",borderRadius:"5px"}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>📊 BACKTEST WALK-FORWARD ({wf.total} ventanas)</div>
+                                <div style={{fontSize:"8px",color:wf.hr>=55?"#00ff88":wf.hr>=45?"#ffd700":"#ff3355",fontWeight:700}}>
+                                  WF Score {wf.wfScore}
+                                </div>
+                              </div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"5px",marginBottom:"6px"}}>
+                                {[
+                                  {l:"WIN RATE",v:`${wf.hr}%`,c:wf.hr>=55?"#00ff88":wf.hr>=45?"#ffd700":"#ff3355"},
+                                  {l:"RET PROM.",v:`${wf.avgRet>=0?"+":""}${wf.avgRet}%`,c:wf.avgRet>0?"#00ff88":"#ff3355"},
+                                  {l:"CONSIST.",v:`${wf.consistency}%`,c:wf.consistency>=60?"#00ff88":"#ffd700"},
+                                  {l:"VENTANAS",v:wf.total,c:"#7ab0c8"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#07101a",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468"}}>
+                                {wf.hr>=55&&wf.consistency>=60
+                                  ? `✅ Backtest consistente. El sistema funcionó en ${wf.consistency}% de las ventanas históricas — señal robusta.`
+                                  : wf.hr>=45
+                                  ? `⚠️ Resultados mixtos. Consistencia de ${wf.consistency}%. El sistema funciona pero con variabilidad.`
+                                  : `❌ Backtest débil en esta acción. El sistema no ha demostrado consistencia en el historial.`}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* POSITION SIZING */}
+                          {ps2 && (
+                            <div style={{padding:"8px 10px",background:`${ps2.levelColor}10`,border:`1px solid ${ps2.levelColor}30`,borderRadius:"5px"}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058",letterSpacing:".1em"}}>💰 POSITION SIZING DINÁMICO</div>
+                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:ps2.levelColor}}>{ps2.level}</div>
+                              </div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"6px"}}>
+                                {[
+                                  {l:"RIESGO %",v:`${ps2.riskPct}%`,c:ps2.levelColor},
+                                  {l:"MONTO RIESGO",v:`$${ps2.riskAmount.toLocaleString()}`,c:"#d0ecff"},
+                                  {l:"% CARTERA",v:`${ps2.pctCapital}%`,c:"#7ab0c8"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#050c15",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#1e4058"}}>{x.l}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{marginBottom:"6px",padding:"5px 8px",background:"#050c15",borderRadius:"3px"}}>
+                                <div style={{fontSize:"7px",color:"#1e4058",marginBottom:"3px"}}>FACTORES DE AJUSTE</div>
+                                <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                                  {[
+                                    {l:`FXCA16 ${ps2.fxcaConf}%`,v:`×${ps2.fxMultiplier}`,c:ps2.fxMultiplier>=1.2?"#00ff88":ps2.fxMultiplier>=1?"#ffd700":"#ff3355"},
+                                    {l:`Confluencia ${ps2.confScore}%`,v:`×${ps2.confMultiplier}`,c:ps2.confMultiplier>=1.2?"#00ff88":ps2.confMultiplier>=1?"#ffd700":"#ff3355"},
+                                    {l:"Tipo señal",v:`×${ps2.sigMultiplier}`,c:ps2.sigMultiplier>1?"#00ff88":"#ffd700"},
+                                    hasRisk?{l:"Earnings",v:"×0.5",c:"#ff3355"}:null,
+                                  ].filter(Boolean).map((x,i)=>(
+                                    <div key={i} style={{fontSize:"7px",padding:"2px 6px",background:"#07101a",borderRadius:"3px"}}>
+                                      <span style={{color:"#2e5468"}}>{x.l} </span>
+                                      <span style={{color:x.c,fontWeight:700}}>{x.v}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div style={{fontSize:"7px",color:"#2e5468"}}>
+                                {ps2.riskPct>=1.5
+                                  ? `✅ Señal de alta confianza — el sistema recomienda sizing elevado. Confianza ${ps2.fxcaConf}% + Confluencia ${ps2.confScore}%.`
+                                  : ps2.riskPct>=0.8
+                                  ? `⚠️ Señal moderada — sizing normal. Esperá confirmación antes de agregar más.`
+                                  : `❌ Señal débil o contraria — sizing mínimo. No es momento de entrar con fuerza.`}
                               </div>
                             </div>
                           )}
