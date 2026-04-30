@@ -3787,29 +3787,97 @@ export default function App() {
 
                           {/* 4 EJES */}
                           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"8px",marginBottom:"12px"}}>
-                            {[
-                              { n:"① FXCA16",         label:fxLabel,   score:fxScore,   rating:fxRating,   color:fxColor,
-                                sub:`Conf ${fxcaConf}% · FX ${s?.fx_sc||0} · EVO ${s?.evo_sc||0}` },
-                              { n:"② CONFLUENCIA",     label:confLabel, score:confScore, rating:confRating,  color:confColor,
-                                sub:`${conf_?.bull||0} alcistas · ${conf_?.bear||0} bajistas · ${conf_?.total||0} señales` },
-                              { n:"③ ESTRUCTURAL",     label:estLabel,  score:estScore,  rating:estRating,   color:estColor,
-                                sub:`${mtfAlign}/3 TF · ${atrB_?.breakoutUp?"Breakout ✓":atrB_?.falseBreakUp?"Falso Break ⚠":"Sin breakout"}` },
-                              { n:"④ OPTIMIZACIÓN",    label:optLabel,  score:optRating*33, rating:optRating, color:optColor,
-                                sub:`WF ${wf_?wf_.hr+"%":"—"} · Calidad ${sq_?.quality||"—"} · ${hasRisk_?"⚠ Eventos":"Sin eventos"}` },
-                            ].map(eje=>(
-                              <div key={eje.n} style={{padding:"10px",background:"#050c15",borderRadius:"5px",border:`1px solid ${eje.color}25`}}>
-                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"5px"}}>
-                                  <div style={{fontSize:"7px",color:"#4a7a9b"}}>{eje.n}</div>
-                                  <div style={{display:"flex",gap:"2px"}}>
-                                    {[0,1,2].map(i=>(
-                                      <div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<eje.rating?eje.color:"#0c1826"}}/>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"15px",color:eje.color,marginBottom:"2px",lineHeight:1}}>{eje.label}</div>
-                                <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.5}}>{eje.sub}</div>
+
+                            {/* ① FXCA16 */}
+                            <div style={{padding:"10px",background:"#050c15",borderRadius:"5px",border:`1px solid ${fxColor}25`}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>① FXCA16</div>
+                                <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<fxRating?fxColor:"#0c1826"}}/>)}</div>
                               </div>
-                            ))}
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:fxColor,marginBottom:"5px",lineHeight:1}}>{fxLabel}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px"}}>
+                                {[{l:"CONF",v:`${fxcaConf}%`,c:fxcaConf>=80?"#00ff88":"#ffd700"},{l:"FX",v:s?.fx_sc||0,c:"#00d4ff"},{l:"EVO",v:s?.evo_sc||0,c:"#ff9040"}].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:x.c}}>{x.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{marginTop:"4px",fontSize:"7px",color:"#5a8fa8"}}>
+                                RSI {s?.rsi||"—"} · ROC {s?.roc10>=0?"+":""}{s?.roc10||0}% · Tendencia: <span style={{color:TC?.[s?.trend]||"#ffd700"}}>{s?.trend||"—"}</span>
+                              </div>
+                            </div>
+
+                            {/* ② CONFLUENCIA */}
+                            <div style={{padding:"10px",background:"#050c15",borderRadius:"5px",border:`1px solid ${confColor}25`}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>② CONFLUENCIA</div>
+                                <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<confRating?confColor:"#0c1826"}}/>)}</div>
+                              </div>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:confColor,marginBottom:"5px",lineHeight:1}}>{confLabel}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"4px"}}>
+                                {[{l:"SCORE",v:`${confScore}%`,c:confColor},{l:"▲ ALCIST",v:conf_?.bull||0,c:"#00ff88"},{l:"▼ BAJIST",v:conf_?.bear||0,c:"#ff3355"}].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:x.c}}>{x.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#5a8fa8"}}>
+                                {rsiDiv_?.bullish?"▲ Div RSI alcista":rsiDiv_?.bearish?"▼ Div RSI bajista":"Sin divergencia"} · {cross_?.golden?"⭐ Golden Cross":cross_?.death?"💀 Death Cross":cross_?.gap>=0?"SMA20>50":"SMA20<50"}
+                              </div>
+                            </div>
+
+                            {/* ③ ESTRUCTURAL */}
+                            <div style={{padding:"10px",background:"#050c15",borderRadius:"5px",border:`1px solid ${estColor}25`}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>③ ESTRUCTURAL</div>
+                                <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<estRating?estColor:"#0c1826"}}/>)}</div>
+                              </div>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:estColor,marginBottom:"5px",lineHeight:1}}>{estLabel}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"4px"}}>
+                                {[
+                                  {l:"TIMEFRAMES",v:`${mtfAlign}/3`,c:mtfAlign===3?"#00ff88":mtfAlign===2?"#ffd700":"#ff3355"},
+                                  {l:"ATR BAND",v:atrB_?.breakoutUp?"▲ BREAK":atrB_?.breakoutDown?"▼ BREAK":atrB_?.falseBreakUp?"⚠ FALSO":"NORMAL",c:atrB_?.breakoutUp?"#00ff88":atrB_?.breakoutDown?"#ff3355":atrB_?.falseBreakUp?"#ffd700":"#5a8fa8"},
+                                  {l:"VOL PROF",v:vp_?`${vp_.pctFromPoc>=0?"+":""}${vp_.pctFromPoc}%`:"—",c:Math.abs(vp_?.pctFromPoc||0)<3?"#ffd700":"#5a8fa8"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:x.c,lineHeight:1.2}}>{x.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#5a8fa8"}}>
+                                POC {vp_?FP(vp_.poc,moneda):"—"} · SMA150 {reg_?FP(reg_.sma150,moneda):"—"} · Vol {reg_?.volExpanding?"▲ expand":reg_?.volContracting?"▼ contrae":"→ estable"}
+                              </div>
+                            </div>
+
+                            {/* ④ OPTIMIZACIÓN */}
+                            <div style={{padding:"10px",background:"#050c15",borderRadius:"5px",border:`1px solid ${optColor}25`}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
+                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>④ OPTIMIZACIÓN</div>
+                                <div style={{display:"flex",gap:"2px"}}>{[0,1,2].map(i=><div key={i} style={{width:"8px",height:"8px",borderRadius:"2px",background:i<optRating?optColor:"#0c1826"}}/>)}</div>
+                              </div>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:optColor,marginBottom:"5px",lineHeight:1}}>{sq_?.quality||"SIN DATOS"}</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"4px"}}>
+                                {[
+                                  {l:"WF WIN%",v:wf_?`${wf_.hr}%`:"—",c:wf_&&wf_.hr>=55?"#00ff88":wf_&&wf_.hr>=45?"#ffd700":"#ff3355"},
+                                  {l:"HIST WIN%",v:sq_&&sq_.total>=3?`${sq_.hr}%`:"—",c:sq_&&sq_.hr>=60?"#00ff88":sq_&&sq_.hr>=45?"#ffd700":"#ff3355"},
+                                  {l:"RET HIST",v:sq_&&sq_.total>=3?`${sq_.avgRet>=0?"+":""}${sq_.avgRet}%`:"—",c:sq_&&sq_.avgRet>0?"#00ff88":"#ff3355"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
+                                    <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:x.c}}>{x.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{fontSize:"7px",color:hasRisk_?"#ff3355":"#5a8fa8"}}>
+                                {hasRisk_
+                                  ? `⚠️ Earnings en ${events_.find(e=>e.type==="earnings")?.daysLeft}d — sizing reducido`
+                                  : `Sin eventos de riesgo · Consist. ${wf_?wf_.consistency+"%":"—"}`}
+                              </div>
+                            </div>
+
                           </div>
 
                           {/* BARRA GLOBAL */}
