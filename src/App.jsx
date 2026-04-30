@@ -4055,9 +4055,7 @@ export default function App() {
                       const wf      = backtestWalkForward(data, W);
                       const sq      = calcSignalQuality(data, s, W);
                       const events  = getUpcomingEvents(sel.ticker, moneda);
-                      const ps      = calcPositionSizing(s, conf_ref, 1000000);
-                      // conf_ref viene del closure de confluencia ya calculada
-                      // Lo recalculamos aquí
+                      // Calcular confluencia para sizing
                       const fib2    = calcFibonacci(data, W);
                       const rsiDiv2 = detectRSIDivergence(data);
                       const volFib2 = checkVolumeAtFib(data, fib2?.levels);
