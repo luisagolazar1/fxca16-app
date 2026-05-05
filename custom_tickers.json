@@ -1,6 +1,7 @@
 {
   "tickers": [
-    "AMD"
+    "AMD",
+    "GCLA"
   ],
   "note": "Tickers agregados manualmente desde la app FXCA16. No editar manualmente."
 }
