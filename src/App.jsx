@@ -880,18 +880,12 @@ function getDynParam(ticker, key, fallback) {
 
 // Ajuste de score basado en historial de simulaciones
 function adaptiveScoreAdj(ticker, baseScore) {
-  const sims = getDynParam(ticker, 'sims', 0);
-  if (sims < 3) return baseScore; // sin historia suficiente
-
-  const wr     = getDynParam(ticker, 'wr', 0.5);
-  const p80adj = getDynParam(ticker, 'p80adj', 0);  // ajuste calibrado
-  const confAdj= getDynParam(ticker, 'conf', 0);    // confianza histórica
-
-  // Con más simulaciones, el ajuste tiene más peso (máx 15 puntos)
-  const weight = Math.min(sims / 20, 1.0); // converge a 100% en 20 sims
-  const adj    = (confAdj * 10 + p80adj * 5) * weight;
-
-  return Math.min(100, Math.max(0, baseScore + adj));
+  // DESACTIVADO: este ajuste modificaba el score usando resultados de
+  // simulaciones previas sobre los MISMOS datos. Eso es sobreajuste:
+  // el modelo se auto-premiaba por aciertos que ya conocía.
+  // La calibración estadística correcta vive ahora en el tab Validación
+  // (regresión logística + Platt scaling, ambos fuera de muestra).
+  return baseScore;
 }
 
 // W adaptativo por ticker
@@ -2762,6 +2756,7 @@ export default function App() {
   const [cmpA,      setCmpA]      = useState(""); // ticker A para comparar
   const [cmpB,      setCmpB]      = useState(""); // ticker B para comparar
   const [catSector, setCatSector] = useState("Todos"); // sector activo
+  const [oppScope,  setOppScope]  = useState("senales"); // "senales" | "todos"
   // ── QUANT LAB ──
   const [qlRunning, setQlRunning] = useState(false);
   const [qlProgress,setQlProgress]= useState("");
@@ -3816,7 +3811,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Top P80"],["rank","🏆 Ranking"],["det","🔍 Detalle"],["watch","⭐ Seguimiento"],["cat","📂 Categorías"],["cmp","⚖️ Comparar"],["quant","🔬 Quant Lab"],["opt","⚙️ Optimizar"],["sim","💡 Simulador"],["learn","🧠 Aprendizaje"]].map(([k,l])=>
+              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["cmp","⚖️ Comparar"],["watch","⭐ Seguimiento"],["quant","🔬 Validación"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
@@ -3930,11 +3925,57 @@ export default function App() {
             </div>
 
             {/* OPORTUNIDADES TOP P80 */}
-            {tab==="opp"&&(
+            {tab==="opp"&&(()=>{
+              // Filtros: sector + alcance (solo señales P80 vs universo completo)
+              const seen = new Set();
+              const uniq = rows.filter(r => { if(seen.has(r.ticker)) return false; seen.add(r.ticker); return true; });
+              const sectores = ["Todos", ...new Set(uniq.map(r=>r.sector).filter(Boolean).sort())];
+              const bySector = catSector==="Todos" ? uniq : uniq.filter(r=>r.sector===catSector);
+              const lista = oppScope==="senales"
+                ? bySector.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL")
+                          .sort((a,b)=>(b.sig?.final_sc||0)-(a.sig?.final_sc||0))
+                : [...bySector].sort((a,b)=>(b.sig?.final_sc||0)-(a.sig?.final_sc||0));
+              const nSenales = bySector.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL").length;
+
+              return (
               <div className="fade">
-                {opps.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>Sin señales en el top P80 con ventana {W}d.</div>}
+                {/* Barra de filtros */}
+                <div style={{padding:"8px 10px",background:"#07101a",border:"1px solid #1e3a50",borderRadius:"6px",marginBottom:"10px"}}>
+                  <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"7px",flexWrap:"wrap"}}>
+                    <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em"}}>MOSTRAR</span>
+                    <button className={`btn ${oppScope==="senales"?"on":"off"}`} onClick={()=>setOppScope("senales")}
+                      style={{padding:"4px 12px",fontSize:"9px"}}>
+                      🎯 Solo señales ({nSenales})
+                    </button>
+                    <button className={`btn ${oppScope==="todos"?"on":"off"}`} onClick={()=>setOppScope("todos")}
+                      style={{padding:"4px 12px",fontSize:"9px"}}>
+                      📋 Universo completo ({bySector.length})
+                    </button>
+                  </div>
+                  <div style={{display:"flex",gap:"4px",flexWrap:"wrap",alignItems:"center"}}>
+                    <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em",marginRight:"2px"}}>SECTOR</span>
+                    {sectores.map(sec=>{
+                      const cnt = sec==="Todos" ? uniq.length : uniq.filter(r=>r.sector===sec).length;
+                      const hay = (sec==="Todos"?uniq:uniq.filter(r=>r.sector===sec))
+                                    .some(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL");
+                      return (
+                        <button key={sec} className={`btn ${catSector===sec?"on":"off"}`} onClick={()=>setCatSector(sec)}
+                          style={{position:"relative",padding:"3px 8px",fontSize:"8px"}}>
+                          {sec} <span style={{opacity:.55}}>{cnt}</span>
+                          {hay&&sec!=="Todos"&&<span style={{position:"absolute",top:"-2px",right:"-2px",width:"6px",height:"6px",background:"#00ff88",borderRadius:"50%",display:"block"}}/>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {lista.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
+                  {oppScope==="senales"
+                    ? `Sin señales que superen el umbral en ${catSector==="Todos"?"el universo":catSector} con ventana ${W}d.`
+                    : "Sin datos. Ejecutá el sistema."}
+                </div>}
                 <div className="grid-opp">
-                  {opps.map(r=>{
+                  {lista.map(r=>{
                     const s=r.sig,buy=s.sig.includes("COMPRA"),g=GR(r.bt.hr);
                     return (
                       <div key={r.ticker} className="card" style={{padding:"13px",cursor:"pointer",borderLeft:`3px solid ${SC[s.sig]}`}} onClick={()=>{setSel(r);setTab("det");}}>
@@ -3989,47 +4030,9 @@ export default function App() {
                   })}
                 </div>
               </div>
-            )}
+              );
+            })()}
 
-            {/* RANKING */}
-            {tab==="rank"&&(
-              <div className="fade">
-                <div style={{display:"flex",gap:"4px",marginBottom:"8px",flexWrap:"wrap"}}>
-                  {[["conf","Confianza"],["hr","Eficacia"],["sh","Sharpe"],["ca15","FXCA16 Score"],["evo","EVO Prob"]].map(([k,l])=>
-                    <button key={k} className={`btn ${sort===k?"on":"off"}`} onClick={()=>setSort(k)}>{l}</button>
-                  )}
-                </div>
-                <div className="card" style={{overflowX:"auto"}}>
-                  <table>
-                    <thead><tr><th>#</th><th>TICKER</th><th>MKT</th><th>PRECIO</th><th>SEÑAL</th><th>P80</th><th>FX</th><th>EVO</th><th>FXCA16</th><th>CONF</th><th>TREND</th><th>EF%</th><th>SHARPE</th><th>EQ</th><th>CURVA</th></tr></thead>
-                    <tbody>
-                      {srtd.map((r,i)=>{
-                        const s=r.sig,g=GR(r.bt.hr);
-                        return <tr key={r.ticker} onClick={()=>{setSel(r);setTab("det");}}>
-                          <td style={{color:"#4a7a9b"}}>{i+1}</td>
-                          <td style={{color:"#00ff9d",fontWeight:700,fontSize:"11px"}}>{r.ticker}</td>
-                          <td><span style={{fontSize:"8px",color:MONEDA(r,mkt)==="USD"?"#00d4ff":"#ffd700",fontWeight:700}}>{MONEDA(r,mkt)}</span></td>
-                          <td style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:r.fromCsv?"#00d4ff":r.real?"#e8f4ff":"#5a8fa8"}}>{r.price!=null?FP(r.price,MONEDA(r,mkt)):"—"}</td>
-                          <td>{s?.sig&&s.sig!=="NEUTRAL"?<span className="badge" style={{background:SC[s.sig]+"18",color:SC[s.sig],border:`1px solid ${SC[s.sig]}35`}}>{s.sig}</span>:<span style={{color:s?.corr_dup?"#ff9040":"#ffd700",fontSize:"8px"}}>{s?.corr_dup?`CORR(${s.corr_dup})`:"NEUTRAL"}</span>}</td>
-                          <td style={{fontSize:"9px"}}>{s?.above_p80?<span style={{color:"#00ff9d",fontWeight:700}}>✓</span>:<span style={{color:"#4a7a9b"}}>─</span>}</td>
-                          <td style={{color:"#00d4ff",fontSize:"10px"}}>{s?.fx_sc??"─"}</td>
-                          <td style={{color:"#ff9040",fontSize:"10px"}}>{s?.evo_sc??"─"}</td>
-                          <td><FXCA16Badge score={s?.ca15_score??0}/></td>
-                          <td style={{color:s?SC[s.sig]:"#5a8fa8",fontWeight:700}}>{s?.conf??"─"}%</td>
-                          <td style={{fontSize:"8px",color:s?TC[s.trend]:"#5a8fa8"}}>{s?`${TI[s.trend]} ${s.trend}`:"─"}</td>
-                          <td style={{color:g.c,fontWeight:700}}>{r.bt.hr}%</td>
-                          <td style={{color:r.bt.sh>=1?"#00ff9d":"#ffd700"}}>{r.bt.sh}</td>
-                          <td style={{color:r.bt.eq>=100?"#00ff9d":"#ff3355",fontWeight:600}}>{r.bt.eq}</td>
-                          <td><Curve curve={r.bt.curve}/></td>
-                        </tr>;
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* DETALLE */}
             {tab==="det"&&(
               <div className="fade">
                 <div style={{display:"flex",gap:"3px",flexWrap:"wrap",marginBottom:"10px"}}>
@@ -4811,91 +4814,6 @@ export default function App() {
 
 
             {/* ══ TAB: CATEGORÍAS ══ */}
-            {tab==="cat"&&(()=>{
-              // Obtener todos los sectores únicos
-              const allSectors = ["Todos", ...new Set(rows.map(r=>r.sector).filter(Boolean).sort())];
-              // Deduplicar por ticker (un ticker puede aparecer en múltiples sectores)
-              const seen = new Set();
-              const allRows = rows.filter(r => { if(seen.has(r.ticker)) return false; seen.add(r.ticker); return true; });
-              const filtered = catSector==="Todos" ? allRows : allRows.filter(r=>r.sector===catSector);
-              const withSig = filtered.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL");
-              const sorted = [...filtered].sort((a,b)=>(b.sig?.final_sc||0)-(a.sig?.final_sc||0));
-              return (
-                <div className="fade">
-                  {/* Selector de sectores */}
-                  <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"12px"}}>
-                    {allSectors.map(s=>{
-                      const count = s==="Todos" ? rows.length : rows.filter(r=>r.sector===s).length;
-                      const hasSig = s==="Todos"
-                        ? rows.some(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL")
-                        : rows.filter(r=>r.sector===s).some(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL");
-                      return (
-                        <button key={s} className={`btn ${catSector===s?"on":"off"}`}
-                          onClick={()=>setCatSector(s)}
-                          style={{position:"relative",padding:"6px 12px",fontSize:"9px"}}>
-                          {s} <span style={{opacity:.6}}>({count})</span>
-                          {hasSig && s!=="Todos" && <span style={{position:"absolute",top:"-3px",right:"-3px",width:"7px",height:"7px",background:"#00ff88",borderRadius:"50%",display:"block"}}/>}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Stats del sector */}
-                  {catSector!=="Todos"&&(
-                    <div style={{display:"flex",gap:"10px",padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",fontSize:"9px",marginBottom:"10px",flexWrap:"wrap"}}>
-                      <span style={{color:"#a0cce0",fontWeight:700}}>📂 {catSector}</span>
-                      <span style={{color:"#4a7a9b"}}>|</span>
-                      <span>{filtered.length} acciones</span>
-                      <span style={{color:"#00ff88"}}>▲ {filtered.filter(r=>r.sig?.sig?.includes("COMPRA")).length} compra</span>
-                      <span style={{color:"#ff3355"}}>▼ {filtered.filter(r=>r.sig?.sig?.includes("VENTA")).length} venta</span>
-                      <span style={{color:"#ffd700"}}>⭐ {withSig.length} señales P80</span>
-                    </div>
-                  )}
-
-                  {/* Cards del sector */}
-                  <div className="grid-opp">
-                    {sorted.map(r=>{
-                      const s=r.sig; if(!s) return null;
-                      const g=GR(r.bt.hr);
-                      const hasPulse = s.above_p80 && s.sig!=="NEUTRAL";
-                      return (
-                        <div key={r.ticker} className="card" style={{padding:"11px",cursor:"pointer",
-                          borderLeft:`3px solid ${hasPulse?SC[s.sig]:"#1e3a50"}`,
-                          opacity:hasPulse?1:0.6}}
-                          onClick={()=>{setSel(r);setTab("det");}}>
-                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"5px"}}>
-                            <div>
-                              <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:hasPulse?SC[s.sig]:"#a0cce0"}}>{r.ticker}</span>
-                                <span style={{fontSize:"7px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 4px",borderRadius:"3px"}}>{r.moneda}</span>
-                              </div>
-                              <div style={{fontSize:"7px",color:"#5a8fa8"}}>{r.name}</div>
-                            </div>
-                            <div style={{textAlign:"right"}}>
-                              {hasPulse
-                                ? <span className="badge" style={{background:SC[s.sig]+"20",color:SC[s.sig],border:`1px solid ${SC[s.sig]}40`,fontSize:"8px"}}>{s.sig}</span>
-                                : <span style={{fontSize:"8px",color:"#4a7a9b"}}>NEUTRAL</span>
-                              }
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:"#e8f4ff",marginTop:"2px"}}>{FP(r.price,r.moneda)}</div>
-                            </div>
-                          </div>
-                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px"}}>
-                            {[{l:"SCORE",v:s.final_sc,c:"#00d4ff"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]},{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff88":"#ffd700"}].map(m=>
-                              <div key={m.l} style={{textAlign:"center",padding:"3px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>{m.l}</div>
-                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"11px",color:m.c}}>{m.v}</div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* ══ TAB: COMPARAR ══ */}
             {tab==="cmp"&&(()=>{
               const tickerList = rows.map(r=>r.ticker).sort();
               const rA = rows.find(r=>r.ticker===cmpA);
@@ -5572,350 +5490,6 @@ export default function App() {
             )}
 
             {/* OPTIMIZADOR */}
-            {tab==="opt"&&(
-              <div className="fade">
-                <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"10px",flexWrap:"wrap"}}>
-                  <button className={`btn ${optRunning?"on":"off"}`} onClick={runOptimizer} disabled={optRunning} style={{padding:"8px 20px"}}>
-                    {optRunning?"⏳ Optimizando...":"▶ Ejecutar Optimización"}
-                  </button>
-                  <div style={{fontSize:"9px",color:"#4a7a9b"}}>
-                    Grid: W × [5,7,10,14] | Peso_FX × [0.5,0.65,0.8] = 12 configs por ticker
-                  </div>
-                </div>
-                {optResults.length > 0 && (
-                  <>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"8px",marginBottom:"12px"}}>
-                      {optResults.slice(0,3).map((r,i)=>(
-                        <div key={r.ticker} className="card" style={{padding:"11px",borderLeft:`3px solid ${i===0?"#ffd700":i===1?"#aab0c8":"#7a6040"}`}}>
-                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#e0f4ff"}}>{r.ticker}</span>
-                            <span style={{fontSize:"9px",color:i===0?"#ffd700":i===1?"#aab0c8":"#7a6040",fontWeight:700}}>#{i+1}</span>
-                          </div>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px",fontSize:"9px"}}>
-                            {[{l:"W óptimo",v:r.w_opt,c:"#00d4ff"},{l:"Peso FX",v:r.peso_fx,c:"#ff9040"},{l:"Rendimiento",v:`${r.pct>=0?"+":""}${r.pct}%`,c:r.pct>=0?"#00ff9d":"#ff3355"},{l:"Win Rate",v:`${r.wr}%`,c:r.wr>=50?"#00ff9d":"#ffd700"}].map(x=>(
-                              <div key={x.l} style={{padding:"4px 6px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{fontSize:"7px",color:"#4a7a9b"}}>{x.l}</div>
-                                <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="card" style={{overflowX:"auto"}}>
-                      <table>
-                        <thead><tr><th>#</th><th>TICKER</th><th>W ÓPT</th><th>PESO FX</th><th>TRADES</th><th>WINS</th><th>WIN RATE</th><th>CAPITAL FINAL</th><th>RENDIMIENTO</th></tr></thead>
-                        <tbody>
-                          {optResults.map((r,i)=>(
-                            <tr key={r.ticker} style={{background: optApplied && optParams[r.ticker] ? "#00ff9d05" : "transparent"}}>
-                              <td style={{color:"#4a7a9b"}}>{i+1}</td>
-                              <td style={{color:"#00ff9d",fontWeight:700}}>{r.ticker}</td>
-                              <td style={{color: optApplied?"#00ff9d":"#00d4ff",fontFamily:"'Bebas Neue'",fontSize:"14px"}}>{r.w_opt}</td>
-                              <td style={{color:"#ff9040"}}>{r.peso_fx}</td>
-                              <td>{r.trades}</td>
-                              <td style={{color:"#00ff9d"}}>{r.wins}</td>
-                              <td style={{color:r.wr>=50?"#00ff9d":"#ffd700",fontWeight:700}}>{r.wr}%</td>
-                              <td style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:"#e8f4ff"}}>{mkt==="USA"?"$"+r.capital.toLocaleString("en-US",{minimumFractionDigits:0}):"$"+r.capital.toLocaleString("es-AR")}</td>
-                              <td style={{color:r.pct>=0?"#00ff9d":"#ff3355",fontWeight:700}}>{r.pct>=0?"+":""}{r.pct}%</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{marginTop:"8px",fontSize:"8px",color:"#4a7a9b"}}>
-                      💡 Capital inicial simulado: $100.000 | Mismo criterio que el script Python original
-                    </div>
-                  </>
-                )}
-                {!optResults.length && !optRunning && (
-                  <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
-                    Ejecutá el sistema principal primero, luego presioná "Ejecutar Optimización"
-                  </div>
-                )}
-              </div>
-            )}
-
-                        {/* ══ TAB: SIMULADOR ══ */}
-            {tab==="sim"&&(
-              <div className="fade">
-                {/* Controles manuales y auto */}
-                <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"8px",flexWrap:"wrap"}}>
-                  <button className={`btn ${simRunning?"on":"off"}`} onClick={runSimulator} disabled={simRunning||autoSim} style={{padding:"10px 20px",fontSize:"11px"}}>
-                    {simRunning?"⏳ Simulando...":"🎲 SIMULAR"}
-                  </button>
-
-                  {/* Auto-simulador */}
-                  <div style={{display:"flex",gap:"4px",alignItems:"center",background:"#07101a",border:"1px solid #0f2235",borderRadius:"4px",padding:"4px 8px"}}>
-                    <span style={{fontSize:"8px",color:"#4a7a9b"}}>AUTO cada</span>
-                    {[1,5,10,30].map(m=>(
-                      <button key={m}
-                        className={`btn ${autoInterval===m?"on":"off"}`}
-                        onClick={()=>setAutoInterval(m)}
-                        disabled={autoSim}
-                        style={{padding:"3px 7px",fontSize:"9px"}}
-                      >{m}m</button>
-                    ))}
-                  </div>
-
-                  <button
-                    className={`btn ${autoSim?"on":"off"}`}
-                    onClick={()=> autoSim ? stopAutoSim() : startAutoSim(autoInterval)}
-                    style={{
-                      padding:"10px 16px",fontSize:"11px",
-                      color: autoSim?"#03070e":"#ffd700",
-                      borderColor:"#ffd70040",
-                      background: autoSim?"#ffd700":undefined,
-                      animation: autoSim?"pulse 2s infinite":undefined,
-                    }}
-                  >
-                    {autoSim ? "⏹ DETENER AUTO" : "🤖 AUTO"}
-                  </button>
-                </div>
-
-                {/* Status auto-sim */}
-                <div style={{marginBottom:"12px",fontSize:"9px",display:"flex",gap:"12px",flexWrap:"wrap"}}>
-                  {autoSim && autoNext && (
-                    <span style={{color:"#ffd700"}}>
-                      🤖 Auto-sim activa · próxima en {autoCountdown}s
-                    </span>
-                  )}
-                  {autoCount>0 && <span style={{color:"#2e5068"}}>Auto-sims ejecutadas: <strong style={{color:"#00d4ff"}}>{autoCount}</strong></span>}
-                  <span style={{color:"#4a7a9b"}}>5 USA + 5 Merval aleatorios · espectro 1.5 años · evalúa vs realidad</span>
-                </div>
-
-                {/* Historial de accuracy */}
-                {simHistory.length>0&&(
-                  <div className="card" style={{padding:"10px",marginBottom:"10px"}}>
-                    <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"6px"}}>📈 HISTORIAL DE SIMULACIONES ({simHistory.length})</div>
-                    <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"6px"}}>
-                      {simHistory.slice(-20).reverse().map((s,i)=>(
-                        <div key={i} style={{textAlign:"center",padding:"4px 8px",background:s.accuracy>=60?"#00ff9d0a":"#ff335508",border:`1px solid ${s.accuracy>=60?"#00ff9d30":"#ff335530"}`,borderRadius:"3px",minWidth:"52px"}}>
-                          <div style={{fontFamily:"'Bebas Neue'",fontSize:"16px",color:s.accuracy>=60?"#00ff9d":"#ff3355"}}>{s.accuracy}%</div>
-                          <div style={{fontSize:"7px",color:"#4a7a9b"}}>{s.mesesRange||`${s.meses||"?"}m`}</div>
-                          <div style={{fontSize:"6px",color:"#4a7a9b"}}>{s.runAt?.slice(5,10)}</div>
-                        </div>
-                      ))}
-                    </div>
-                    {(()=>{
-                      const n = simHistory.length;
-                      if (!n) return null;
-                      const avgAcc = (simHistory.reduce((a,s)=>a+s.accuracy,0)/n).toFixed(1);
-                      const recent5 = simHistory.slice(-5);
-                      const old5    = simHistory.slice(0, Math.min(5, Math.floor(n/2)));
-                      const trendVal = n>=6
-                        ? (recent5.reduce((a,s)=>a+s.accuracy,0)/recent5.length
-                         - old5.reduce((a,s)=>a+s.accuracy,0)/old5.length).toFixed(1)
-                        : null;
-                      const learning = n>=3 && trendVal!==null && +trendVal>0;
-                      const nDyn = Object.keys(dynParamsRef.current).length;
-                      return (
-                        <div>
-                          <div style={{fontSize:"9px",color:"#5a8fa8",display:"flex",gap:"12px",flexWrap:"wrap"}}>
-                            <span>Promedio: <strong style={{color:"#00d4ff"}}>{avgAcc}%</strong></span>
-                            {trendVal && <span style={{color:+trendVal>=0?"#00ff9d":"#ff3355"}}>
-                              Tendencia: {+trendVal>=0?"+":""}{trendVal}% {learning?"📈 APRENDIENDO":"📉"}
-                            </span>}
-                            <span style={{color:"#ffd700"}}>Tickers calibrados: <strong>{nDyn}</strong></span>
-                          </div>
-                          {/* Mini curva de accuracy */}
-                          {n>=3&&<div style={{marginTop:"6px"}}>
-                            <svg width="100%" height="28" style={{display:"block"}}>
-                              {simHistory.map((s,i)=>{
-                                const x=`${(i/(n-1||1))*100}%`;
-                                const y=28-(s.accuracy/100)*24;
-                                const c=s.accuracy>=60?"#00ff9d":"#ff3355";
-                                return <circle key={i} cx={x} cy={y} r="3" fill={c} opacity="0.8"/>;
-                              })}
-                              {simHistory.length>=2&&<polyline
-                                points={simHistory.map((s,i)=>`${(i/(n-1))*100}%,${28-(s.accuracy/100)*24}`).join(" ")}
-                                fill="none" stroke="#00d4ff" strokeWidth="1" opacity="0.4"
-                              />}
-                            </svg>
-                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#4a7a9b"}}>
-                              <span>Sim 1</span><span>Sim {n}</span>
-                            </div>
-                          </div>}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* Resultados de la última simulación */}
-                {simResults.length>0&&(
-                  <div>
-                    <div style={{fontSize:"9px",color:"#4a7a9b",marginBottom:"6px"}}>
-                      ÚLTIMA SIMULACIÓN — fechas individuales por ticker — Accuracy: <strong style={{color:simResults.filter(r=>r.hit).length/simResults.length>=0.6?"#00ff9d":"#ffd700"}}>{(simResults.filter(r=>r.hit).length/simResults.length*100).toFixed(0)}%</strong>
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"8px"}}>
-                      {simResults.map(r=>{
-                        const fund = r.fundamentals;
-                        return (
-                          <div key={r.ticker} className="card" style={{padding:"10px",borderLeft:`3px solid ${r.hit?"#00ff9d":"#ff3355"}`}}>
-                            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-                              <div>
-                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#e0f4ff"}}>{r.ticker}</span>
-                                <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",marginLeft:"6px",fontWeight:700}}>{r.moneda}</span>
-                                <span style={{fontSize:"8px",color:"#2e5068",marginLeft:"4px"}}>{r.panel}</span>
-                                <div style={{fontSize:"7px",color:"#4a7a9b",marginTop:"2px"}}>📅 {r.simDate} · <span style={{color:"#ffd700"}}>{r.simDateLabel}</span></div>
-                              </div>
-                              <span style={{fontSize:"9px",color:r.hit?"#00ff9d":"#ff3355",fontWeight:700}}>{r.hit?"✓ ACIERTO":"✗ FALLO"}</span>
-                            </div>
-                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px",fontSize:"9px",marginBottom:"6px"}}>
-                              <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>PREDICCIÓN</div>
-                                <div style={{color:r.predicted.includes("COMPRA")?"#00ff9d":r.predicted.includes("VENTA")?"#ff3355":"#ffd700",fontWeight:700}}>{r.predicted}</div>
-                              </div>
-                              <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>RETORNO REAL</div>
-                                <div style={{color:r.actualRet>=0?"#00ff9d":"#ff3355",fontWeight:700}}>{r.actualRet>=0?"+":""}{r.actualRet}%</div>
-                              </div>
-                              <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>SCORE</div>
-                                <div style={{color:"#00d4ff"}}>{r.score}</div>
-                              </div>
-                              <div style={{padding:"4px",background:"#050c15",borderRadius:"3px"}}>
-                                <div style={{color:"#4a7a9b",fontSize:"7px"}}>EVO PROB</div>
-                                <div style={{color:"#ff9040"}}>{r.evoProb}</div>
-                              </div>
-                            </div>
-                            {fund&&(
-                              <div style={{padding:"5px",background:"#050c15",borderRadius:"3px",fontSize:"8px"}}>
-                                <div style={{color:"#4a7a9b",marginBottom:"3px"}}>FUNDAMENTALES</div>
-                                <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                                  {fund.pe && <span style={{color:"#a0cce0"}}>P/E: <strong>{fund.pe}</strong></span>}
-                                  {fund.rev_growth!=null && <span style={{color:fund.rev_growth>0?"#00ff9d":"#ff3355"}}>Rev: <strong>{fund.rev_growth}%</strong></span>}
-                                  {fund.news_sentiment && <span style={{color:fund.news_sentiment==="positive"?"#00ff9d":fund.news_sentiment==="negative"?"#ff3355":"#ffd700"}}>📰 {fund.news_sentiment}</span>}
-                                  {fund.analyst && <span style={{color:fund.analyst==="buy"?"#00ff9d":fund.analyst==="sell"?"#ff3355":"#ffd700"}}>👥 {fund.analyst}</span>}
-                                </div>
-                                {fund.summary&&<div style={{color:"#5a8fa8",marginTop:"3px",fontSize:"7px"}}>{fund.summary}</div>}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {!simResults.length&&!simRunning&&(
-                  <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
-                    Presioná "🎲 NUEVA SIMULACIÓN" para empezar
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ══ TAB: APRENDIZAJE ══ */}
-            {tab==="learn"&&(()=>{
-              const hasSims = simHistory.length > 0;
-              const hasTickers = Object.keys(learningData).filter(k=>learningData[k].totalSims>0).length>0;
-              return (
-                <div className="fade">
-                  {/* Sub-tabs */}
-                  <div style={{display:"flex",gap:"5px",marginBottom:"12px"}}>
-                    <button className={`btn ${learnView==="tickers"?"on":"off"}`} onClick={()=>setLearnView("tickers")}>📊 Por Ticker</button>
-                    <button className={`btn ${learnView==="history"?"on":"off"}`} onClick={()=>setLearnView("history")}>📋 Historial de Simulaciones ({simHistory.length})</button>
-                  </div>
-
-                  {/* Vista por ticker */}
-                  {learnView==="tickers"&&(
-                    !hasTickers ? (
-                      <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
-                        Ejecutá simulaciones para generar aprendizaje
-                      </div>
-                    ) : (
-                      <div className="card" style={{overflowX:"auto"}}>
-                        <table>
-                          <thead><tr><th>TICKER</th><th>PANEL</th><th>SIMS</th><th>WIN RATE</th><th>MEJOR W</th><th>CONF.</th><th>ÚLTIMA SIM</th><th>DYN</th></tr></thead>
-                          <tbody>
-                            {Object.entries(learningData)
-                              .filter(([,v])=>v.totalSims>0)
-                              .sort(([,a],[,b])=>b.winRate-a.winRate)
-                              .map(([tk,v])=>{
-                                const isUSA=TICKERS_USA.find(t=>t.ticker===tk);
-                                const base=TICKER_CONFIDENCE[tk]||0;
-                                const dynConf=v.winRate>=0.6?base+0.05:v.winRate<=0.3?base-0.05:base;
-                                return (
-                                  <tr key={tk}>
-                                    <td style={{color:"#00ff9d",fontWeight:700}}>{tk}</td>
-                                    <td style={{fontSize:"9px",color:isUSA?"#00d4ff":"#ffd700"}}>{isUSA?"🇺🇸":"🇦🇷"}</td>
-                                    <td style={{color:"#a0cce0"}}>{v.totalSims}</td>
-                                    <td style={{color:v.winRate>=0.6?"#00ff9d":v.winRate>=0.4?"#ffd700":"#ff3355",fontWeight:700}}>{(v.winRate*100).toFixed(0)}%</td>
-                                    <td style={{color:"#00d4ff",fontFamily:"'Bebas Neue'",fontSize:"14px"}}>{v.bestW}</td>
-                                    <td style={{color:dynConf>0?"#00ff9d":dynConf<0?"#ff3355":"#ffd700"}}>{dynConf>0?"+":""}{dynConf.toFixed(2)}</td>
-                                    <td style={{fontSize:"8px",color:"#4a7a9b"}}>{v.sessions?.slice(-1)[0]?.simDate||"—"}</td>
-                                    <td style={{fontSize:"8px"}}>
-                                      {dynParamsRef.current[tk]
-                                        ? <span style={{color:"#00ff9d",fontSize:"7px",fontWeight:700}}>✓ ACTIVO</span>
-                                        : <span style={{color:"#4a7a9b",fontSize:"7px"}}>pendiente</span>}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )
-                  )}
-
-                  {/* Historial de simulaciones */}
-                  {learnView==="history"&&(
-                    !hasSims ? (
-                      <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
-                        Sin historial aún
-                      </div>
-                    ) : (
-                      <div>
-                        {[...simHistory].reverse().map((s,i)=>(
-                          <div key={i} className="card" style={{padding:"12px",marginBottom:"10px",borderLeft:`3px solid ${s.accuracy>=60?"#00ff9d":"#ff3355"}`}}>
-                            {/* Header sesión */}
-                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px",flexWrap:"wrap",gap:"6px"}}>
-                              <div>
-                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:s.accuracy>=60?"#00ff9d":"#ff3355"}}>{s.accuracy}%</span>
-                                <span style={{fontSize:"8px",color:"#2e5068",marginLeft:"8px"}}>{s.hits}/{s.total} aciertos</span>
-                              </div>
-                              <div style={{fontSize:"8px",color:"#4a7a9b",textAlign:"right"}}>
-                                <div>{s.runAt?.slice(0,16).replace("T"," ")}</div>
-                                <div style={{color:"#2e5068"}}>Rango: {s.mesesRange||"—"}</div>
-                              </div>
-                            </div>
-                            {/* Resultados detallados */}
-                            {s.results?.length>0&&(
-                              <div style={{overflowX:"auto"}}>
-                                <table style={{fontSize:"8px"}}>
-                                  <thead>
-                                    <tr>
-                                      <th>TICKER</th><th>MKT</th><th>FECHA</th><th>ATRÁS</th>
-                                      <th>PRED.</th><th>REAL</th><th>SCORE</th><th>EVO</th><th>RES.</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {s.results.map((r,j)=>(
-                                      <tr key={j} style={{background:r.hit?"#00ff9d06":"#ff335506"}}>
-                                        <td style={{color:"#00ff9d",fontWeight:700}}>{r.ticker}</td>
-                                        <td style={{color:r.moneda==="USD"?"#00d4ff":"#ffd700",fontSize:"7px"}}>{r.moneda==="USD"?"🇺🇸":"🇦🇷"}</td>
-                                        <td style={{color:"#2e5068"}}>{r.simDate}</td>
-                                        <td style={{color:"#4a7a9b"}}>{r.mesesBack?.toFixed(1)||"—"}m</td>
-                                        <td style={{color:r.predicted?.includes("COMPRA")?"#00ff9d":r.predicted?.includes("VENTA")?"#ff3355":"#ffd700",fontWeight:700,fontSize:"7px"}}>{r.predicted?.replace(" FUERTE","★")}</td>
-                                        <td style={{color:r.actualRet>0?"#00ff9d":r.actualRet<0?"#ff3355":"#ffd700",fontWeight:700}}>{r.actualRet>0?"+":""}{r.actualRet}%</td>
-                                        <td style={{color:"#00d4ff"}}>{r.score}</td>
-                                        <td style={{color:"#ff9040"}}>{r.evoProb}</td>
-                                        <td><span style={{color:r.hit?"#00ff9d":"#ff3355",fontWeight:700}}>{r.hit?"✓":"✗"}</span></td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  )}
-                </div>
-              );
-            })()}
 
                         <div style={{marginTop:"12px",padding:"6px 10px",background:"#050c15",borderRadius:"4px",fontSize:"8px",color:"#1e3a50"}}>
               ⚠️ FXCA16 · Precios vía Anthropic Web Search · Histórico sintético · Umbral dinámico P80 · No es asesoramiento financiero.
