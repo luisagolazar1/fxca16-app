@@ -900,6 +900,61 @@ function adaptiveW(ticker, globalW) {
   return globalW;
 }
 
+// ── COSTOS DE TRANSACCIÓN (round-trip, broker PPI) ──
+const COSTO_MERVAL = 1.2;  // % ida+vuelta acciones locales
+const COSTO_CEDEAR = 1.8;  // % ida+vuelta CEDEARs (incluye spread)
+
+// ══════════════════════════════════════════════════════════════
+// NIVELES ESTRUCTURALES — soportes/resistencias reales del precio
+// Usados para calcular un R/R genuino (no un múltiplo fijo de ATR)
+// ══════════════════════════════════════════════════════════════
+function findStructuralLevels(data, px, lookbackBars = 200) {
+  if (!data || data.length < 30) return { resistances: [], supports: [] };
+  const slice = data.slice(-Math.min(data.length, lookbackBars));
+  const highs = [], lows = [];
+  // Pivotes: máximo/mínimo local con k barras a cada lado
+  const k = 3;
+  for (let i = k; i < slice.length - k; i++) {
+    const h = slice[i].high, l = slice[i].low;
+    let isH = true, isL = true;
+    for (let j = i-k; j <= i+k; j++) {
+      if (j === i) continue;
+      if (slice[j].high >= h) isH = false;
+      if (slice[j].low  <= l) isL = false;
+    }
+    if (isH) highs.push(h);
+    if (isL) lows.push(l);
+  }
+  // Fibonacci del rango completo
+  const rgHigh = Math.max(...slice.map(d=>d.high));
+  const rgLow  = Math.min(...slice.map(d=>d.low));
+  const rng    = rgHigh - rgLow;
+  const fibs   = rng > 0 ? [0.236,0.382,0.5,0.618,0.786].map(f => rgLow + rng*f) : [];
+  // POC aproximado (bin de mayor volumen)
+  let poc = null;
+  if (rng > 0) {
+    const bins = 12, bs = rng/bins, prof = new Array(bins).fill(0);
+    slice.forEach(d => {
+      const mid = (d.high+d.low)/2;
+      const bi  = Math.min(bins-1, Math.max(0, Math.floor((mid-rgLow)/bs)));
+      prof[bi] += d.volume || 1;
+    });
+    poc = rgLow + prof.indexOf(Math.max(...prof))*bs + bs/2;
+  }
+  const all = [...highs, ...lows, ...fibs, rgHigh, rgLow, poc].filter(v => v && isFinite(v));
+  // Agrupar niveles cercanos (dentro de 0.4%) y contar toques = fuerza
+  const clusters = [];
+  all.sort((a,b)=>a-b).forEach(v => {
+    const c = clusters.find(c => Math.abs(c.value - v)/v < 0.004);
+    if (c) { c.value = (c.value*c.hits + v)/(c.hits+1); c.hits++; }
+    else clusters.push({ value: v, hits: 1 });
+  });
+  const resistances = clusters.filter(c => c.value > px*1.002).sort((a,b)=>a.value-b.value);
+  const supports    = clusters.filter(c => c.value < px*0.998).sort((a,b)=>b.value-a.value);
+  return { resistances, supports, rgHigh, rgLow, poc };
+}
+
+
 function combinedSignal(data, W=7, allData=null) {
   const n = data.length-1;
   if (n<60) return null;
@@ -1006,19 +1061,9 @@ function combinedSignal(data, W=7, allData=null) {
   const final_sc_raw = Math.min(100, Math.max(0, (wf_sc - 50) * timeFactor + 50));
   // Ajuste adaptativo basado en historial de simulaciones
   const final_sc_adj = adaptiveScoreAdj(ticker, final_sc_raw);
-  // MEJORA: R/R pre-calculado para ponderar score (mejor R/R = señal más valiosa)
-  const _entry_pre = +(px*(wf_sc>=50?0.995:1.005)).toFixed(2);
-  const _at_pre    = at || px*0.015;
-  const _wsc_pre   = Math.sqrt(W/7);
-  const _am_pre    = (wf_sc>=68?1.5:2.0)*_wsc_pre;
-  const _sl_pre    = wf_sc>=50 ? _entry_pre-_at_pre*_am_pre : _entry_pre+_at_pre*_am_pre;
-  const _tp2_pre   = wf_sc>=50 ? _entry_pre+_at_pre*2.5*_wsc_pre : _entry_pre-_at_pre*2.5*_wsc_pre;
-  const _risk_pre  = Math.abs(_entry_pre-_sl_pre);
-  const _rew_pre   = Math.abs(_tp2_pre-_entry_pre);
-  const _rr_pre    = _risk_pre>0 ? _rew_pre/_risk_pre : 1;
-  // Bonificar scores con buen R/R: +3pts si R/R>=2, +1pt si R/R>=1.5
-  const rrBonus    = _rr_pre>=2?3:_rr_pre>=1.5?1:_rr_pre<1?-2:0;
-  const final_sc   = Math.min(100, Math.max(0, final_sc_adj + rrBonus));
+  // NOTA: el bonus por R/R se aplica DESPUÉS, cuando el R/R estructural ya está
+  // calculado sobre soportes/resistencias reales (ver rrNeto más abajo).
+  const final_sc   = Math.min(100, Math.max(0, final_sc_adj));
 
   // ─ Tendencia ─
   let trend="LATERAL";
@@ -1046,14 +1091,59 @@ function combinedSignal(data, W=7, allData=null) {
   // Escalar multiplicador ATR según ventana W (más días = rangos más amplios)
   const wScale = Math.sqrt(W/7); // raíz cuadrada: 7D=1x, 14D=1.41x, 30D=2.07x, 60D=2.93x
   const am=(sig.includes("FUERTE")?1.5:2.0)*wScale;
-  const sl  =buy?+(entry-at*am).toFixed(2):sell?+(entry+at*am).toFixed(2):null;
-  const tp1 =buy?+(entry+at*1.5*wScale).toFixed(2):sell?+(entry-at*1.5*wScale).toFixed(2):null;
-  const tp2 =buy?+(entry+at*2.5*wScale).toFixed(2):sell?+(entry-at*2.5*wScale).toFixed(2):null;
-  const tp3 =buy?+(entry+at*4.0*wScale).toFixed(2):sell?+(entry-at*4.0*wScale).toFixed(2):null;
-  const risk=sl?Math.abs(entry-sl):0, rew=tp2?Math.abs(tp2-entry):0;
+  // ── NIVELES ESTRUCTURALES (FIX: R/R real, no constante 1.67) ──
+  const lv = findStructuralLevels(data, px, Math.max(200, W*7*4));
+  const atrFloor = at * 0.8 * wScale;   // piso mínimo: no poner stops absurdamente cerca
+  const atrCap   = at * 6.0 * wScale;   // techo: no proyectar objetivos irreales
 
-  // Confianza ajustada con factores temporales + penalización BEAR
-  let conf = Math.max(0, final_sc - conf_penalty);
+  let sl = null, tp1 = null, tp2 = null, tp3 = null;
+  if (buy) {
+    // Stop: primer soporte estructural por debajo, con piso ATR
+    const supCand = lv.supports.filter(s => entry - s.value >= atrFloor);
+    const supPick = supCand.find(s => s.hits >= 2) || supCand[0];
+    sl  = supPick ? +(supPick.value * 0.998).toFixed(2)
+                  : +(entry - at*am).toFixed(2);
+    // Objetivos: resistencias estructurales sucesivas
+    const resCand = lv.resistances.filter(r => r.value - entry >= atrFloor*0.5
+                                            && r.value - entry <= atrCap);
+    tp1 = resCand[0] ? +(resCand[0].value*0.998).toFixed(2) : +(entry+at*1.5*wScale).toFixed(2);
+    tp2 = resCand[1] ? +(resCand[1].value*0.998).toFixed(2) : +(entry+at*2.5*wScale).toFixed(2);
+    tp3 = resCand[2] ? +(resCand[2].value*0.998).toFixed(2) : +(entry+at*4.0*wScale).toFixed(2);
+  } else if (sell) {
+    const resCand = lv.resistances.filter(r => r.value - entry >= atrFloor);
+    const resPick = resCand.find(r => r.hits >= 2) || resCand[0];
+    sl  = resPick ? +(resPick.value * 1.002).toFixed(2)
+                  : +(entry + at*am).toFixed(2);
+    const supCand = lv.supports.filter(s => entry - s.value >= atrFloor*0.5
+                                         && entry - s.value <= atrCap);
+    tp1 = supCand[0] ? +(supCand[0].value*1.002).toFixed(2) : +(entry-at*1.5*wScale).toFixed(2);
+    tp2 = supCand[1] ? +(supCand[1].value*1.002).toFixed(2) : +(entry-at*2.5*wScale).toFixed(2);
+    tp3 = supCand[2] ? +(supCand[2].value*1.002).toFixed(2) : +(entry-at*4.0*wScale).toFixed(2);
+  }
+  // Ordenar objetivos coherentemente
+  if (buy  && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>a-b); tp1=o[0];tp2=o[1];tp3=o[2]; }
+  if (sell && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>b-a); tp1=o[0];tp2=o[1];tp3=o[2]; }
+
+  const risk=sl?Math.abs(entry-sl):0, rew=tp2?Math.abs(tp2-entry):0;
+  // R/R neto: descuenta costos de transacción ida+vuelta
+  const costPct = (data[n]?.moneda === "ARS") ? COSTO_MERVAL : COSTO_CEDEAR;
+  const costAbs = entry * costPct/100;
+  const rewNeto = Math.max(0, rew - costAbs);
+  const rrNeto  = risk>0 ? rewNeto/risk : 0;
+
+  // ── GATE DE VIABILIDAD ECONÓMICA (FIX crítico) ──
+  // Si el objetivo no cubre el riesgo + costos, la operación no es viable
+  let rrPenalty = 0;
+  if (buy || sell) {
+    if      (rrNeto < 0.8) { sig = "NEUTRAL"; rrPenalty = 40; }   // inviable
+    else if (rrNeto < 1.2) { sig = sig.replace(" FUERTE",""); rrPenalty = 20; }
+    else if (rrNeto >= 2.0) rrPenalty = -8;   // premia R/R excelente
+    else if (rrNeto >= 1.5) rrPenalty = -4;
+  }
+  const buyF = sig.includes("COMPRA"), sellF = sig.includes("VENTA");
+
+  // Confianza ajustada con factores temporales + penalización BEAR + viabilidad
+  let conf = Math.max(0, final_sc - conf_penalty - rrPenalty);
   if(buy  && roc10>1.5 && mh>0) conf=Math.min(100,conf+10);
   if(sell && roc10<-1.5 && mh<0) conf=Math.min(100,conf+10);
   if(buy  && volDiv>0)           conf=Math.min(100,conf+8);
@@ -1090,7 +1180,10 @@ function combinedSignal(data, W=7, allData=null) {
     sig, fx_sc:+fx_sc.toFixed(0), evo_sc:+evo_sc.toFixed(0),
     final_sc:+final_sc.toFixed(0), wf_sc:+wf_sc.toFixed(0),
     conf:+conf.toFixed(0), trend, px, entry, sl, tp1, tp2, tp3,
-    rr: risk>0?+(rew/risk).toFixed(2):0,
+    rr: +rrNeto.toFixed(2),
+    rr_bruto: risk>0?+(rew/risk).toFixed(2):0,
+    costPct, costAbs:+costAbs.toFixed(2),
+    slSource: lv.supports.length||lv.resistances.length ? "estructural" : "ATR",
     rsi:+r.toFixed(1), roc10:+roc10.toFixed(2), roc5:+roc5.toFixed(2),
     volDiv, macd:+mh.toFixed(4), atr:+at.toFixed(2), boll:b,
     sma20:a20, sma50:a50, sma200:a200, mom5:+m5.toFixed(2),
@@ -1162,20 +1255,32 @@ function applyP80Threshold(results) {
     const above  = isUSA ? topUSA.has(r.ticker) : topMerval.has(r.ticker);
     const p80val = isUSA ? p80usa : p80merval;
 
+    // ── FIX CRÍTICO: umbral ABSOLUTO además del relativo ──
+    // Estar en el top 20% no basta: el score debe superar un mínimo real.
+    // Antes, un score de 50.1 (= azar puro) se convertía en "COMPRA".
+    const MIN_BUY  = 58;   // por debajo de esto no hay ventaja estadística
+    const MIN_SELL = 42;
+    const rrOk     = (r.sig.rr ?? 0) >= 1.2;   // R/R neto debe cubrir costos
+
     let sigStr = r.sig.sig;
-    if (above) {
-      if      (adjSc >= 68) sigStr = "COMPRA FUERTE";
-      else if (adjSc >= 55) sigStr = "COMPRA";
-      else if (adjSc <= 32) sigStr = "VENTA FUERTE";
-      else if (adjSc <= 45) sigStr = "VENTA";
-      else                  sigStr = adjSc >= 50 ? "COMPRA" : "VENTA";
+    if (above && rrOk) {
+      if      (adjSc >= 68)      sigStr = "COMPRA FUERTE";
+      else if (adjSc >= MIN_BUY) sigStr = "COMPRA";
+      else if (adjSc <= 32)      sigStr = "VENTA FUERTE";
+      else if (adjSc <= MIN_SELL)sigStr = "VENTA";
+      else                       sigStr = "NEUTRAL";  // zona de ruido → sin señal
+    } else if (above && !rrOk) {
+      sigStr = "NEUTRAL";  // en el top pero sin R/R viable tras costos
     }
+    // Una señal solo cuenta como oportunidad si NO es neutral
+    const isOpportunity = above && sigStr !== "NEUTRAL";
 
     const sig = {
       ...r.sig,
       sig:           sigStr,
       p80_threshold: +p80val.toFixed(1),
-      above_p80:     above,
+      above_p80:     isOpportunity,
+      in_top20:      above,
     };
     return {...r, sig};
   });
@@ -1421,7 +1526,7 @@ function resampleToDaily(data) {
 }
 
 // 1. BACKTEST WALK-FORWARD — ventana deslizante con días reales
-function backtestWalkForward(data, W=7) {
+function backtestWalkForward(data, W=7, costPct=COSTO_CEDEAR) {
   if (!data || data.length < 200) return null;
   // Resamplear a diario para medir ventanas en días reales
   const daily = resampleToDaily(data);
@@ -1442,9 +1547,11 @@ function backtestWalkForward(data, W=7) {
     const exitPx   = valSlice[valSlice.length-1]?.close;
     if (!closePx0 || !exitPx) { i += VAL_DAYS; continue; }
     const entryPx = isBuy ? closePx0 * 0.995 : closePx0 * 1.005; // precio real de entrada
-    const ret = isBuy
+    const retBruto = isBuy
       ? (exitPx - entryPx) / entryPx
-      : (entryPx - exitPx) / entryPx; // para venta: ganamos si baja
+      : (entryPx - exitPx) / entryPx;
+    // FIX: descontar costos round-trip del broker
+    const ret = retBruto - (costPct/100);
     const win = ret > 0;
     results.push({
       date: trainSlice[trainSlice.length-1]?.date || "",
@@ -1462,11 +1569,11 @@ function backtestWalkForward(data, W=7) {
   // Consistencia: % de ventanas con resultado positivo
   const posWindows = results.filter(r=>r.ret>0).length;
   const consistency = +(posWindows/results.length*100).toFixed(1);
-  return { results, wins, total:results.length, hr, avgRet, wfScore, consistency };
+  return { results, wins, total:results.length, hr, avgRet, wfScore, consistency, costPct, neto:true };
 }
 
 // 2. SCORE DE CALIDAD HISTÓRICA DE SEÑAL
-function calcSignalQuality(data, sig, W=7) {
+function calcSignalQuality(data, sig, W=7, costPct=COSTO_CEDEAR) {
   if (!data || data.length < 100 || !sig) return null;
   const isBuy = sig.sig?.includes("COMPRA");
   const isSell = sig.sig?.includes("VENTA");
@@ -1497,8 +1604,9 @@ function calcSignalQuality(data, sig, W=7) {
     const exitPx = future[future.length-1]?.close;
     const maxPx  = Math.max(...future.map(d=>d.close));
     const minPx  = Math.min(...future.map(d=>d.close));
-    const ret    = isBuy ? (exitPx-entryPx)/entryPx : (entryPx-exitPx)/entryPx;
-    const maxRet = isBuy ? (maxPx-entryPx)/entryPx  : (entryPx-minPx)/entryPx;
+    const retB   = isBuy ? (exitPx-entryPx)/entryPx : (entryPx-exitPx)/entryPx;
+    const ret    = retB - (costPct/100);   // FIX: neto de comisiones
+    const maxRet = (isBuy ? (maxPx-entryPx)/entryPx : (entryPx-minPx)/entryPx) - costPct/100;
     const maxDD  = isBuy ? (minPx-entryPx)/entryPx  : (entryPx-maxPx)/entryPx;
     const win    = ret > 0;
     similar.push({ ret:+(ret*100).toFixed(2), maxRet:+(maxRet*100).toFixed(2), maxDD:+(maxDD*100).toFixed(2), win });
@@ -2584,7 +2692,7 @@ export default function App() {
       reg:    detectTickerRegime(data),
       atrB:   calcATRBands(data),
       mtf:    calcMultiTimeframe(data, W),
-      wf:     backtestWalkForward(data, W),
+      wf:     backtestWalkForward(data, W, (moneda==="ARS"?COSTO_MERVAL:COSTO_CEDEAR)),
     };
     analysisCache.current[key] = result;
     return result;
@@ -3839,8 +3947,8 @@ export default function App() {
                       const estLabel  = regPhase||"Sin datos";
 
                       // 4. OPTIMIZACIÓN
-                      const wf_       = backtestWalkForward(data, W);
-                      const sq_       = calcSignalQuality(data, s, W);
+                      const wf_       = backtestWalkForward(data, W, (moneda==="ARS"?COSTO_MERVAL:COSTO_CEDEAR));
+                      const sq_       = calcSignalQuality(data, s, W, (moneda==="ARS"?COSTO_MERVAL:COSTO_CEDEAR));
                       const events_   = getUpcomingEvents(sel.ticker, moneda);
                       const ps_       = calcPositionSizing(s, conf_, 1000000);
                       const hasRisk_  = events_.some(e=>e.type==="earnings"&&e.daysLeft<=5);
@@ -4528,8 +4636,8 @@ export default function App() {
                 const reg_    = detectTickerRegime(data);
                 const atrB_   = calcATRBands(data);
                 const vp_     = calcVolumeProfile(data);
-                const wf_     = backtestWalkForward(data, W);
-                const sq_     = calcSignalQuality(data, s, W);
+                const wf_     = backtestWalkForward(data, W, (moneda==="ARS"?COSTO_MERVAL:COSTO_CEDEAR));
+                const sq_     = calcSignalQuality(data, s, W, (moneda==="ARS"?COSTO_MERVAL:COSTO_CEDEAR));
                 const events_ = getUpcomingEvents(r.ticker, moneda);
                 const ps_     = calcPositionSizing(s, conf_, 1000000);
                 const fxScore    = s?.final_sc||0;
