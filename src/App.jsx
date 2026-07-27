@@ -1910,9 +1910,9 @@ function calcVolumeProfile(data, bins=10) {
 function calcMultiTimeframe(data, W=7) {
   if (!data || data.length < 60) return null;
   // Frames RELATIVOS al W elegido por el usuario
-  const wS = W;                    // Corto = W seleccionado
-  const wM = Math.min(60,  W * 4); // Medio = 4x el corto
-  const wL = Math.min(120, W * 8); // Largo = 8x el corto
+  // Escalones fijos por horizonte: evita que 30/45/60 colapsen en el mismo par
+  const LADDER = { 7:[7,21,60], 14:[14,42,90], 30:[30,60,120], 60:[60,120,200] };
+  const [wS, wM, wL] = LADDER[W] || [W, Math.min(90, W*3), Math.min(200, W*6)];
   const frames = [
     { w:wS, label:`Corto (${wS}D)`,  bars: wS*7  },
     { w:wM, label:`Medio (${wM}D)`,  bars: wM*7  },
@@ -3740,7 +3740,18 @@ export default function App() {
             <div style={{marginBottom:"22px"}}>
               <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"8px",letterSpacing:".12em"}}>VENTANA ANÁLISIS</div>
               <div style={{display:"flex",gap:"6px",justifyContent:"center"}}>
-                {[5,7,10,14,21,30,45,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"7px 14px",fontSize:"11px"}}>{d}d</button>)}
+                {[
+                  {d:7,  l:"7D",  sub:"Swing corto"},
+                  {d:14, l:"14D", sub:"Swing medio"},
+                  {d:30, l:"30D", sub:"Posición"},
+                  {d:60, l:"60D", sub:"Tendencia"},
+                ].map(o=>(
+                  <button key={o.d} className={`btn ${W===o.d?"on":"off"}`} onClick={()=>setW(o.d)}
+                    style={{padding:"7px 14px",fontSize:"11px",display:"flex",flexDirection:"column",gap:"1px",lineHeight:1.2}}>
+                    <span>{o.l}</span>
+                    <span style={{fontSize:"7px",opacity:.65}}>{o.sub}</span>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -3819,7 +3830,7 @@ export default function App() {
                   <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>{setMkt(k);}} style={{padding:"2px 8px",fontSize:"10px"}}>{l}</button>
                 )}
                 <span style={{color:"#1e3a50",margin:"0 2px"}}>|</span>
-                {[5,7,10,14,21,30,45,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"2px 8px"}}>{d}d</button>)}
+                {[7,14,30,60].map(d=><button key={d} className={`btn ${W===d?"on":"off"}`} onClick={()=>setW(d)} style={{padding:"2px 8px",fontSize:"10px"}}>{d}d</button>)}
                 <button className="btn off" onClick={run} style={{marginLeft:"4px"}}>↺</button>
                 {!storedMeta ? null :
                   <button className="btn off" onClick={()=>setTab("sim")} style={{marginLeft:"4px",color:"#ffd700",fontSize:"9px"}}>💡 SIM</button>
