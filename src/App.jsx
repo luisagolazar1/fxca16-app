@@ -469,6 +469,7 @@ async function fetchHistoricoCompleto(ticker, market, currentPrice) {
 
 // ── HISTÓRICO SINTÉTICO ───────────────────────────────────────
 function makeHistory(ticker, price) {
+  // NOTA: genera historial SINTÉTICO — los indicadores sobre estos datos no son reales
   let s = ticker.split("").reduce((a,c)=>a*31+c.charCodeAt(0),7)>>>0;
   const rng = ()=>{ s=(Math.imul(s,1664525)+1013904223)>>>0; return s/0xffffffff; };
   const N=150; let p=price*(0.78+rng()*0.44); const drift=(price/p-1)/N;
@@ -476,9 +477,9 @@ function makeHistory(ticker, price) {
   for (let i=0;i<N-1;i++) {
     const o=p; p=Math.max(p*(1+(rng()-0.49)*0.022+drift),1);
     const d=new Date(); d.setDate(d.getDate()-(N-i));
-    rows.push({date:d.toISOString().slice(0,10),open:+o.toFixed(2),high:+(Math.max(o,p)*(1+rng()*0.01)).toFixed(2),low:+(Math.min(o,p)*(1-rng()*0.01)).toFixed(2),close:+p.toFixed(2),volume:Math.floor(2e5+rng()*4e6)});
+    rows.push({date:d.toISOString().slice(0,10),open:+o.toFixed(2),high:+(Math.max(o,p)*(1+rng()*0.01)).toFixed(2),low:+(Math.min(o,p)*(1-rng()*0.01)).toFixed(2),close:+p.toFixed(2),volume:Math.floor(2e5+rng()*4e6),_synth:true});
   }
-  rows.push({date:new Date().toISOString().slice(0,10),open:+price.toFixed(2),high:+(price*(1+rng()*0.01)).toFixed(2),low:+(price*(1-rng()*0.01)).toFixed(2),close:price,volume:Math.floor(5e5+rng()*5e6)});
+  rows.push({date:new Date().toISOString().slice(0,10),open:+price.toFixed(2),high:+(price*(1+rng()*0.01)).toFixed(2),low:+(price*(1-rng()*0.01)).toFixed(2),close:price,volume:Math.floor(5e5+rng()*5e6),_synth:true});
   return rows;
 }
 function makeFallback(ticker) {
@@ -1056,7 +1057,11 @@ function combinedSignal(data, W=7, allData=null) {
   if (!evo) return null;
 
   // ─ SCORE COMBINADO base ─
-  const evo_sc    = evo.evo_prob * 100;
+  // FIX MEDIO: el EVO oscilaba solo 0.57-0.72 → aportaba ~5pts reales, no 35%.
+  // Se re-escala su rango observado (0.45-0.80) al rango completo 0-100.
+  const EVO_LO = 0.45, EVO_HI = 0.80;
+  const evoNorm   = Math.min(1, Math.max(0, (evo.evo_prob - EVO_LO)/(EVO_HI - EVO_LO)));
+  const evo_sc    = +(evoNorm * 100).toFixed(1);
   let combined_sc = fx_sc * 0.65 + evo_sc * 0.35;
   let bonus = 0;
   if (evo.ca15_score===3) bonus=8; else if(evo.ca15_score===2) bonus=4;
@@ -1220,6 +1225,7 @@ function combinedSignal(data, W=7, allData=null) {
     ca15_score:evo.ca15_score, evo_prob:evo.evo_prob,
     pct6h:evo.pct6h, vol_24h:evo.vol_24h,
     scoreTrend, scoreDelta:+scoreDelta.toFixed(0),
+    synthetic: !!data[n]?._synth,
     rsScore, rsLabel,
     macd_h:mh,
     dist_high:evo.dist_high, dist_low:evo.dist_low,
@@ -1255,6 +1261,45 @@ function calcPositionSize(entry, sl, totalCapital, riskPct=0.01) {
 }
 
 // ── APLICAR UMBRAL PERCENTIL 80 (como EVO) ───────────────────
+// ── CORRECCIÓN POR COMPARACIONES MÚLTIPLES (Benjamini-Hochberg FDR) ──
+// Con 104 tickers probados a la vez, ~5% aparecen "buenos" solo por azar.
+// BH controla la tasa de falsos descubrimientos manteniendo poder estadístico.
+function applyFDRCorrection(results, fdr = 0.10) {
+  const cands = results
+    .filter(r => r.sig && r.sig.sig !== "NEUTRAL")
+    .map(r => {
+      // p-valor aproximado desde el score: score 50 = azar (p=1), score 100 = p→0
+      const z = Math.abs((r.sig.final_sc || 50) - 50) / 12.5;   // ~4 sigma en los extremos
+      const p = Math.max(1e-6, 2*(1 - normCdf(z)));
+      return { ticker: r.ticker, p };
+    })
+    .sort((a,b) => a.p - b.p);
+
+  const m = cands.length;
+  let kMax = 0;
+  cands.forEach((c,i) => { if (c.p <= ((i+1)/m)*fdr) kMax = i+1; });
+  const passed = new Set(cands.slice(0, kMax).map(c => c.ticker));
+
+  return results.map(r => {
+    if (!r.sig || r.sig.sig === "NEUTRAL") return r;
+    const survives = passed.has(r.ticker);
+    return { ...r, sig: { ...r.sig,
+      fdr_pass: survives,
+      fdr_note: survives ? "Supera control de falsos positivos"
+                         : `Podría ser azar (${m} tickers probados simultáneamente)`,
+      // si no sobrevive, degradar la fuerza de la señal
+      sig: survives ? r.sig.sig : r.sig.sig.replace(" FUERTE",""),
+    }};
+  });
+}
+function normCdf(z) {
+  const t = 1/(1+0.2316419*Math.abs(z));
+  const d = 0.3989423*Math.exp(-z*z/2);
+  const p = d*t*(0.3193815 + t*(-0.3565638 + t*(1.781478 + t*(-1.821256 + t*1.330274))));
+  return z > 0 ? 1-p : p;
+}
+
+
 function applyP80Threshold(results) {
   if (!results.length) return results;
 
@@ -1315,8 +1360,11 @@ function applyP80Threshold(results) {
     return {...r, sig};
   });
 
+  // ── Corrección por comparaciones múltiples (FDR) ──
+  const fdrApplied = applyFDRCorrection(mapped);
+
   // ── MEJORA 4: Deduplicar señales de tickers correlacionados ──
-  return deduplicateCorrelated(mapped);
+  return deduplicateCorrelated(fdrApplied);
 }
 
 // ── BACKTEST ──────────────────────────────────────────────────
@@ -3696,6 +3744,7 @@ export default function App() {
                               <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
                                 <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:SC[s.sig],letterSpacing:".06em"}}>{r.ticker}</span>
                                 {s.scoreTrend&&s.scoreTrend!=="→"&&<span style={{fontSize:"10px",color:s.scoreTrend==="▲"?"#00ff88":"#ff3355",marginLeft:"2px"}}>{s.scoreTrend}</span>}
+                                {s.synthetic&&<span title="Historial sintético — no son datos reales" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
                                 <FXCA16Badge score={s.ca15_score}/>
                               </div>
