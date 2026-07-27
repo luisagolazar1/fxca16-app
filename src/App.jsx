@@ -905,13 +905,20 @@ function combinedSignal(data, W=7, allData=null) {
   if (n<60) return null;
   const ticker = data[n]?._ticker || "";
 
+  // ─ Períodos adaptativos según W (FIX: señales calibradas al horizonte) ─
+  const rsiP  = W<=7 ? 14 : W<=14 ? 18 : W<=30 ? 22 : 28;  // RSI más suave a mayor plazo
+  const bbP   = W<=7 ? 20 : W<=14 ? 24 : W<=30 ? 28 : 34;  // BB más amplio a mayor plazo
+  const atrP  = W<=7 ? 14 : W<=14 ? 16 : W<=30 ? 20 : 24;  // ATR más estable a mayor plazo
+  const roc10P= W<=7 ? 10 : W<=14 ? 14 : W<=30 ? 20 : 28;  // ROC ajustado al horizonte
+  const roc5P = W<=7 ? 5  : W<=14 ? 7  : W<=30 ? 10 : 14;
+
   // ─ FXCA16 técnico — versiones FAST (solo último valor, sin arrays completos) ─
   const px  = data[n].close;
-  const a20 = smaLast(data, 20);
-  const a50 = smaLast(data, 50);
+  const a20 = smaLast(data, W<=14 ? 20 : 30);
+  const a50 = smaLast(data, W<=14 ? 50 : 70);
   const a200= smaLast(data, Math.min(200, n+1));
-  const b   = bollLast(data, 20);
-  const at  = atrLast(data, 14) || px*0.015;
+  const b   = bollLast(data, bbP);
+  const at  = atrLast(data, atrP) || px*0.015;
   if (!b||!b.u) return null;
 
   // MACD fast — O(n) una sola pasada
@@ -919,12 +926,12 @@ function combinedSignal(data, W=7, allData=null) {
   const mh  = macdRes.hist;
   const mhp = macdRes.prevHist;
 
-  // ROC directo sin array
-  const roc10 = rocLast(data, 10);
-  const roc5  = rocLast(data, 5);
+  // ROC adaptativo al horizonte
+  const roc10 = rocLast(data, roc10P);
+  const roc5  = rocLast(data, roc5P);
   const volDiv = volPriceDivergence(data, n);
-  // RSI fast — solo referencia visual
-  const r = rsiLast(data, 14);
+  // RSI adaptativo
+  const r = rsiLast(data, rsiP);
 
   let fx_sc = 50;
 
@@ -1087,24 +1094,32 @@ function calcPositionSize(entry, sl, totalCapital, riskPct=0.01) {
 function applyP80Threshold(results) {
   if (!results.length) return results;
 
-  // Ordenar todos por final_sc
-  const withScore = results.map(r => ({ ticker: r.ticker, sc: r.sig?.final_sc || 0 }));
-  const sorted = [...withScore].sort((a,b) => a.sc - b.sc);
-  const p80_idx = Math.floor(sorted.length * 0.8);
-  const p80 = sorted[p80_idx]?.sc ?? 0;
+  // P80 SEPARADO POR MERCADO (FIX: USA y Merval tienen distribuciones distintas)
+  const usa    = results.filter(r => r.moneda === "USD");
+  const merval = results.filter(r => r.moneda === "ARS");
 
-  // Top 20% = los N tickers con mayor score
-  const topN = Math.max(1, Math.ceil(results.length * 0.20));
-  const topTickers = new Set(
-    [...withScore].sort((a,b) => b.sc - a.sc).slice(0, topN).map(x => x.ticker)
-  );
+  const calcP80set = (arr) => {
+    if (!arr.length) return { p80: 0, topTickers: new Set() };
+    const sorted = [...arr].sort((a,b) => (a.sig?.final_sc||0) - (b.sig?.final_sc||0));
+    const p80 = sorted[Math.floor(sorted.length * 0.8)]?.sig?.final_sc ?? 0;
+    const topN = Math.max(1, Math.ceil(arr.length * 0.20));
+    const topTickers = new Set(
+      [...arr].sort((a,b) => (b.sig?.final_sc||0) - (a.sig?.final_sc||0)).slice(0, topN).map(x => x.ticker)
+    );
+    return { p80, topTickers };
+  };
+
+  const { p80: p80usa,    topTickers: topUSA }    = calcP80set(usa);
+  const { p80: p80merval, topTickers: topMerval } = calcP80set(merval);
 
   const mapped = results.map(r => {
     if (!r.sig) return r;
     const sc = r.sig.final_sc || 0;
     const tkMult = TICKER_CONFIDENCE[r.ticker] || 0;
     const adjSc  = sc + tkMult * 10;
-    const above  = topTickers.has(r.ticker);
+    const isUSA  = r.moneda === "USD";
+    const above  = isUSA ? topUSA.has(r.ticker) : topMerval.has(r.ticker);
+    const p80val = isUSA ? p80usa : p80merval;
 
     let sigStr = r.sig.sig;
     if (above) {
@@ -1118,7 +1133,7 @@ function applyP80Threshold(results) {
     const sig = {
       ...r.sig,
       sig:           sigStr,
-      p80_threshold: +p80.toFixed(1),
+      p80_threshold: +p80val.toFixed(1),
       above_p80:     above,
     };
     return {...r, sig};
@@ -1353,24 +1368,43 @@ function calcMarketCorrelation(data, indexData) {
 // ETAPA 2 — OPTIMIZACIÓN AVANZADA
 // ══════════════════════════════════════════════════════════════
 
-// 1. BACKTEST WALK-FORWARD — ventana deslizante más realista
+// ── Resamplear datos horarios a OHLCV diario ──
+function resampleToDaily(data) {
+  if (!data || !data.length) return [];
+  const byDay = {};
+  data.forEach(d => {
+    const day = d.date || (d.d ? d.d : "");
+    if (!day) return;
+    if (!byDay[day]) byDay[day] = { date:day, open:d.open||d.close, high:d.close, low:d.close, close:d.close, volume:0 };
+    byDay[day].high   = Math.max(byDay[day].high, d.high||d.close);
+    byDay[day].low    = Math.min(byDay[day].low,  d.low||d.close);
+    byDay[day].close  = d.close;
+    byDay[day].volume += d.volume||0;
+  });
+  return Object.values(byDay).sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+// 1. BACKTEST WALK-FORWARD — ventana deslizante con días reales
 function backtestWalkForward(data, W=7) {
-  if (!data || data.length < 300) return null;
-  const TRAIN = 180; // ~6 meses en barras diarias equiv
-  const VAL   = 30;  // ~1 mes validación
+  if (!data || data.length < 200) return null;
+  // Resamplear a diario para medir ventanas en días reales
+  const daily = resampleToDaily(data);
+  if (!daily || daily.length < 60) return null;
+  const TRAIN_DAYS = 120; // 6 meses de días de trading (~120 días)
+  const VAL_DAYS   = 20;  // 1 mes de validación (~20 días)
   const results = [];
-  let i = TRAIN;
-  while (i + VAL <= data.length) {
-    const trainSlice = data.slice(i - TRAIN, i);
-    const valSlice   = data.slice(i, i + VAL);
+  let i = TRAIN_DAYS;
+  while (i + VAL_DAYS <= daily.length) {
+    const trainSlice = daily.slice(i - TRAIN_DAYS, i);
+    const valSlice   = daily.slice(i, i + VAL_DAYS);
     // Generar señal en último bar del train
     const sig = combinedSignal(trainSlice, W);
-    if (!sig || sig.sig === "NEUTRAL") { i += VAL; continue; }
+    if (!sig || sig.sig === "NEUTRAL") { i += VAL_DAYS; continue; }
     const isBuy = sig.sig.includes("COMPRA");
     // Medir resultado en validación
     const entryPx = valSlice[0]?.close;
     const exitPx  = valSlice[valSlice.length-1]?.close;
-    if (!entryPx || !exitPx) { i += VAL; continue; }
+    if (!entryPx || !exitPx) { i += VAL_DAYS; continue; }
     const ret = (exitPx - entryPx) / entryPx;
     const win = isBuy ? ret > 0 : ret < 0;
     results.push({
@@ -1379,7 +1413,7 @@ function backtestWalkForward(data, W=7) {
       ret: +(ret*100).toFixed(2), win,
       entryPx: +entryPx.toFixed(2), exitPx: +exitPx.toFixed(2),
     });
-    i += VAL;
+    i += VAL_DAYS;
   }
   if (!results.length) return null;
   const wins    = results.filter(r=>r.win).length;
@@ -1410,8 +1444,8 @@ function calcSignalQuality(data, sig, W=7) {
     if (!s) continue;
     // Setup "similar": misma dirección, conf ±15, fx_sc ±15
     const sameDir   = isBuy ? s.sig?.includes("COMPRA") : s.sig?.includes("VENTA");
-    const confMatch = Math.abs((s.conf||0) - targetConf) < 15;
-    const fxMatch   = Math.abs((s.fx_sc||0) - targetFX) < 15;
+    const confMatch = Math.abs((s.conf||0) - targetConf) < 8;
+    const fxMatch   = Math.abs((s.fx_sc||0) - targetFX) < 8;
     if (!sameDir || !confMatch || !fxMatch) continue;
     const entryPx = data[i]?.close;
     const future  = data.slice(i, i + LOOKFWD);
@@ -1460,13 +1494,20 @@ function getUpcomingEvents(ticker, moneda) {
   });
   // Earnings — estimación por ticker (próximas semanas)
   // Lista de earnings aproximados Q1 2026
+  // Earnings Q2/Q3 2026 — próximos reportes estimados
   const earningsTickers = {
-    "AAPL":  [2,26], "MSFT": [4,23], "GOOGL": [4,29], "AMZN": [4,30],
-    "META":  [4,23], "NVDA": [5,21], "TSLA":  [4,22], "JPM":  [4,11],
-    "BAC":   [4,15], "GS":   [4,14], "V":     [4,22], "MA":   [4,29],
-    "WMT":   [5,15], "KO":   [4,29], "PEP":   [4,24], "JNJ":  [4,15],
-    "GGAL":  [5,14], "YPFD": [5,10], "PAMP":  [5,12], "CEPU": [5,8],
-    "BMA":   [5,14], "SUPV": [5,14], "TECO2": [5,9],
+    // USA — Q2 2026 (julio-agosto)
+    "AAPL":  [7,31], "MSFT":  [7,23], "GOOGL": [7,22], "AMZN":  [8,1],
+    "META":  [7,23], "NVDA":  [8,20], "TSLA":  [7,21], "JPM":   [7,10],
+    "BAC":   [7,14], "GS":    [7,13], "V":     [7,21], "MA":    [7,28],
+    "WMT":   [8,14], "KO":    [7,28], "PEP":   [7,23], "JNJ":   [7,14],
+    "NFLX":  [7,15], "COIN":  [7,31], "AMD":   [7,28], "INTC":  [7,24],
+    "QCOM":  [7,30], "AVGO":  [8,28], "ORCL":  [9,9],  "CRM":   [8,27],
+    "SPOT":  [7,22], "UBER":  [7,30], "PLTR":  [8,4],  "SNOW":  [8,20],
+    // Merval — Q2 2026
+    "GGAL":  [8,14], "YPFD":  [8,7],  "PAMP":  [8,12], "CEPU":  [8,8],
+    "BMA":   [8,14], "SUPV":  [8,14], "TECO2": [8,9],  "BYMA":  [8,10],
+    "ALUA":  [8,12], "TXAR":  [8,11], "EDN":   [8,13], "COME":  [8,15],
   };
   const tk = ticker?.replace(".BA","");
   if (earningsTickers[tk]) {
@@ -1624,22 +1665,27 @@ function calcMultiTimeframe(data, W=7) {
   });
 }
 
-// 4. RÉGIMEN DEL TICKER — fase Weinstein: acumulación, markup, distribución, markdown
+// 4. RÉGIMEN DEL TICKER — fase Weinstein sobre datos DIARIOS resampled
 function detectTickerRegime(data) {
-  const n = data.length;
-  if (n < 150) return null;
-  const closes = data.map(d=>d.close);
-  const vols   = data.map(d=>d.volume||0);
+  // Resamplear a diario para que SMA150 = 150 días reales (7 meses = Weinstein correcto)
+  const daily = resampleToDaily(data);
+  const n = daily.length;
+  if (n < 50) return null; // mínimo 50 días
+  const closes = daily.map(d=>d.close);
+  const vols   = daily.map(d=>d.volume||0);
 
-  // SMA 30 semanas = 150 barras diarias aprox (en data horaria usamos 200 barras)
-  const sma150 = closes.slice(-150).reduce((a,b)=>a+b,0)/150;
-  const sma50  = closes.slice(-50).reduce((a,b)=>a+b,0)/50;
-  const sma20  = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
+  // SMA Weinstein sobre días reales
+  const p150 = Math.min(150, n);
+  const p50  = Math.min(50, n);
+  const p20  = Math.min(20, n);
+  const sma150 = closes.slice(-p150).reduce((a,b)=>a+b,0)/p150;
+  const sma50  = closes.slice(-p50).reduce((a,b)=>a+b,0)/p50;
+  const sma20  = closes.slice(-p20).reduce((a,b)=>a+b,0)/p20;
   const px = closes[n-1];
 
-  // Pendiente de SMA150 (últimas 20 vs anteriores 20)
-  const sma150_now  = closes.slice(-150).reduce((a,b)=>a+b,0)/150;
-  const sma150_prev = closes.slice(-170,-20).reduce((a,b)=>a+b,0)/150;
+  // Pendiente de SMA150 (últimas 20 vs anteriores 20 días)
+  const sma150_now  = n>=150 ? closes.slice(-150).reduce((a,b)=>a+b,0)/150 : sma150;
+  const sma150_prev = n>=170 ? closes.slice(-170,-20).reduce((a,b)=>a+b,0)/150 : sma150*0.999;
   const slopeUp   = sma150_now > sma150_prev * 1.001;
   const slopeDown = sma150_now < sma150_prev * 0.999;
   const slopeFlat = !slopeUp && !slopeDown;
@@ -2476,7 +2522,28 @@ export default function App() {
   };
   const [customSearching, setCustomSearching] = useState(false);
   const [customResults, setCustomResults] = useState([]); // resultados de búsquedas manuales
-  const customTickersRef = useRef([]); // tickers custom agregados
+  const customTickersRef = useRef([]);
+  const analysisCache = useRef({}); // Cache de análisis pesados por ticker+W
+
+  // Helper para obtener análisis cacheado
+  const getCachedAnalysis = (ticker, W, data) => {
+    const key = `${ticker}_${W}`;
+    if (analysisCache.current[key]) return analysisCache.current[key];
+    if (!data || data.length < 30) return null;
+    const result = {
+      fib:    calcFibonacci(data, W),
+      vp:     calcVolumeProfile(data),
+      reg:    detectTickerRegime(data),
+      atrB:   calcATRBands(data),
+      mtf:    calcMultiTimeframe(data, W),
+      wf:     backtestWalkForward(data, W),
+    };
+    analysisCache.current[key] = result;
+    return result;
+  };
+
+  // Limpiar cache al cambiar W o mercado
+  const clearAnalysisCache = () => { analysisCache.current = {}; }; // tickers custom agregados
 
   // ── Disparar GitHub Actions para actualizar datos ──
   const triggerDataUpdate = useCallback(async () => {
@@ -2936,6 +3003,7 @@ export default function App() {
           setSel(prev => prev ? {...prev, sig: sig2} : prev);
         }
       }
+      clearAnalysisCache();
       setTimeout(() => run(mkt), 50);
     } else {
       prevWRef.current = W;
