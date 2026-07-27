@@ -3744,6 +3744,7 @@ export default function App() {
                               <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
                                 <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:SC[s.sig],letterSpacing:".06em"}}>{r.ticker}</span>
                                 {s.scoreTrend&&s.scoreTrend!=="→"&&<span style={{fontSize:"10px",color:s.scoreTrend==="▲"?"#00ff88":"#ff3355",marginLeft:"2px"}}>{s.scoreTrend}</span>}
+                                {s.synthetic&&<span title="Historial sintético — no operar" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
                                 {s.synthetic&&<span title="Historial sintético — no son datos reales" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
                                 <FXCA16Badge score={s.ca15_score}/>
@@ -4116,6 +4117,11 @@ export default function App() {
                           {/* VEREDICTO */}
                           <div style={{textAlign:"center",marginBottom:"14px",paddingBottom:"12px",borderBottom:"1px solid #0f2235"}}>
                             <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".2em",marginBottom:"4px"}}>VEREDICTO FINAL</div>
+                            <div style={{display:"flex",gap:"4px",justifyContent:"center",flexWrap:"wrap",marginBottom:"6px"}}>
+                              {s?.synthetic&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff335520",border:"1px solid #ff335550",borderRadius:"3px",color:"#ff3355",fontWeight:700}}>⚠ DATOS SINTÉTICOS — no operar con esta señal</span>}
+                              {s?.fdr_pass===false&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px",color:"#ffd700"}}>⚠ {s.fdr_note||"Posible falso positivo"}</span>}
+                              {s?.fdr_pass===true&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#00ff8815",border:"1px solid #00ff8840",borderRadius:"3px",color:"#00ff88"}}>✓ Supera control FDR</span>}
+                            </div>
                             <div style={{fontFamily:"'Bebas Neue'",fontSize:"32px",color:veredictoColor,lineHeight:1,marginBottom:"6px"}}>{veredicto}</div>
                             <div style={{fontSize:"8px",color:"#b0d4e8",lineHeight:1.7,marginBottom:"8px",maxWidth:"480px",margin:"0 auto 8px"}}>{veredictoDesc}</div>
                             <div style={{padding:"8px 12px",background:`${veredictoColor}12`,border:`1px solid ${veredictoColor}30`,borderRadius:"5px",fontSize:"8px",color:"#ffd700",lineHeight:1.7,textAlign:"left"}}>
