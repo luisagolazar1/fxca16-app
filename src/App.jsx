@@ -988,40 +988,67 @@ function combinedSignal(data, W=7, allData=null) {
   // RSI adaptativo
   const r = rsiLast(data, rsiP);
 
-  let fx_sc = 50;
+  // ══ FIX ALTO: dos motores SEPARADOS en vez de un score contradictorio ══
+  // Antes, Bollinger (reversión) restaba puntos mientras ROC/MACD (momentum)
+  // sumaban en un breakout. Ahora cada estrategia puntúa por separado y el
+  // sistema elige cuál aplicar según el régimen del activo.
 
-  // ROC reemplaza RSI como discriminador principal (análisis muestra RSI flat en todos los rangos)
-  if (roc10 >  3.0) fx_sc += 20;
-  else if (roc10 >  1.5) fx_sc += 12;
-  else if (roc10 >  0.5) fx_sc +=  6;
-  else if (roc10 < -3.0) fx_sc -= 20;
-  else if (roc10 < -1.5) fx_sc -= 12;
-  else if (roc10 < -0.5) fx_sc -=  6;
+  // ── MOTOR A: MOMENTUM / SEGUIMIENTO DE TENDENCIA ──
+  let mom_raw = 0;
+  if (roc10 >  3.0) mom_raw += 20;
+  else if (roc10 >  1.5) mom_raw += 12;
+  else if (roc10 >  0.5) mom_raw +=  6;
+  else if (roc10 < -3.0) mom_raw -= 20;
+  else if (roc10 < -1.5) mom_raw -= 12;
+  else if (roc10 < -0.5) mom_raw -=  6;
 
-  // ROC corto (5 barras) como momentum inmediato
-  if (roc5 > 1.0) fx_sc += 8;
-  else if (roc5 < -1.0) fx_sc -= 8;
+  if (roc5 > 1.0) mom_raw += 8;
+  else if (roc5 < -1.0) mom_raw -= 8;
 
-  // Divergencia volumen-precio (mejora 2)
-  fx_sc += volDiv * 10;
+  mom_raw += volDiv * 10;
 
-  // MACD
-  if(mh>0&&mhp<=0) fx_sc+=20; else if(mh>0) fx_sc+=10;
-  else if(mh<0&&mhp>=0) fx_sc-=20; else fx_sc-=10;
+  // MACD con BANDA MUERTA (FIX medio: antes ±0.00001 movía 20 pts)
+  const macdDead = px * 0.0004;          // umbral proporcional al precio
+  if      (mh >  macdDead && mhp <= macdDead) mom_raw += 20;   // cruce alcista
+  else if (mh >  macdDead)                    mom_raw += 10;
+  else if (mh < -macdDead && mhp >= -macdDead)mom_raw -= 20;   // cruce bajista
+  else if (mh < -macdDead)                    mom_raw -= 10;
+  // dentro de la banda muerta: 0 pts
 
-  // Medias móviles
-  if(a20&&a50) a20>a50 ? fx_sc+=12 : fx_sc-=12;
-  if(a200)     px>a200 ? fx_sc+=8  : fx_sc-=8;
+  if(a20&&a50) a20>a50 ? mom_raw+=12 : mom_raw-=12;
+  if(a200)     px>a200 ? mom_raw+=8  : mom_raw-=8;
 
-  // Bollinger
-  if(px<b.l) fx_sc+=18; else if(px>b.u) fx_sc-=18;
-  else px<b.m ? fx_sc+=5 : fx_sc-=5;
-
-  // Momentum 5 barras
   const m5=(px-data[Math.max(0,n-5)].close)/data[Math.max(0,n-5)].close*100;
-  if(m5>3) fx_sc+=8; else if(m5>1) fx_sc+=4;
-  else if(m5<-3) fx_sc-=8; else if(m5<-1) fx_sc-=4;
+  if(m5>3) mom_raw+=8; else if(m5>1) mom_raw+=4;
+  else if(m5<-3) mom_raw-=8; else if(m5<-1) mom_raw-=4;
 
+  // ── MOTOR B: REVERSIÓN A LA MEDIA ──
+  let rev_raw = 0;
+  const bbPos = (b.u - b.l) > 0 ? (px - b.l)/(b.u - b.l) : 0.5;  // 0=banda inf, 1=banda sup
+  if      (px < b.l)  rev_raw += 20;        // sobrevendido → comprar
+  else if (bbPos < 0.25) rev_raw += 10;
+  else if (px > b.u)  rev_raw -= 20;        // sobrecomprado → vender
+  else if (bbPos > 0.75) rev_raw -= 10;
+  if      (r < 30) rev_raw += 12;
+  else if (r < 40) rev_raw +=  5;
+  else if (r > 70) rev_raw -= 12;
+  else if (r > 60) rev_raw -=  5;
+
+  // ── NORMALIZACIÓN SUAVE (FIX saturación) ──
+  // tanh comprime asintóticamente: nunca satura en 0/100, preserva el ranking.
+  // Antes: 154 pts teóricos recortados a 100 → los mejores tickers empataban.
+  const squash = (raw, scale) => 50 + 50 * Math.tanh(raw / scale);
+  const mom_sc = squash(mom_raw, 45);
+  const rev_sc = squash(rev_raw, 28);
+
+  // ── SELECCIÓN DE MOTOR SEGÚN COMPORTAMIENTO DEL ACTIVO ──
+  // Tendencial (ADX-proxy: medias alineadas y separadas) → pesa momentum
+  // Lateral / rango → pesa reversión
+  const spread   = (a20&&a50) ? Math.abs(a20-a50)/a50 : 0;
+  const trending = Math.min(1, spread / 0.03);          // 0=lateral, 1=tendencia fuerte
+  const wMom = 0.35 + 0.5*trending;                      // 0.35 … 0.85
+  const wRev = 1 - wMom;
+  let fx_sc = mom_sc*wMom + rev_sc*wRev;
   fx_sc = Math.min(100, Math.max(0, fx_sc));
 
   // ─ FXCA16 features ─
@@ -1178,6 +1205,9 @@ function combinedSignal(data, W=7, allData=null) {
 
   return {
     sig, fx_sc:+fx_sc.toFixed(0), evo_sc:+evo_sc.toFixed(0),
+    mom_sc:+mom_sc.toFixed(0), rev_sc:+rev_sc.toFixed(0),
+    regimeMix: trending>=0.6?"TENDENCIAL":trending>=0.3?"MIXTO":"LATERAL",
+    wMom:+wMom.toFixed(2),
     final_sc:+final_sc.toFixed(0), wf_sc:+wf_sc.toFixed(0),
     conf:+conf.toFixed(0), trend, px, entry, sl, tp1, tp2, tp3,
     rr: +rrNeto.toFixed(2),
@@ -1611,18 +1641,52 @@ function calcSignalQuality(data, sig, W=7, costPct=COSTO_CEDEAR) {
     const win    = ret > 0;
     similar.push({ ret:+(ret*100).toFixed(2), maxRet:+(maxRet*100).toFixed(2), maxDD:+(maxDD*100).toFixed(2), win });
   }
-  if (similar.length < 3) return { similar: [], hr:0, avgRet:0, avgMaxRet:0, avgMaxDD:0, quality:"INSUFICIENTE", qualityColor:"#4a7a9b" };
+  // ── FIX ALTO: rigor estadístico ──
+  // Antes se declaraba "CALIDAD ALTA" con 3 muestras (IC95% = 13%-100%: inútil).
+  // Ahora se exige n>=30 y que el IC95% del win-rate quede por ENCIMA del 50%.
+  const N_MIN = 30;
+  const n_ = similar.length;
+  if (n_ < N_MIN) {
+    return { similar: [], total:n_, wins:0, hr:0, avgRet:0, avgMaxRet:0, avgMaxDD:0,
+             ciLow:0, ciHigh:0, significant:false,
+             quality:"MUESTRA INSUFICIENTE", qualityColor:"#4a7a9b",
+             note:`Solo ${n_} casos similares (se necesitan ${N_MIN}+ para concluir algo)` };
+  }
   const wins    = similar.filter(s=>s.win).length;
-  const hr      = +(wins/similar.length*100).toFixed(1);
-  const avgRet  = +(similar.reduce((a,s)=>a+s.ret,0)/similar.length).toFixed(2);
-  const avgMaxRet = +(similar.reduce((a,s)=>a+s.maxRet,0)/similar.length).toFixed(2);
-  const avgMaxDD  = +(similar.reduce((a,s)=>a+s.maxDD,0)/similar.length).toFixed(2);
+  const hr      = +(wins/n_*100).toFixed(1);
+  const avgRet  = +(similar.reduce((a,s)=>a+s.ret,0)/n_).toFixed(2);
+  const avgMaxRet = +(similar.reduce((a,s)=>a+s.maxRet,0)/n_).toFixed(2);
+  const avgMaxDD  = +(similar.reduce((a,s)=>a+s.maxDD,0)/n_).toFixed(2);
+
+  // Intervalo de confianza 95% (Wilson, robusto para n moderados)
+  const p  = wins/n_, z = 1.96;
+  const den = 1 + z*z/n_;
+  const ctr = (p + z*z/(2*n_))/den;
+  const mrg = (z*Math.sqrt(p*(1-p)/n_ + z*z/(4*n_*n_)))/den;
+  const ciLow  = +((ctr-mrg)*100).toFixed(1);
+  const ciHigh = +((ctr+mrg)*100).toFixed(1);
+  const significant = ciLow > 50;   // el azar (50%) queda fuera del intervalo
+
+  // Desvío estándar de retornos → consistencia
+  const mu  = similar.reduce((a,s)=>a+s.ret,0)/n_;
+  const sd  = Math.sqrt(similar.reduce((a,s)=>a+(s.ret-mu)**2,0)/n_);
+  const tStat = sd>0 ? +(mu/(sd/Math.sqrt(n_))).toFixed(2) : 0;
+  const retSignificant = Math.abs(tStat) > 2;   // t>2 ≈ p<0.05
+
   let quality, qualityColor;
-  if (hr >= 65 && avgRet > 1.5)      { quality="ALTA";        qualityColor="#00ff88"; }
-  else if (hr >= 55 && avgRet > 0.5) { quality="MEDIA-ALTA";  qualityColor="#a0cce0"; }
-  else if (hr >= 45)                  { quality="MEDIA";        qualityColor="#ffd700"; }
-  else                                { quality="BAJA";          qualityColor="#ff3355"; }
-  return { similar: similar.slice(-10), total:similar.length, wins, hr, avgRet, avgMaxRet, avgMaxDD, quality, qualityColor };
+  if (!significant)                            { quality="NO SIGNIFICATIVA"; qualityColor="#4a7a9b"; }
+  else if (ciLow >= 60 && avgRet > 1.0)        { quality="ALTA";             qualityColor="#00ff88"; }
+  else if (ciLow >= 55 && avgRet > 0.3)        { quality="MEDIA-ALTA";       qualityColor="#a0cce0"; }
+  else if (ciLow > 50)                          { quality="MEDIA";            qualityColor="#ffd700"; }
+  else                                          { quality="BAJA";             qualityColor="#ff3355"; }
+
+  const note = significant
+    ? `n=${n_} · IC95% [${ciLow}%-${ciHigh}%] · t=${tStat}${retSignificant?" (ret significativo)":""}`
+    : `n=${n_} · IC95% [${ciLow}%-${ciHigh}%] incluye 50% → indistinguible del azar`;
+
+  return { similar: similar.slice(-10), total:n_, wins, hr, avgRet, avgMaxRet, avgMaxDD,
+           ciLow, ciHigh, significant, tStat, retSignificant, sd:+sd.toFixed(2),
+           quality, qualityColor, note };
 }
 
 // 3. FILTRO DE EVENTOS — earnings y macro
@@ -4052,6 +4116,23 @@ export default function App() {
                                   <span style={{color:"#4a7a9b"}}>EVO Prob.</span>
                                   <span style={{color:(s?.evo_prob>=0.6)?"#ff9040":"#a0cce0",fontWeight:600}}>{s?.evo_prob||0}</span>
                                 </div>
+                                {[
+                                  {l:"Motor dominante", v:s?.regimeMix?`${s.regimeMix} · mom ${Math.round((s.wMom||0)*100)}%`:"—",
+                                   c:s?.regimeMix==="TENDENCIAL"?"#00ff88":s?.regimeMix==="LATERAL"?"#ff9040":"#ffd700"},
+                                  {l:"Momentum / Reversión", v:s?`${s.mom_sc??"—"} / ${s.rev_sc??"—"}`:"—", c:"#a0cce0"},
+                                  {l:"R/R neto (post costos)", v:s?`${s.rr}x · bruto ${s.rr_bruto}x`:"—",
+                                   c:s?.rr>=2?"#00ff88":s?.rr>=1.2?"#ffd700":"#ff3355"},
+                                  {l:"Costo estimado", v:s?.costPct?`${s.costPct}% round-trip`:"—", c:"#ff9040"},
+                                  {l:"Niveles calculados desde", v:s?.slSource==="estructural"?"Soportes/resistencias reales":"ATR (sin estructura)",
+                                   c:s?.slSource==="estructural"?"#00ff88":"#ffd700"},
+                                  {l:"Fuerza relativa", v:s?.rsLabel||"—",
+                                   c:s?.rsScore>=65?"#00ff88":s?.rsScore>=50?"#a0cce0":s?.rsScore>=35?"#ffd700":"#ff3355"},
+                                ].map(x=>(
+                                  <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
+                                    <span style={{color:"#4a7a9b"}}>{x.l}</span>
+                                    <span style={{color:x.c,fontWeight:600,textAlign:"right",maxWidth:"58%"}}>{x.v}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
@@ -4135,8 +4216,8 @@ export default function App() {
                               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"3px",marginBottom:"5px"}}>
                                 {[
                                   {l:"WF WIN%",   v:wf_?`${wf_.hr}%`:"—",          c:wf_&&wf_.hr>=55?"#00ff88":wf_&&wf_.hr>=45?"#ffd700":"#ff3355"},
-                                  {l:"HIST WIN%", v:sq_&&sq_.total>=3?`${sq_.hr}%`:"—", c:sq_&&sq_.hr>=60?"#00ff88":sq_&&sq_.hr>=45?"#ffd700":"#ff3355"},
-                                  {l:"RET HIST",  v:sq_&&sq_.total>=3?`${sq_.avgRet>=0?"+":""}${sq_.avgRet}%`:"—", c:sq_&&sq_.avgRet>0?"#00ff88":"#ff3355"},
+                                  {l:"HIST WIN%", v:sq_&&sq_.total>=30?`${sq_.hr}%`:"n<30", c:sq_&&sq_.significant?"#00ff88":"#ff3355"},
+                                  {l:"RET NETO",  v:sq_&&sq_.total>=30?`${sq_.avgRet>=0?"+":""}${sq_.avgRet}%`:"—", c:sq_&&sq_.avgRet>0?"#00ff88":"#ff3355"},
                                 ].map(x=>(
                                   <div key={x.l} style={{textAlign:"center",padding:"3px",background:"#07101a",borderRadius:"3px"}}>
                                     <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
@@ -4146,12 +4227,15 @@ export default function App() {
                               </div>
                               <div style={{borderTop:"1px solid #0f2235",paddingTop:"4px",display:"flex",flexDirection:"column",gap:"2px"}}>
                                 {[
-                                  {l:"Consistencia WF",  v:wf_?`${wf_.consistency}% ventanas positivas`:"Sin datos",   c:wf_&&wf_.consistency>=60?"#00ff88":wf_&&wf_.consistency>=40?"#ffd700":"#ff3355"},
-                                  {l:"Setups similares", v:sq_&&sq_.total>=3?`${sq_.total} encontrados`:"Insuficiente", c:sq_&&sq_.total>=5?"#00ff88":"#ffd700"},
-                                  {l:"Máx subida hist.", v:sq_&&sq_.total>=3?`+${sq_.avgMaxRet}%`:"—",                  c:"#00ff88"},
-                                  {l:"Máx caída hist.",  v:sq_&&sq_.total>=3?`${sq_.avgMaxDD}%`:"—",                   c:"#ff3355"},
+                                  {l:"Consistencia WF",  v:wf_?`${wf_.consistency}% (neto costos)`:"Sin datos",   c:wf_&&wf_.consistency>=60?"#00ff88":wf_&&wf_.consistency>=40?"#ffd700":"#ff3355"},
+                                  {l:"Muestra (n)",      v:sq_?`${sq_.total} casos`:"—", c:sq_&&sq_.total>=30?"#00ff88":"#ff3355"},
+                                  {l:"IC 95% win-rate",  v:sq_&&sq_.total>=30?`${sq_.ciLow}%–${sq_.ciHigh}%${sq_.significant?"":" ⚠"}`:"n insuficiente", c:sq_?.significant?"#00ff88":"#ff3355"},
+                                  {l:"Máx subida hist.", v:sq_&&sq_.total>=30?`+${sq_.avgMaxRet}%`:"—",                  c:"#00ff88"},
+                                  {l:"Máx caída hist.",  v:sq_&&sq_.total>=30?`${sq_.avgMaxDD}%`:"—",                   c:"#ff3355"},
                                   {l:"Eventos próximos", v:events_.length?events_.map(e=>`${e.name} (${e.daysLeft<=0?"HOY":e.daysLeft+"d"})`).join(" · "):"Sin eventos",
                                     c:hasRisk_?"#ff3355":events_.length?"#ffd700":"#00ff88"},
+                                {l:"Validez estadística", v:sq_?.note?(sq_.significant?"✓ significativa":"✗ no significativa"):"—",
+                                    c:sq_?.significant?"#00ff88":"#ff3355"},
                                 ].map(x=>(
                                   <div key={x.l} style={{display:"flex",justifyContent:"space-between",fontSize:"7px"}}>
                                     <span style={{color:"#4a7a9b"}}>{x.l}</span>
