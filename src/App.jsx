@@ -1005,7 +1005,20 @@ function combinedSignal(data, W=7, allData=null) {
   const timeFactor  = (hourFactor * dowFactor);
   const final_sc_raw = Math.min(100, Math.max(0, (wf_sc - 50) * timeFactor + 50));
   // Ajuste adaptativo basado en historial de simulaciones
-  const final_sc    = adaptiveScoreAdj(ticker, final_sc_raw);
+  const final_sc_adj = adaptiveScoreAdj(ticker, final_sc_raw);
+  // MEJORA: R/R pre-calculado para ponderar score (mejor R/R = señal más valiosa)
+  const _entry_pre = +(px*(wf_sc>=50?0.995:1.005)).toFixed(2);
+  const _at_pre    = at || px*0.015;
+  const _wsc_pre   = Math.sqrt(W/7);
+  const _am_pre    = (wf_sc>=68?1.5:2.0)*_wsc_pre;
+  const _sl_pre    = wf_sc>=50 ? _entry_pre-_at_pre*_am_pre : _entry_pre+_at_pre*_am_pre;
+  const _tp2_pre   = wf_sc>=50 ? _entry_pre+_at_pre*2.5*_wsc_pre : _entry_pre-_at_pre*2.5*_wsc_pre;
+  const _risk_pre  = Math.abs(_entry_pre-_sl_pre);
+  const _rew_pre   = Math.abs(_tp2_pre-_entry_pre);
+  const _rr_pre    = _risk_pre>0 ? _rew_pre/_risk_pre : 1;
+  // Bonificar scores con buen R/R: +3pts si R/R>=2, +1pt si R/R>=1.5
+  const rrBonus    = _rr_pre>=2?3:_rr_pre>=1.5?1:_rr_pre<1?-2:0;
+  const final_sc   = Math.min(100, Math.max(0, final_sc_adj + rrBonus));
 
   // ─ Tendencia ─
   let trend="LATERAL";
@@ -1048,6 +1061,31 @@ function combinedSignal(data, W=7, allData=null) {
   if(buy  && evo.ca15_score===3) conf=Math.min(100,conf+5);
   if(sell && evo.ca15_score===0) conf=Math.min(100,conf+5);
 
+  // MEJORA 2: Score trending — comparar con score de hace ~1 día (7 barras horarias)
+  let scoreTrend = "→", scoreDelta = 0;
+  if (data.length >= 14) {
+    const prevSlice = data.slice(0, -7);
+    const prevSig = prevSlice.length>=60 ? combinedSignal(prevSlice, W, allData) : null;
+    if (prevSig) {
+      scoreDelta = final_sc - prevSig.final_sc;
+      scoreTrend = scoreDelta > 3 ? "▲" : scoreDelta < -3 ? "▼" : "→";
+    }
+  }
+
+  // MEJORA 3: Fuerza relativa vs índice (RS Score)
+  let rsScore = 50, rsLabel = "NEUTRAL";
+  if (allData && allData.length > 10) {
+    const idxTicker = data[n]?.moneda==="ARS" ? "GGAL" : "SPY";
+    const idxBars = allData.filter(d=>d._ticker===idxTicker).slice(-30);
+    if (idxBars.length >= 10) {
+      const stockRet = (px - data[Math.max(0,n-20)].close) / data[Math.max(0,n-20)].close;
+      const idxRet   = (idxBars[idxBars.length-1].close - idxBars[0].close) / idxBars[0].close;
+      rsScore = +(50 + (stockRet - idxRet) * 500).toFixed(0);
+      rsScore = Math.min(100, Math.max(0, rsScore));
+      rsLabel = rsScore>=65?"LÍDER":rsScore>=50?"NORMAL":rsScore>=35?"REZAGADO":"MUY REZAGADO";
+    }
+  }
+
   return {
     sig, fx_sc:+fx_sc.toFixed(0), evo_sc:+evo_sc.toFixed(0),
     final_sc:+final_sc.toFixed(0), wf_sc:+wf_sc.toFixed(0),
@@ -1058,6 +1096,9 @@ function combinedSignal(data, W=7, allData=null) {
     sma20:a20, sma50:a50, sma200:a200, mom5:+m5.toFixed(2),
     ca15_score:evo.ca15_score, evo_prob:evo.evo_prob,
     pct6h:evo.pct6h, vol_24h:evo.vol_24h,
+    scoreTrend, scoreDelta:+scoreDelta.toFixed(0),
+    rsScore, rsLabel,
+    macd_h:mh,
     dist_high:evo.dist_high, dist_low:evo.dist_low,
     regime, wfWeight:+wfWeight.toFixed(2),
     hourFactor:+hourFactor.toFixed(2), dowFactor:+dowFactor.toFixed(2),
@@ -3475,6 +3516,7 @@ export default function App() {
                             <div>
                               <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
                                 <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:SC[s.sig],letterSpacing:".06em"}}>{r.ticker}</span>
+                                {s.scoreTrend&&s.scoreTrend!=="→"&&<span style={{fontSize:"10px",color:s.scoreTrend==="▲"?"#00ff88":"#ff3355",marginLeft:"2px"}}>{s.scoreTrend}</span>}
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
                                 <FXCA16Badge score={s.ca15_score}/>
                               </div>
@@ -4270,6 +4312,30 @@ export default function App() {
                     style={{padding:"5px 12px",fontSize:"9px"}}>+ Agregar</button>
                   <span style={{fontSize:"8px",color:"#4a7a9b"}}>o hacé click en ⭐ desde cualquier señal</span>
                 </div>
+
+                {/* Alertas — tickers del watchlist que están en P80 */}
+                {(()=>{
+                  const wlTickers = watchlists[activeWL]?.tickers || [];
+                  const alertas = rows.filter(r => wlTickers.includes(r.ticker) && r.sig?.above_p80 && r.sig?.sig !== "NEUTRAL");
+                  if (!alertas.length) return null;
+                  return (
+                    <div style={{padding:"8px 10px",background:"#ffd70010",border:"1px solid #ffd70030",borderRadius:"5px",marginBottom:"10px"}}>
+                      <div style={{fontSize:"7px",color:"#ffd700",marginBottom:"5px",fontWeight:700,letterSpacing:".1em"}}>🔔 ALERTAS P80 EN ESTA LISTA ({alertas.length})</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+                        {alertas.map(r=>(
+                          <div key={r.ticker} onClick={()=>{setSel(r);setTab("det");}}
+                            style={{padding:"4px 10px",background:SC[r.sig.sig]+"20",border:`1px solid ${SC[r.sig.sig]}40`,borderRadius:"4px",cursor:"pointer"}}>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:SC[r.sig.sig]}}>{r.ticker}</div>
+                            <div style={{fontSize:"7px",color:SC[r.sig.sig],opacity:.8}}>{r.sig.sig}</div>
+                            {r.sig.scoreTrend&&r.sig.scoreTrend!=="→"&&(
+                              <div style={{fontSize:"7px",color:r.sig.scoreTrend==="▲"?"#00ff88":"#ff3355"}}>{r.sig.scoreTrend} {r.sig.scoreDelta>=0?"+":""}{r.sig.scoreDelta}pts</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Tickers de la lista activa */}
                 {(watchlists[activeWL]?.tickers||[]).length===0 ? (
