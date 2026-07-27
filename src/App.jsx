@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import * as Q from "./quant.js";
 import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
 import logoUrl from './logo.png';
 
@@ -2760,6 +2761,13 @@ export default function App() {
   const [cmpA,      setCmpA]      = useState(""); // ticker A para comparar
   const [cmpB,      setCmpB]      = useState(""); // ticker B para comparar
   const [catSector, setCatSector] = useState("Todos"); // sector activo
+  // ── QUANT LAB ──
+  const [qlRunning, setQlRunning] = useState(false);
+  const [qlProgress,setQlProgress]= useState("");
+  const [qlModels,  setQlModels]  = useState(null);
+  const [qlPort,    setQlPort]    = useState(null);
+  const [qlAblation,setQlAblation]= useState(null);
+  const [qlParams,  setQlParams]  = useState({ topN:5, holdDays:10, minProb:0.55, useKelly:true });
 
   const saveWatchlists = (wls) => {
     setWatchlists(wls);
@@ -3459,7 +3467,72 @@ export default function App() {
     setTab("opt");
   }, [rows, lg]);
 
-    const run=useCallback(async (forceMkt)=>{
+  
+  // ══ QUANT LAB: entrenar modelos + backtest de cartera ══
+  const runQuantLab = useCallback(async () => {
+    setQlRunning(true); setQlModels(null); setQlPort(null); setQlAblation(null);
+    const yield_ = () => new Promise(r => setTimeout(r, 0));
+    try {
+      const tks = rows.map(r => r.ticker);
+      const universe = [];
+      const modelInfo = [];
+      let allX = [], allY = [];
+
+      for (let i = 0; i < tks.length; i++) {
+        const tk = tks[i];
+        setQlProgress(`Entrenando ${tk} (${i+1}/${tks.length})...`);
+        if (i % 3 === 0) await yield_();
+        const bars = rowDataRef.current[tk];
+        if (!bars || bars.length < 200) continue;
+        const daily = resampleToDaily(bars);
+        if (!daily || daily.length < 150) continue;
+        const moneda = rows.find(r=>r.ticker===tk)?.moneda || "USD";
+        const cost = (moneda==="ARS" ? COSTO_MERVAL : COSTO_CEDEAR)/100;
+        const t = Q.trainTicker(daily, { cost });
+        if (!t) continue;
+        universe.push({ ticker: tk, daily, model: t.model, cal: t.cal });
+        modelInfo.push({
+          ticker: tk, moneda, n: t.n, auc: t.auc, brier: t.brier,
+          brierSkill: t.brierSkill, baseRate: t.baseRate, avgRet: t.avgRet,
+          weights: t.weights, reliability: t.reliability,
+        });
+        if (allX.length < 4000) { allX = allX.concat(t.X); allY = allY.concat(t.y); }
+      }
+
+      if (!universe.length) { setQlProgress("Sin datos suficientes"); setQlRunning(false); return; }
+
+      // Ablación de features sobre el pool agregado
+      setQlProgress("Midiendo importancia de features...");
+      await yield_();
+      const pooled = Q.trainLogistic(allX, allY, { epochs: 250 });
+      const pooledP = allX.map(r => Q.predictProba(pooled, r));
+      const baseAuc = Q.aucRoc(pooledP, allY);
+      const abl = Q.featureAblation(allX.slice(0,1500), allY.slice(0,1500), baseAuc);
+      setQlAblation({ baseAuc, items: abl });
+
+      // Backtest de cartera
+      setQlProgress(`Simulando cartera sobre ${universe.length} activos...`);
+      await yield_();
+      const moneda0 = rows[0]?.moneda || "USD";
+      const pb = Q.portfolioBacktest(universe, {
+        topN: qlParams.topN,
+        holdDays: qlParams.holdDays,
+        minProb: qlParams.minProb,
+        useKelly: qlParams.useKelly,
+        costPct: (moneda0==="ARS" ? COSTO_MERVAL : COSTO_CEDEAR),
+      });
+
+      modelInfo.sort((a,b) => b.auc - a.auc);
+      setQlModels(modelInfo);
+      setQlPort(pb);
+      setQlProgress("");
+    } catch(e) {
+      setQlProgress("Error: " + e.message);
+    }
+    setQlRunning(false);
+  }, [rows, qlParams]);
+
+  const run=useCallback(async (forceMkt)=>{
     const activeMkt = forceMkt || mkt;
     const activeTickers = activeMkt === "USA" ? TICKERS_USA.map(t=>({...t,moneda:"USD"})) : activeMkt === "MERVAL" ? TICKERS_MERVAL.map(t=>({...t,moneda:"ARS"})) : TICKERS_TODOS;
     setFase("load"); setRows([]); setLogs([]); setSecs(0); setNReal(0); setPriceSrc("—");
@@ -3671,7 +3744,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Top P80"],["rank","🏆 Ranking"],["det","🔍 Detalle"],["watch","⭐ Seguimiento"],["cat","📂 Categorías"],["cmp","⚖️ Comparar"],["opt","⚙️ Optimizar"],["sim","💡 Simulador"],["learn","🧠 Aprendizaje"]].map(([k,l])=>
+              {[["opp","🎯 Top P80"],["rank","🏆 Ranking"],["det","🔍 Detalle"],["watch","⭐ Seguimiento"],["cat","📂 Categorías"],["cmp","⚖️ Comparar"],["quant","🔬 Quant Lab"],["opt","⚙️ Optimizar"],["sim","💡 Simulador"],["learn","🧠 Aprendizaje"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
@@ -5030,6 +5103,217 @@ export default function App() {
                 </div>
               );
             })()}
+
+
+            {/* ══ TAB: QUANT LAB ══ */}
+            {tab==="quant"&&(
+              <div className="fade">
+                {/* Controles */}
+                <div style={{padding:"10px 12px",background:"#07101a",border:"1px solid #1e3a50",borderRadius:"6px",marginBottom:"10px"}}>
+                  <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"8px"}}>
+                    🔬 VALIDACIÓN CUANTITATIVA — modelo aprendido + backtest de cartera
+                  </div>
+                  <div style={{fontSize:"8px",color:"#b0d4e8",lineHeight:1.7,marginBottom:"10px"}}>
+                    A diferencia del resto de la app (que usa pesos escritos a mano), acá el sistema
+                    <strong style={{color:"#00ff88"}}> aprende los pesos desde los datos</strong> con regresión logística,
+                    etiqueta con triple-barrera, valida con K-fold purgado (sin fuga temporal),
+                    calibra las probabilidades y simula una <strong style={{color:"#00ff88"}}>cartera completa</strong> con costos reales.
+                  </div>
+                  <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"flex-end",marginBottom:"8px"}}>
+                    {[
+                      {k:"topN",     l:"Posiciones simultáneas", opts:[3,5,8,10]},
+                      {k:"holdDays", l:"Días de tenencia",       opts:[5,10,20,30]},
+                      {k:"minProb",  l:"Prob. mínima",           opts:[0.5,0.55,0.6,0.65]},
+                    ].map(f=>(
+                      <div key={f.k}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"3px"}}>{f.l}</div>
+                        <div style={{display:"flex",gap:"3px"}}>
+                          {f.opts.map(o=>(
+                            <button key={o} className={`btn ${qlParams[f.k]===o?"on":"off"}`}
+                              onClick={()=>setQlParams(p=>({...p,[f.k]:o}))}
+                              style={{padding:"4px 8px",fontSize:"8px"}}>{o}</button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    <div>
+                      <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"3px"}}>Sizing</div>
+                      <button className={`btn ${qlParams.useKelly?"on":"off"}`}
+                        onClick={()=>setQlParams(p=>({...p,useKelly:!p.useKelly}))}
+                        style={{padding:"4px 10px",fontSize:"8px"}}>
+                        {qlParams.useKelly?"Kelly ¼":"Equal weight"}
+                      </button>
+                    </div>
+                  </div>
+                  <button className={`btn ${qlRunning?"off":"on"}`} onClick={runQuantLab} disabled={qlRunning||!rows.length}
+                    style={{padding:"8px 20px",fontSize:"10px"}}>
+                    {qlRunning?"⏳ Procesando...":"▶ ENTRENAR Y VALIDAR"}
+                  </button>
+                  {qlProgress&&<span style={{fontSize:"8px",color:"#ffd700",marginLeft:"10px"}}>{qlProgress}</span>}
+                  {!rows.length&&<span style={{fontSize:"8px",color:"#ff3355",marginLeft:"10px"}}>Ejecutá el sistema primero</span>}
+                </div>
+
+                {/* Resultados de cartera */}
+                {qlPort&&qlPort.metrics&&(()=>{
+                  const m = qlPort.metrics;
+                  const veredicto = m.sharpe>=1.0&&m.cagr>0 ? {t:"ESTRATEGIA VIABLE",c:"#00ff88"}
+                                  : m.sharpe>=0.5&&m.cagr>0 ? {t:"MARGINALMENTE VIABLE",c:"#ffd700"}
+                                  : {t:"NO VIABLE",c:"#ff3355"};
+                  return (
+                    <div className="card" style={{padding:"13px",marginBottom:"10px",border:`2px solid ${veredicto.c}40`}}>
+                      <div style={{textAlign:"center",marginBottom:"12px",paddingBottom:"10px",borderBottom:"1px solid #0f2235"}}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".2em"}}>BACKTEST DE CARTERA · NETO DE COSTOS</div>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"30px",color:veredicto.c,lineHeight:1.1}}>{veredicto.t}</div>
+                        <div style={{fontSize:"8px",color:"#b0d4e8"}}>
+                          {qlPort.nTrades} operaciones · {m.nPeriods} días simulados · {qlParams.topN} posiciones · Kelly {qlParams.useKelly?"activo":"off"}
+                        </div>
+                      </div>
+
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px",marginBottom:"10px"}}>
+                        {[
+                          {l:"CAGR",     v:`${m.cagr>=0?"+":""}${m.cagr}%`, c:m.cagr>0?"#00ff88":"#ff3355", h:"Retorno anualizado"},
+                          {l:"SHARPE",   v:m.sharpe,   c:m.sharpe>=1?"#00ff88":m.sharpe>=0.5?"#ffd700":"#ff3355", h:">1 es bueno, >2 excelente"},
+                          {l:"SORTINO",  v:m.sortino,  c:m.sortino>=1.5?"#00ff88":m.sortino>=0.7?"#ffd700":"#ff3355", h:"Sharpe que solo penaliza caídas"},
+                          {l:"MAX DD",   v:`${m.maxDD}%`, c:m.maxDD>-15?"#00ff88":m.maxDD>-30?"#ffd700":"#ff3355", h:"Peor caída desde un pico"},
+                          {l:"CALMAR",   v:m.calmar,   c:m.calmar>=0.5?"#00ff88":"#ffd700", h:"CAGR / MaxDD"},
+                          {l:"VOL ANUAL",v:`${m.volAnual}%`, c:"#a0cce0", h:"Volatilidad anualizada"},
+                          {l:"WIN RATE", v:`${qlPort.winRate}%`, c:qlPort.winRate>=50?"#00ff88":"#ffd700", h:"% operaciones ganadoras"},
+                          {l:"P.FACTOR", v:qlPort.profitFactor, c:qlPort.profitFactor>=1.3?"#00ff88":qlPort.profitFactor>=1?"#ffd700":"#ff3355", h:"Ganancia bruta / pérdida bruta"},
+                        ].map(x=>(
+                          <div key={x.l} title={x.h} style={{textAlign:"center",padding:"6px 3px",background:"#050c15",borderRadius:"4px",border:`1px solid ${x.c}20`}}>
+                            <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"17px",color:x.c}}>{x.v}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Curva de equity */}
+                      {qlPort.equity?.length>2&&(()=>{
+                        const eq=qlPort.equity, mn=Math.min(...eq), mx=Math.max(...eq);
+                        const W_=Math.min(560,(typeof window!=="undefined"?window.innerWidth:400)-60), H_=90;
+                        const pts=eq.map((v,i)=>`${(i/(eq.length-1))*W_},${H_-((v-mn)/(mx-mn||1))*H_}`).join(" ");
+                        const up=eq[eq.length-1]>=eq[0];
+                        return (
+                          <div style={{marginBottom:"10px"}}>
+                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px"}}>CURVA DE CAPITAL (neta de comisiones)</div>
+                            <div style={{overflowX:"auto"}}>
+                              <svg width={W_} height={H_} style={{display:"block"}}>
+                                <line x1="0" y1={H_-((eq[0]-mn)/(mx-mn||1))*H_} x2={W_} y2={H_-((eq[0]-mn)/(mx-mn||1))*H_} stroke="#1e3a50" strokeDasharray="3 3"/>
+                                <polyline points={pts} fill="none" stroke={up?"#00ff88":"#ff3355"} strokeWidth="1.6"/>
+                              </svg>
+                            </div>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:"7px",color:"#4a7a9b"}}>
+                              <span>${Math.round(eq[0]).toLocaleString()}</span>
+                              <span style={{color:up?"#00ff88":"#ff3355"}}>${Math.round(eq[eq.length-1]).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",fontSize:"8px"}}>
+                        {[
+                          {l:"Salidas por TP",   v:qlPort.exitBreakdown.TP,   c:"#00ff88"},
+                          {l:"Salidas por Stop", v:qlPort.exitBreakdown.SL,   c:"#ff3355"},
+                          {l:"Salidas por tiempo",v:qlPort.exitBreakdown.TIME,c:"#ffd700"},
+                        ].map(x=>(
+                          <div key={x.l} style={{padding:"5px 8px",background:"#050c15",borderRadius:"3px",display:"flex",justifyContent:"space-between"}}>
+                            <span style={{color:"#4a7a9b"}}>{x.l}</span><span style={{color:x.c,fontWeight:700}}>{x.v}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{marginTop:"10px",padding:"8px 10px",background:`${veredicto.c}10`,border:`1px solid ${veredicto.c}30`,borderRadius:"5px",fontSize:"8px",color:"#b0d4e8",lineHeight:1.7}}>
+                        📌 {m.sharpe>=1
+                          ? `Sharpe ${m.sharpe} con MaxDD ${m.maxDD}%: la estrategia genera retorno ajustado por riesgo aceptable. Para gestión real, considerá reducir el sizing hasta que el MaxDD sea tolerable para vos.`
+                          : m.sharpe>=0.5
+                          ? `Sharpe ${m.sharpe} está por debajo del umbral profesional (1.0). La estrategia tiene señal pero el margen sobre los costos es fino. Probá horizontes más largos o subir la probabilidad mínima.`
+                          : `Sharpe ${m.sharpe} y CAGR ${m.cagr}%: después de descontar comisiones la estrategia no supera al azar. No operar con estos parámetros — ajustá horizonte, umbral o revisá si el universo tiene datos reales.`}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Importancia de features */}
+                {qlAblation&&(
+                  <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>📊 IMPORTANCIA DE INDICADORES (ablación)</div>
+                      <div style={{fontSize:"8px",color:qlAblation.baseAuc>=0.55?"#00ff88":"#ffd700"}}>AUC base {qlAblation.baseAuc.toFixed(3)}</div>
+                    </div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
+                      Se quita cada indicador y se mide cuánto empeora el modelo. Delta alto = aporta información real.
+                      Delta ≈ 0 o negativo = es ruido y podría eliminarse.
+                    </div>
+                    {qlAblation.items.map(f=>{
+                      const pct = Math.min(100, Math.abs(f.delta)*2000);
+                      const good = f.delta > 0.002;
+                      return (
+                        <div key={f.feature} style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
+                          <span style={{fontSize:"7px",color:"#a0cce0",width:"85px",flexShrink:0}}>{f.feature}</span>
+                          <div style={{flex:1,height:"7px",background:"#0c1826",borderRadius:"3px",overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${pct}%`,background:good?"#00ff88":f.delta<0?"#ff3355":"#4a7a9b",borderRadius:"3px"}}/>
+                          </div>
+                          <span style={{fontSize:"7px",color:good?"#00ff88":f.delta<0?"#ff3355":"#4a7a9b",width:"48px",textAlign:"right"}}>
+                            {f.delta>=0?"+":""}{(f.delta*100).toFixed(2)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Calidad de modelos por ticker */}
+                {qlModels&&(
+                  <div className="card" style={{padding:"12px"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"6px"}}>
+                      🎯 MODELOS POR ACTIVO ({qlModels.length}) — ordenados por poder predictivo
+                    </div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
+                      <strong>AUC</strong>: 0.50 = azar, &gt;0.55 = señal real, &gt;0.60 = fuerte ·
+                      <strong> Brier Skill</strong>: &gt;0 significa que la probabilidad calibrada supera a predecir la tasa base ·
+                      Todo medido <strong>fuera de muestra</strong> con K-fold purgado.
+                    </div>
+                    <div style={{maxHeight:"340px",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+                      {qlModels.map(m=>{
+                        const ok = m.auc>=0.55, mid = m.auc>=0.52;
+                        const c = ok?"#00ff88":mid?"#ffd700":"#ff3355";
+                        return (
+                          <div key={m.ticker} style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 7px",marginBottom:"3px",background:"#050c15",borderRadius:"4px",borderLeft:`3px solid ${c}`}}>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:c,width:"52px",flexShrink:0}}>{m.ticker}</span>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
+                              {[
+                                {l:"AUC",   v:m.auc.toFixed(3),      c},
+                                {l:"Brier", v:m.brier?.toFixed(3)??"—", c:"#a0cce0"},
+                                {l:"Skill", v:(m.brierSkill>=0?"+":"")+m.brierSkill?.toFixed(3), c:m.brierSkill>0?"#00ff88":"#ff3355"},
+                                {l:"n",     v:m.n,                    c:"#a0cce0"},
+                                {l:"Top",   v:m.weights?.[0]?.name??"—", c:"#ff9040"},
+                              ].map(x=>(
+                                <div key={x.l} style={{textAlign:"center"}}>
+                                  <div style={{color:"#4a7a9b",fontSize:"6px"}}>{x.l}</div>
+                                  <div style={{color:x.c,fontWeight:600}}>{x.v}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(()=>{
+                      const good = qlModels.filter(m=>m.auc>=0.55).length;
+                      const pct = Math.round(good/qlModels.length*100);
+                      return (
+                        <div style={{marginTop:"8px",padding:"7px 9px",background:pct>=30?"#00ff8810":"#ff335510",border:`1px solid ${pct>=30?"#00ff8830":"#ff335530"}`,borderRadius:"4px",fontSize:"8px",color:"#b0d4e8",lineHeight:1.6}}>
+                          📌 {good} de {qlModels.length} activos ({pct}%) tienen poder predictivo real (AUC ≥ 0.55).
+                          {pct>=30
+                            ? " El sistema encuentra estructura genuina en una porción significativa del universo. Concentrá el capital en esos activos."
+                            : " La mayoría de los activos no muestran predictibilidad. Esto es normal en mercados eficientes — operá solo los del tope de la lista."}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* OPTIMIZADOR */}
             {tab==="opt"&&(
