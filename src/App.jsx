@@ -1053,11 +1053,12 @@ function combinedSignal(data, W=7, allData=null) {
   if (!evo) return null;
 
   // ─ SCORE COMBINADO base ─
-  // FIX MEDIO: el EVO oscilaba solo 0.57-0.72 → aportaba ~5pts reales, no 35%.
-  // Se re-escala su rango observado (0.45-0.80) al rango completo 0-100.
-  const EVO_LO = 0.45, EVO_HI = 0.80;
-  const evoNorm   = Math.min(1, Math.max(0, (evo.evo_prob - EVO_LO)/(EVO_HI - EVO_LO)));
-  const evo_sc    = +(evoNorm * 100).toFixed(1);
+  // El EVO oscilaba solo 0.57-0.72 → aportaba ~5pts reales en vez de 35%.
+  // Se expande la varianza SIN mover el punto neutro: evo_prob=0.50 debe
+  // seguir siendo 50 (neutro). Un rescale que corriera el centro introducía
+  // un sesgo bajista sistemático en todo el universo.
+  const EVO_GAIN  = 2.0;
+  const evo_sc    = +Math.min(100, Math.max(0, 50 + (evo.evo_prob - 0.5) * 100 * EVO_GAIN)).toFixed(1);
   let combined_sc = fx_sc * 0.65 + evo_sc * 0.35;
   let bonus = 0;
   if (evo.ca15_score===3) bonus=8; else if(evo.ca15_score===2) bonus=4;
@@ -1115,7 +1116,12 @@ function combinedSignal(data, W=7, allData=null) {
   const { sig: sigFiltered, conf_penalty } = applyRegimeFilter(sig, final_sc, activeRegime);
   sig = sigFiltered;
   const buy=sig.includes("COMPRA"), sell=sig.includes("VENTA");
-  const entry=+(px*(buy?0.995:sell?1.005:1)).toFixed(2);
+  // FIX: la dirección para calcular niveles se toma del SCORE, no de la etiqueta.
+  // Un ticker NEUTRAL puede ser promovido a señal por el umbral P80, y en ese
+  // momento necesita stop/objetivos ya calculados para evaluar su R/R.
+  const dirBuy  = buy  || (!sell && final_sc >= 50);
+  const dirSell = sell || (!buy  && final_sc <  50);
+  const entry=+(px*(dirBuy?0.995:1.005)).toFixed(2);
   // Escalar multiplicador ATR según ventana W (más días = rangos más amplios)
   const wScale = Math.sqrt(W/7); // raíz cuadrada: 7D=1x, 14D=1.41x, 30D=2.07x, 60D=2.93x
   const am=(sig.includes("FUERTE")?1.5:2.0)*wScale;
@@ -1125,7 +1131,7 @@ function combinedSignal(data, W=7, allData=null) {
   const atrCap   = at * 6.0 * wScale;   // techo: no proyectar objetivos irreales
 
   let sl = null, tp1 = null, tp2 = null, tp3 = null;
-  if (buy) {
+  if (dirBuy) {
     // Stop: primer soporte estructural por debajo, con piso ATR
     const supCand = lv.supports.filter(s => entry - s.value >= atrFloor);
     const supPick = supCand.find(s => s.hits >= 2) || supCand[0];
@@ -1137,7 +1143,7 @@ function combinedSignal(data, W=7, allData=null) {
     tp1 = resCand[0] ? +(resCand[0].value*0.998).toFixed(2) : +(entry+at*1.5*wScale).toFixed(2);
     tp2 = resCand[1] ? +(resCand[1].value*0.998).toFixed(2) : +(entry+at*2.5*wScale).toFixed(2);
     tp3 = resCand[2] ? +(resCand[2].value*0.998).toFixed(2) : +(entry+at*4.0*wScale).toFixed(2);
-  } else if (sell) {
+  } else if (dirSell) {
     const resCand = lv.resistances.filter(r => r.value - entry >= atrFloor);
     const resPick = resCand.find(r => r.hits >= 2) || resCand[0];
     sl  = resPick ? +(resPick.value * 1.002).toFixed(2)
@@ -1149,8 +1155,8 @@ function combinedSignal(data, W=7, allData=null) {
     tp3 = supCand[2] ? +(supCand[2].value*1.002).toFixed(2) : +(entry-at*4.0*wScale).toFixed(2);
   }
   // Ordenar objetivos coherentemente
-  if (buy  && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>a-b); tp1=o[0];tp2=o[1];tp3=o[2]; }
-  if (sell && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>b-a); tp1=o[0];tp2=o[1];tp3=o[2]; }
+  if (dirBuy  && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>a-b); tp1=o[0];tp2=o[1];tp3=o[2]; }
+  if (dirSell && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>b-a); tp1=o[0];tp2=o[1];tp3=o[2]; }
 
   const risk=sl?Math.abs(entry-sl):0, rew=tp2?Math.abs(tp2-entry):0;
   // R/R neto: descuenta costos de transacción ida+vuelta
@@ -3980,11 +3986,65 @@ export default function App() {
                   </div>
                 </div>
 
-                {lista.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>
-                  {oppScope==="senales"
-                    ? `Sin señales que superen el umbral en ${catSector==="Todos"?"el universo":catSector} con ventana ${W}d.`
-                    : "Sin datos. Ejecutá el sistema."}
-                </div>}
+                {lista.length===0&&(()=>{
+                  if (oppScope!=="senales") return (
+                    <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>Sin datos. Ejecutá el sistema.</div>
+                  );
+                  // Diagnóstico: ¿por qué no hay señales?
+                  const scores = bySector.map(r=>r.sig?.final_sc||0).filter(s=>s>0).sort((a,b)=>a-b);
+                  const p80v   = scores.length ? scores[Math.floor(scores.length*0.8)] : 0;
+                  const enTop  = bySector.filter(r=>r.sig?.in_top20).length;
+                  const porScore = bySector.filter(r=>r.sig?.in_top20 && (r.sig.final_sc<58 && r.sig.final_sc>42)).length;
+                  const porRR    = bySector.filter(r=>r.sig?.in_top20 && (r.sig.rr??0)<1.2).length;
+                  const maxSc  = scores.length ? scores[scores.length-1] : 0;
+                  const medSc  = scores.length ? scores[Math.floor(scores.length*0.5)] : 0;
+                  return (
+                    <div style={{padding:"18px 16px",background:"#07101a",border:"1px solid #1e3a50",borderRadius:"6px"}}>
+                      <div style={{textAlign:"center",marginBottom:"12px"}}>
+                        <div style={{fontSize:"22px",marginBottom:"4px"}}>🎯</div>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#ffd700"}}>NINGUNA OPORTUNIDAD SUPERA EL FILTRO</div>
+                        <div style={{fontSize:"8px",color:"#b0d4e8",marginTop:"3px"}}>
+                          Esto no es un error: el sistema está diseñado para no forzar señales cuando no las hay.
+                        </div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px",marginBottom:"10px"}}>
+                        {[
+                          {l:"SCORE MEDIANO", v:medSc.toFixed(0),  c:"#a0cce0"},
+                          {l:"SCORE MÁXIMO",  v:maxSc.toFixed(0),  c:maxSc>=58?"#00ff88":"#ff9040"},
+                          {l:"UMBRAL P80",    v:p80v.toFixed(0),   c:"#ffd700"},
+                          {l:"MÍNIMO EXIGIDO",v:"58",              c:"#ff3355"},
+                        ].map(x=>(
+                          <div key={x.l} style={{textAlign:"center",padding:"6px 3px",background:"#050c15",borderRadius:"4px"}}>
+                            <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"17px",color:x.c}}>{x.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"5px",letterSpacing:".1em"}}>DÓNDE SE FRENAN</div>
+                      {[
+                        {l:`${enTop} activos entraron al top 20%`, ok:enTop>0},
+                        {l:`${porScore} quedaron en zona neutral (score entre 42 y 58)`, ok:porScore===0},
+                        {l:`${porRR} no cubren costos con su R/R (necesitan ≥1.2x)`, ok:porRR===0},
+                      ].map((x,i)=>(
+                        <div key={i} style={{display:"flex",gap:"6px",alignItems:"center",padding:"3px 0",fontSize:"8px"}}>
+                          <span style={{color:x.ok?"#00ff88":"#ff9040"}}>{x.ok?"✓":"→"}</span>
+                          <span style={{color:"#b0d4e8"}}>{x.l}</span>
+                        </div>
+                      ))}
+                      <div style={{marginTop:"10px",padding:"8px 10px",background:"#ffd70010",border:"1px solid #ffd70030",borderRadius:"4px",fontSize:"8px",color:"#b0d4e8",lineHeight:1.7}}>
+                        📌 {maxSc < 58
+                          ? `Ningún activo llega a 58 puntos (el mejor está en ${maxSc.toFixed(0)}). El mercado no muestra setups con ventaja en este horizonte. Probá otra ventana o esperá.`
+                          : porRR > 0
+                          ? `Hay activos con score suficiente, pero sus objetivos no cubren el ${COSTO_CEDEAR}% de comisiones. Con costos altos, entrar sería perder aunque acierte la dirección.`
+                          : `Mirá "Universo completo" para ver el ranking y evaluar manualmente.`}
+                      </div>
+                      <button className="btn off" onClick={()=>setOppScope("todos")}
+                        style={{marginTop:"8px",width:"100%",fontSize:"9px",padding:"6px"}}>
+                        📋 Ver universo completo ({bySector.length})
+                      </button>
+                    </div>
+                  );
+                })()}
                 <div className="grid-opp">
                   {lista.map(r=>{
                     const s=r.sig,buy=s.sig.includes("COMPRA"),g=GR(r.bt.hr);
