@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import * as Q from "./quant.js";
+import * as Q2 from "./quant2.js";
 import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
 import logoUrl from './logo.png';
 
@@ -2767,6 +2768,8 @@ export default function App() {
   const [qlModels,  setQlModels]  = useState(null);
   const [qlPort,    setQlPort]    = useState(null);
   const [qlAblation,setQlAblation]= useState(null);
+  const [qlMeta,    setQlMeta]    = useState(null);
+  const [qlValid,   setQlValid]   = useState(null);
   const [qlParams,  setQlParams]  = useState({ topN:5, holdDays:10, minProb:0.55, useKelly:true });
 
   const saveWatchlists = (wls) => {
@@ -3470,7 +3473,7 @@ export default function App() {
   
   // ══ QUANT LAB: entrenar modelos + backtest de cartera ══
   const runQuantLab = useCallback(async () => {
-    setQlRunning(true); setQlModels(null); setQlPort(null); setQlAblation(null);
+    setQlRunning(true); setQlModels(null); setQlPort(null); setQlAblation(null); setQlMeta(null); setQlValid(null);
     const yield_ = () => new Promise(r => setTimeout(r, 0));
     try {
       const tks = rows.map(r => r.ticker);
@@ -3521,6 +3524,75 @@ export default function App() {
         useKelly: qlParams.useKelly,
         costPct: (moneda0==="ARS" ? COSTO_MERVAL : COSTO_CEDEAR),
       });
+
+      // ── META-LABELING: modelo secundario que decide SI operar ──
+      setQlProgress("Entrenando capa de meta-labeling...");
+      await yield_();
+      const metas = [];
+      for (let i = 0; i < Math.min(universe.length, 25); i++) {
+        const u = universe[i];
+        if (i % 4 === 0) { setQlProgress(`Meta-modelo ${u.ticker} (${i+1}/${Math.min(universe.length,25)})...`); await yield_(); }
+        const moneda = rows.find(r=>r.ticker===u.ticker)?.moneda || "USD";
+        const cost = (moneda==="ARS" ? COSTO_MERVAL : COSTO_CEDEAR)/100;
+        const mm = Q2.trainMetaModel(u.daily, u.model, u.cal, { threshold: qlParams.minProb, cost });
+        if (mm) metas.push({ ticker: u.ticker, ...mm });
+      }
+      if (metas.length) {
+        const avgMejora = metas.reduce((a,m)=>a+m.mejora,0)/metas.length;
+        const totSin = metas.reduce((a,m)=>a+m.sinMeta.trades,0);
+        const totCon = metas.reduce((a,m)=>a+m.conMeta.trades,0);
+        const wrSin  = metas.reduce((a,m)=>a+m.sinMeta.winRate*m.sinMeta.trades,0)/Math.max(1,totSin);
+        const wrCon  = metas.reduce((a,m)=>a+m.conMeta.winRate*m.conMeta.trades,0)/Math.max(1,totCon);
+        setQlMeta({ items: metas.sort((a,b)=>b.mejora-a.mejora), avgMejora:+avgMejora.toFixed(1),
+                    totSin, totCon, wrSin:+wrSin.toFixed(1), wrCon:+wrCon.toFixed(1),
+                    filtrado:+((1-totCon/Math.max(1,totSin))*100).toFixed(1) });
+      }
+
+      // ── VALIDACIÓN ESTADÍSTICA DEL BACKTEST ──
+      setQlProgress("Validando robustez (DSR, PBO, bootstrap)...");
+      await yield_();
+      const validacion = {};
+      if (pb?.equity?.length > 30) {
+        const eqRets = [];
+        for (let i=1;i<pb.equity.length;i++) {
+          if (pb.equity[i-1]>0) eqRets.push(pb.equity[i]/pb.equity[i-1]-1);
+        }
+        // nTrials = configuraciones exploradas (tickers x ventanas x parámetros)
+        const nTrials = universe.length * 8 * 4;
+        validacion.dsr  = Q2.deflatedSharpe(eqRets, nTrials);
+        validacion.boot = Q2.bootstrapMetrics(eqRets, { nBoot: 350 });
+
+        // PBO: matriz de retornos por ticker como "configuraciones"
+        const cfgTickers = universe.slice(0, Math.min(12, universe.length));
+        const dateIdx = {};
+        cfgTickers[0]?.daily.forEach((d,i)=>{ dateIdx[d.date]=i; });
+        const common = cfgTickers[0]?.daily.map(d=>d.date).slice(-300) || [];
+        const mtx = [];
+        for (let k=1;k<common.length;k++) {
+          const row = [];
+          let ok = true;
+          for (const u of cfgTickers) {
+            const i1 = u.daily.findIndex(d=>d.date===common[k]);
+            const i0 = u.daily.findIndex(d=>d.date===common[k-1]);
+            if (i1<0||i0<0) { ok=false; break; }
+            row.push((u.daily[i1].close-u.daily[i0].close)/u.daily[i0].close);
+          }
+          if (ok && row.length>=2) mtx.push(row);
+        }
+        if (mtx.length > 40) validacion.pbo = Q2.computePBO(mtx, 8);
+
+        // Régimen: usar el primer activo como benchmark aproximado
+        const bench = universe.find(u=>u.ticker==="SPY") || universe.find(u=>u.ticker==="GGAL") || universe[0];
+        if (bench && pb.trades?.length) {
+          validacion.regimes = Q2.regimeAnalysis(pb.trades, bench.daily);
+        }
+
+        // Unicidad de muestras
+        const idxs = [];
+        for (let i=60;i<(universe[0]?.daily.length||200)-qlParams.holdDays;i++) idxs.push(i);
+        validacion.uniq = Q2.sampleUniqueness(idxs, qlParams.holdDays, universe[0]?.daily.length||200);
+      }
+      setQlValid(validacion);
 
       modelInfo.sort((a,b) => b.auc - a.auc);
       setQlModels(modelInfo);
@@ -5232,6 +5304,190 @@ export default function App() {
                     </div>
                   );
                 })()}
+
+
+                {/* ══ VALIDACIÓN DE ROBUSTEZ ══ */}
+                {qlValid&&(qlValid.dsr||qlValid.pbo)&&(
+                  <div className="card" style={{padding:"13px",marginBottom:"10px",border:"1px solid #ff904030"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>
+                      🛡️ ¿ES REAL O ES SOBREAJUSTE?
+                    </div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
+                      Un Sharpe alto no prueba nada si probaste cientos de configuraciones.
+                      Estas métricas corrigen por eso.
+                    </div>
+
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"10px"}}>
+                      {/* Deflated Sharpe */}
+                      {qlValid.dsr&&(
+                        <div style={{padding:"9px",background:"#050c15",borderRadius:"5px",border:`1px solid ${qlValid.dsr.significativo?"#00ff88":"#ff3355"}30`}}>
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>DEFLATED SHARPE RATIO</div>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:qlValid.dsr.significativo?"#00ff88":qlValid.dsr.dsr>=0.9?"#ffd700":"#ff3355",lineHeight:1}}>
+                            {qlValid.dsr.veredicto}
+                          </div>
+                          <div style={{fontSize:"7px",color:"#b0d4e8",marginTop:"4px",lineHeight:1.6}}>
+                            DSR = <strong style={{color:qlValid.dsr.significativo?"#00ff88":"#ff3355"}}>{(qlValid.dsr.dsr*100).toFixed(1)}%</strong> ·
+                            Sharpe {qlValid.dsr.sharpe} vs umbral {qlValid.dsr.sharpeUmbral} exigido por azar
+                          </div>
+                          <div style={{fontSize:"7px",color:"#5a8fa8",marginTop:"3px"}}>
+                            Corregido por {qlValid.dsr.nTrials.toLocaleString()} configuraciones probadas ·
+                            skew {qlValid.dsr.skew} · kurtosis {qlValid.dsr.kurtosis}
+                            {qlValid.dsr.minTrackRecord&&` · requiere ${qlValid.dsr.minTrackRecord} días de track record`}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* PBO */}
+                      {qlValid.pbo&&(
+                        <div style={{padding:"9px",background:"#050c15",borderRadius:"5px",border:`1px solid ${qlValid.pbo.color}30`}}>
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>PROBABILIDAD DE SOBREAJUSTE (PBO)</div>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:qlValid.pbo.color,lineHeight:1}}>
+                            {qlValid.pbo.veredicto}
+                          </div>
+                          <div style={{fontSize:"7px",color:"#b0d4e8",marginTop:"4px",lineHeight:1.6}}>
+                            PBO = <strong style={{color:qlValid.pbo.color}}>{(qlValid.pbo.pbo*100).toFixed(1)}%</strong> ·
+                            {qlValid.pbo.nCombos} particiones cruzadas sobre {qlValid.pbo.nConfigs} configuraciones
+                          </div>
+                          <div style={{fontSize:"7px",color:"#5a8fa8",marginTop:"3px"}}>
+                            &lt;20% confiable · 20-50% moderado · &gt;50% el backtest no vale
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bootstrap */}
+                    {qlValid.boot&&(
+                      <div style={{padding:"9px",background:"#050c15",borderRadius:"5px",marginBottom:"8px"}}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"6px"}}>
+                          BOOTSTRAP · {qlValid.boot.nBoot} remuestreos — ¿cuán frágil es el resultado?
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"6px"}}>
+                          {[
+                            {l:"SHARPE",  o:qlValid.boot.sharpe, s:""},
+                            {l:"CAGR",    o:qlValid.boot.cagr,   s:"%"},
+                            {l:"MAX DD",  o:qlValid.boot.maxDD,  s:"%"},
+                          ].map(x=>(
+                            <div key={x.l} style={{textAlign:"center",padding:"5px",background:"#07101a",borderRadius:"3px"}}>
+                              <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l} · IC 90%</div>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:"#e8f4ff"}}>{x.o.p50}{x.s}</div>
+                              <div style={{fontSize:"7px",color:"#5a8fa8"}}>[{x.o.p05}{x.s} , {x.o.p95}{x.s}]</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",gap:"10px",fontSize:"7px"}}>
+                          <span style={{color:"#4a7a9b"}}>P(Sharpe &gt; 0) = <strong style={{color:qlValid.boot.probSharpePositivo>=0.9?"#00ff88":"#ffd700"}}>{(qlValid.boot.probSharpePositivo*100).toFixed(0)}%</strong></span>
+                          <span style={{color:"#4a7a9b"}}>P(Sharpe &gt; 1) = <strong style={{color:qlValid.boot.probSharpe1>=0.5?"#00ff88":"#ff9040"}}>{(qlValid.boot.probSharpe1*100).toFixed(0)}%</strong></span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Unicidad */}
+                    {qlValid.uniq&&(
+                      <div style={{padding:"8px 10px",background:qlValid.uniq.avgUniqueness<0.2?"#ff335510":"#ffd70010",
+                        border:`1px solid ${qlValid.uniq.avgUniqueness<0.2?"#ff335530":"#ffd70030"}`,borderRadius:"4px",fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                        ⚠️ <strong>Unicidad de muestras: {qlValid.uniq.avgUniqueness}</strong> —
+                        las etiquetas se solapan en el tiempo, así que las observaciones no son independientes.
+                        Tu muestra <strong style={{color:"#ff9040"}}>efectiva</strong> es de ~<strong>{qlValid.uniq.effectiveN}</strong> casos,
+                        no del total nominal. Cualquier intervalo de confianza calculado sin esta corrección está inflado.
+                      </div>
+                    )}
+
+                    {/* Regímenes */}
+                    {qlValid.regimes?.length>0&&(
+                      <div style={{marginTop:"8px"}}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"5px"}}>
+                          RENDIMIENTO POR RÉGIMEN DE MERCADO — ¿gana siempre o solo en bull?
+                        </div>
+                        {qlValid.regimes.map(r=>(
+                          <div key={r.regime} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",marginBottom:"2px",
+                            background:"#050c15",borderRadius:"3px",borderLeft:`3px solid ${r.avgRet>0?"#00ff88":"#ff3355"}`}}>
+                            <span style={{fontSize:"7px",color:"#a0cce0",width:"120px",flexShrink:0}}>{r.regime}</span>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
+                              {[
+                                {l:"n",v:r.n,c:"#a0cce0"},
+                                {l:"WR",v:r.winRate+"%",c:r.winRate>=50?"#00ff88":"#ff3355"},
+                                {l:"AVG",v:(r.avgRet>=0?"+":"")+r.avgRet+"%",c:r.avgRet>0?"#00ff88":"#ff3355"},
+                                {l:"SR",v:r.sharpe,c:r.sharpe>=0.3?"#00ff88":"#ffd700"},
+                              ].map(x=>(
+                                <div key={x.l} style={{textAlign:"center"}}>
+                                  <span style={{color:"#4a7a9b",fontSize:"6px"}}>{x.l} </span>
+                                  <span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {(()=>{
+                          const bull = qlValid.regimes.filter(r=>r.regime.includes("ALCISTA"));
+                          const bear = qlValid.regimes.filter(r=>r.regime.includes("BAJISTA"));
+                          const bullOk = bull.some(r=>r.avgRet>0), bearOk = bear.some(r=>r.avgRet>0);
+                          return (
+                            <div style={{marginTop:"5px",padding:"6px 8px",background:bearOk?"#00ff8810":"#ff904010",borderRadius:"3px",fontSize:"7px",color:"#b0d4e8",lineHeight:1.6}}>
+                              📌 {bullOk&&bearOk
+                                ? "Gana en ambos regímenes: la estrategia tiene alfa genuino, no es beta disfrazada."
+                                : bullOk&&!bearOk
+                                ? "Solo gana en mercados alcistas. Eso es exposición al mercado, no habilidad. Considerá apagar el sistema cuando el índice pierda su SMA50."
+                                : "Rendimiento débil en todos los regímenes."}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ══ META-LABELING ══ */}
+                {qlMeta&&(
+                  <div className="card" style={{padding:"13px",marginBottom:"10px",border:"1px solid #00d4ff30"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>
+                      🎭 META-LABELING — segundo modelo que decide SI operar
+                    </div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
+                      El modelo primario dice la dirección. El secundario responde otra pregunta:
+                      <em> "¿vale la pena tomar esta señal en particular?"</em> Filtra falsos positivos
+                      sin cambiar la dirección. Con costos de {COSTO_CEDEAR}% por operación, filtrar es tan valioso como acertar.
+                    </div>
+
+                    <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"10px",alignItems:"center",marginBottom:"10px"}}>
+                      <div style={{padding:"10px",background:"#050c15",borderRadius:"5px",textAlign:"center"}}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b"}}>SIN META-LABELING</div>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"26px",color:"#ff9040"}}>{qlMeta.wrSin}%</div>
+                        <div style={{fontSize:"7px",color:"#5a8fa8"}}>{qlMeta.totSin.toLocaleString()} operaciones</div>
+                      </div>
+                      <div style={{textAlign:"center"}}>
+                        <div style={{fontSize:"18px",color:"#00d4ff"}}>→</div>
+                        <div style={{fontSize:"7px",color:"#00ff88",fontWeight:700}}>+{qlMeta.avgMejora} pts</div>
+                      </div>
+                      <div style={{padding:"10px",background:"#00ff8810",borderRadius:"5px",textAlign:"center",border:"1px solid #00ff8830"}}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b"}}>CON META-LABELING</div>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"26px",color:"#00ff88"}}>{qlMeta.wrCon}%</div>
+                        <div style={{fontSize:"7px",color:"#5a8fa8"}}>{qlMeta.totCon.toLocaleString()} operaciones ({qlMeta.filtrado}% filtradas)</div>
+                      </div>
+                    </div>
+
+                    <div style={{maxHeight:"200px",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+                      {qlMeta.items.slice(0,20).map(m=>(
+                        <div key={m.ticker} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",marginBottom:"2px",
+                          background:"#050c15",borderRadius:"3px",borderLeft:`3px solid ${m.mejora>0?"#00ff88":"#ff3355"}`}}>
+                          <span style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:m.mejora>0?"#00ff88":"#ff3355",width:"50px",flexShrink:0}}>{m.ticker}</span>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
+                            {[
+                              {l:"AUC 2º", v:m.auc.toFixed(3), c:m.auc>=0.55?"#00ff88":"#ffd700"},
+                              {l:"WR sin", v:m.sinMeta.winRate+"%", c:"#ff9040"},
+                              {l:"WR con", v:m.conMeta.winRate+"%", c:"#00ff88"},
+                              {l:"Filtra", v:m.conMeta.filtrado+"%", c:"#a0cce0"},
+                            ].map(x=>(
+                              <div key={x.l} style={{textAlign:"center"}}>
+                                <div style={{color:"#4a7a9b",fontSize:"6px"}}>{x.l}</div>
+                                <div style={{color:x.c,fontWeight:600}}>{x.v}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Importancia de features */}
                 {qlAblation&&(
