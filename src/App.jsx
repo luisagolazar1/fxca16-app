@@ -1253,44 +1253,36 @@ function calcFibonacci(data, W=7) {
 
 // 1. RSI DIVERGENCIA — precio hace nuevo mínimo pero RSI no
 function detectRSIDivergence(data, period=14) {
-  const n = data.length;
-  if (n < period * 3) return { bullish: false, bearish: false };
-  // Calcular RSI en los últimos 60 puntos
-  const slice = data.slice(-60);
+  if (!data || data.length < 30) return { bullish: false, bearish: false };
+  // Resamplear a diario — divergencias reales requieren swings de semanas, no horas
+  const daily = resampleToDaily(data);
+  if (!daily || daily.length < period * 2 + 10) return { bullish: false, bearish: false };
+  const slice = daily.slice(-Math.min(daily.length, 60));
   const closes = slice.map(d => d.close);
+  const n = closes.length;
   let g = 0, l = 0;
-  for (let i = 1; i <= period; i++) {
+  for (let i = 1; i <= period && i < n; i++) {
     const x = closes[i] - closes[i-1];
     x > 0 ? g += x : l -= x;
   }
   let ag = g/period, al = l/period;
-  const rsiArr = [null];
-  for (let i = 1; i < closes.length; i++) {
-    if (i <= period) { rsiArr.push(null); continue; }
+  const rsiArr = new Array(period).fill(null);
+  for (let i = period; i < n; i++) {
     const x = closes[i] - closes[i-1];
     ag = (ag*(period-1) + Math.max(x,0)) / period;
     al = (al*(period-1) + Math.max(-x,0)) / period;
     rsiArr.push(al === 0 ? 100 : 100 - 100/(1+ag/al));
   }
-  // Buscar divergencia en últimas 20 barras vs 20 barras anteriores
-  const half = 20;
+  const half = Math.min(15, Math.floor(n/2));
   const recentPrices = closes.slice(-half);
   const prevPrices   = closes.slice(-half*2, -half);
-  const recentRSI    = rsiArr.slice(-half).filter(Boolean);
-  const prevRSI      = rsiArr.slice(-half*2, -half).filter(Boolean);
+  const recentRSI    = rsiArr.slice(-half).filter(x => x !== null);
+  const prevRSI      = rsiArr.slice(-half*2, -half).filter(x => x !== null);
   if (!recentRSI.length || !prevRSI.length) return { bullish: false, bearish: false };
-  const recentMinPx  = Math.min(...recentPrices);
-  const prevMinPx    = Math.min(...prevPrices);
-  const recentMinRSI = Math.min(...recentRSI);
-  const prevMinRSI   = Math.min(...prevRSI);
-  const recentMaxPx  = Math.max(...recentPrices);
-  const prevMaxPx    = Math.max(...prevPrices);
-  const recentMaxRSI = Math.max(...recentRSI);
-  const prevMaxRSI   = Math.max(...prevRSI);
-  // Divergencia alcista: precio hace mínimo más bajo, RSI hace mínimo más alto
-  const bullish = recentMinPx < prevMinPx * 0.99 && recentMinRSI > prevMinRSI * 1.02;
-  // Divergencia bajista: precio hace máximo más alto, RSI hace máximo más bajo
-  const bearish = recentMaxPx > prevMaxPx * 1.01 && recentMaxRSI < prevMaxRSI * 0.98;
+  const bullish = Math.min(...recentPrices) < Math.min(...prevPrices) * 0.985
+               && Math.min(...recentRSI)    > Math.min(...prevRSI)    * 1.03;
+  const bearish = Math.max(...recentPrices) > Math.max(...prevPrices) * 1.015
+               && Math.max(...recentRSI)    < Math.max(...prevRSI)    * 0.97;
   return { bullish, bearish };
 }
 
@@ -1347,9 +1339,12 @@ function detectBollingerRSISetup(data) {
 
 // 5. PATRONES DE VELAS — detecta reversiones en último cierre
 function detectCandlePattern(data) {
-  const n = data.length;
-  if (n < 3) return null;
-  const c = data[n-1], p = data[n-2], pp = data[n-3];
+  if (!data || data.length < 5) return null;
+  // Patrones de velas sobre datos DIARIOS — intradía es ruido
+  const daily = resampleToDaily(data);
+  if (!daily || daily.length < 3) return null;
+  const n = daily.length;
+  const c = daily[n-1], p = daily[n-2], pp = daily[n-3];
   const body = Math.abs(c.close - c.open);
   const range = c.high - c.low;
   const upperWick = c.high - Math.max(c.open, c.close);
@@ -1442,12 +1437,15 @@ function backtestWalkForward(data, W=7) {
     const sig = combinedSignal(trainSlice, W);
     if (!sig || sig.sig === "NEUTRAL") { i += VAL_DAYS; continue; }
     const isBuy = sig.sig.includes("COMPRA");
-    // Medir resultado en validación
-    const entryPx = valSlice[0]?.close;
-    const exitPx  = valSlice[valSlice.length-1]?.close;
-    if (!entryPx || !exitPx) { i += VAL_DAYS; continue; }
-    const ret = (exitPx - entryPx) / entryPx;
-    const win = isBuy ? ret > 0 : ret < 0;
+    // Simular entrada con precio sugerido (px * 0.995 para compra, * 1.005 para venta)
+    const closePx0 = valSlice[0]?.close;
+    const exitPx   = valSlice[valSlice.length-1]?.close;
+    if (!closePx0 || !exitPx) { i += VAL_DAYS; continue; }
+    const entryPx = isBuy ? closePx0 * 0.995 : closePx0 * 1.005; // precio real de entrada
+    const ret = isBuy
+      ? (exitPx - entryPx) / entryPx
+      : (entryPx - exitPx) / entryPx; // para venta: ganamos si baja
+    const win = ret > 0;
     results.push({
       date: trainSlice[trainSlice.length-1]?.date || "",
       sig: sig.sig, score: sig.final_sc,
@@ -1477,27 +1475,32 @@ function calcSignalQuality(data, sig, W=7) {
   const targetFX   = sig.fx_sc || 60;
   // Buscar setups similares en el pasado
   const similar = [];
-  const LOOKFWD = Math.round(W * 7); // barras adelante a evaluar
-  for (let i = 60; i < data.length - LOOKFWD; i++) {
-    const slice = data.slice(Math.max(0,i-60), i);
-    if (slice.length < 40) continue;
-    const s = combinedSignal(slice, W);
+  // Resamplear a diario — evaluar W días adelante, no W*7 horas
+  const dailySQ = resampleToDaily(data);
+  const LOOKFWD = Math.max(W, 5); // W días adelante
+  for (let i = 40; i < dailySQ.length - LOOKFWD; i++) {
+    // Reconstruir señal horaria hasta ese día
+    const cutDate   = dailySQ[i]?.date || "";
+    const hourSlice = data.filter(d=>(d.date||d.d||"") <= cutDate).slice(-200);
+    if (hourSlice.length < 40) continue;
+    const s = combinedSignal(hourSlice, W);
     if (!s) continue;
-    // Setup "similar": misma dirección, conf ±15, fx_sc ±15
     const sameDir   = isBuy ? s.sig?.includes("COMPRA") : s.sig?.includes("VENTA");
     const confMatch = Math.abs((s.conf||0) - targetConf) < 8;
     const fxMatch   = Math.abs((s.fx_sc||0) - targetFX) < 8;
     if (!sameDir || !confMatch || !fxMatch) continue;
-    const entryPx = data[i]?.close;
-    const future  = data.slice(i, i + LOOKFWD);
-    if (!entryPx || future.length < 3) continue;
-    const exitPx  = future[future.length-1]?.close;
-    const maxPx   = Math.max(...future.map(d=>d.close));
-    const minPx   = Math.min(...future.map(d=>d.close));
-    const ret     = (exitPx - entryPx)/entryPx;
-    const maxRet  = (maxPx - entryPx)/entryPx;
-    const maxDD   = (minPx - entryPx)/entryPx;
-    const win     = isBuy ? ret > 0 : ret < 0;
+    const closePx = dailySQ[i]?.close;
+    if (!closePx) continue;
+    const entryPx = isBuy ? closePx * 0.995 : closePx * 1.005;
+    const future  = dailySQ.slice(i, i + LOOKFWD);
+    if (future.length < 2) continue;
+    const exitPx = future[future.length-1]?.close;
+    const maxPx  = Math.max(...future.map(d=>d.close));
+    const minPx  = Math.min(...future.map(d=>d.close));
+    const ret    = isBuy ? (exitPx-entryPx)/entryPx : (entryPx-exitPx)/entryPx;
+    const maxRet = isBuy ? (maxPx-entryPx)/entryPx  : (entryPx-minPx)/entryPx;
+    const maxDD  = isBuy ? (minPx-entryPx)/entryPx  : (entryPx-maxPx)/entryPx;
+    const win    = ret > 0;
     similar.push({ ret:+(ret*100).toFixed(2), maxRet:+(maxRet*100).toFixed(2), maxDD:+(maxDD*100).toFixed(2), win });
   }
   if (similar.length < 3) return { similar: [], hr:0, avgRet:0, avgMaxRet:0, avgMaxDD:0, quality:"INSUFICIENTE", qualityColor:"#4a7a9b" };
@@ -1601,7 +1604,7 @@ function calcPositionSizing(sig, conf, capital=1000000) {
 }
 
 
-function calcATRBands(data, period=14, mult=2.5) {
+function calcATRBands(data, period=14, mult=2.0) {
   const n = data.length;
   if (n < period + 5) return null;
   // Calcular ATR rolling
@@ -1690,10 +1693,14 @@ function calcVolumeProfile(data, bins=10) {
 // 3. ANÁLISIS MULTI-TIMEFRAME — compara señales en 7D, 30D, 60D
 function calcMultiTimeframe(data, W=7) {
   if (!data || data.length < 60) return null;
+  // Frames RELATIVOS al W elegido por el usuario
+  const wS = W;                    // Corto = W seleccionado
+  const wM = Math.min(60,  W * 4); // Medio = 4x el corto
+  const wL = Math.min(120, W * 8); // Largo = 8x el corto
   const frames = [
-    { w:7,  label:"Corto (7D)",  bars:49  },
-    { w:30, label:"Medio (30D)", bars:210 },
-    { w:60, label:"Largo (60D)", bars:420 },
+    { w:wS, label:`Corto (${wS}D)`,  bars: wS*7  },
+    { w:wM, label:`Medio (${wM}D)`,  bars: wM*7  },
+    { w:wL, label:`Largo (${wL}D)`,  bars: wL*7  },
   ];
   return frames.map(f => {
     const slice = data.slice(-Math.min(data.length, f.bars));
@@ -1781,19 +1788,19 @@ function calcConfluence(sig, rsiDiv, volFib, cross, bollRsi, candles, corr) {
   const isBullSig = sig.sig?.includes("COMPRA");
   const isBearSig = sig.sig?.includes("VENTA");
   // Señal FXCA16
-  if (isBullSig) { bull+=2; signals.push({name:"FXCA16 Compra",type:"bull",weight:2}); }
-  if (isBearSig) { bear+=2; signals.push({name:"FXCA16 Venta",type:"bear",weight:2}); }
-  // RSI Divergencia
-  if (rsiDiv?.bullish) { bull+=3; signals.push({name:"Divergencia RSI Alcista",type:"bull",weight:3}); }
-  if (rsiDiv?.bearish) { bear+=3; signals.push({name:"Divergencia RSI Bajista",type:"bear",weight:3}); }
+  if (isBullSig) { bull+=4; signals.push({name:"FXCA16 Compra",type:"bull",weight:4}); }
+  if (isBearSig) { bear+=4; signals.push({name:"FXCA16 Venta",type:"bear",weight:4}); }
+  // RSI Divergencia (peso 2 — confirma pero no lidera)
+  if (rsiDiv?.bullish) { bull+=2; signals.push({name:"Divergencia RSI Alcista",type:"bull",weight:2}); }
+  if (rsiDiv?.bearish) { bear+=2; signals.push({name:"Divergencia RSI Bajista",type:"bear",weight:2}); }
   // Volumen en Fib
   if (volFib?.confirmed) {
     if (isBullSig) { bull+=2; signals.push({name:`Vol en Fib ${volFib.closestFib} (${volFib.volRatio}x)`,type:"bull",weight:2}); }
     else { bear+=2; signals.push({name:`Vol en Fib ${volFib.closestFib} (${volFib.volRatio}x)`,type:"bear",weight:2}); }
   }
   // Golden/Death cross
-  if (cross?.golden) { bull+=3; signals.push({name:"Golden Cross SMA20/50",type:"bull",weight:3}); }
-  if (cross?.death)  { bear+=3; signals.push({name:"Death Cross SMA20/50",type:"bear",weight:3}); }
+  if (cross?.golden) { bull+=2; signals.push({name:"Golden Cross SMA20/50",type:"bull",weight:2}); }
+  if (cross?.death)  { bear+=2; signals.push({name:"Death Cross SMA20/50",type:"bear",weight:2}); }
   // Bollinger + RSI
   if (bollRsi?.oversold)   { bull+=2; signals.push({name:"Sobreventa BB+RSI",type:"bull",weight:2}); }
   if (bollRsi?.overbought) { bear+=2; signals.push({name:"Sobrecompra BB+RSI",type:"bear",weight:2}); }
