@@ -1130,38 +1130,75 @@ function combinedSignal(data, W=7, allData=null) {
   const atrFloor = at * 0.8 * wScale;   // piso mínimo: no poner stops absurdamente cerca
   const atrCap   = at * 6.0 * wScale;   // techo: no proyectar objetivos irreales
 
+  // ══ SELECCIÓN DE NIVELES ORIENTADA A R/R ══
+  // El error anterior: tomar "la 2ª resistencia" como TP2 dejaba objetivos a
+  // 1-2%, que la comisión de 1.8% se comía entera (R/R mediano: 0.23).
+  // Ahora el riesgo se minimiza y el objetivo se ELIGE para justificar ese
+  // riesgo después de costos. El R/R pasa a ser una restricción de diseño.
+  const costPctLv = (data[n]?.moneda === "ARS") ? COSTO_MERVAL : COSTO_CEDEAR;
+  const costAbsLv = entry * costPctLv / 100;
+  const RR_OBJETIVO = 2.0;                 // R/R neto buscado
+  const stopMin = at * 0.8 * wScale;       // stop no más cerca que esto
+  const stopMax = at * 3.0 * wScale;       // stop no más lejos que esto
+
   let sl = null, tp1 = null, tp2 = null, tp3 = null;
+
   if (dirBuy) {
-    // Stop: primer soporte estructural por debajo, con piso ATR
-    const supCand = lv.supports.filter(s => entry - s.value >= atrFloor);
-    const supPick = supCand.find(s => s.hits >= 2) || supCand[0];
-    sl  = supPick ? +(supPick.value * 0.998).toFixed(2)
-                  : +(entry - at*am).toFixed(2);
-    // Objetivos: resistencias estructurales sucesivas
-    const resCand = lv.resistances.filter(r => r.value - entry >= atrFloor*0.5
-                                            && r.value - entry <= atrCap);
-    tp1 = resCand[0] ? +(resCand[0].value*0.998).toFixed(2) : +(entry+at*1.5*wScale).toFixed(2);
-    tp2 = resCand[1] ? +(resCand[1].value*0.998).toFixed(2) : +(entry+at*2.5*wScale).toFixed(2);
-    tp3 = resCand[2] ? +(resCand[2].value*0.998).toFixed(2) : +(entry+at*4.0*wScale).toFixed(2);
+    // ── STOP: soporte válido MÁS CERCANO (minimiza el riesgo asumido) ──
+    const sup = lv.supports.filter(s => {
+      const d = entry - s.value;
+      return d >= stopMin && d <= stopMax;
+    });
+    sl = sup.length ? +(sup[0].value * 0.998).toFixed(2)
+                    : +(entry - at * am).toFixed(2);
+
+    const risk0    = Math.max(entry - sl, stopMin);
+    // Recompensa mínima para que la operación valga la pena tras comisiones
+    const rewMin   = risk0 * RR_OBJETIVO + costAbsLv;
+    const objetivo = entry + rewMin;
+
+    // TP2 = primera resistencia real en o más allá del objetivo.
+    // Si no hay ninguna, se proyecta el objetivo (el precio está en zona
+    // despejada, que es justamente el escenario más favorable).
+    const resArriba = lv.resistances.filter(r => r.value >= objetivo * 0.985);
+    tp2 = resArriba.length ? +(resArriba[0].value * 0.998).toFixed(2)
+                           : +objetivo.toFixed(2);
+    // TP1: parcial a mitad de camino, o primera resistencia intermedia
+    const resMedia = lv.resistances.filter(r => r.value > entry + costAbsLv && r.value < tp2);
+    tp1 = resMedia.length ? +(resMedia[0].value * 0.998).toFixed(2)
+                          : +(entry + (tp2 - entry) * 0.5).toFixed(2);
+    // TP3: siguiente resistencia más allá del TP2, o extensión
+    const resLejos = lv.resistances.filter(r => r.value > tp2 * 1.005);
+    tp3 = resLejos.length ? +(resLejos[0].value * 0.998).toFixed(2)
+                          : +(entry + (tp2 - entry) * 1.6).toFixed(2);
+
   } else if (dirSell) {
-    const resCand = lv.resistances.filter(r => r.value - entry >= atrFloor);
-    const resPick = resCand.find(r => r.hits >= 2) || resCand[0];
-    sl  = resPick ? +(resPick.value * 1.002).toFixed(2)
-                  : +(entry + at*am).toFixed(2);
-    const supCand = lv.supports.filter(s => entry - s.value >= atrFloor*0.5
-                                         && entry - s.value <= atrCap);
-    tp1 = supCand[0] ? +(supCand[0].value*1.002).toFixed(2) : +(entry-at*1.5*wScale).toFixed(2);
-    tp2 = supCand[1] ? +(supCand[1].value*1.002).toFixed(2) : +(entry-at*2.5*wScale).toFixed(2);
-    tp3 = supCand[2] ? +(supCand[2].value*1.002).toFixed(2) : +(entry-at*4.0*wScale).toFixed(2);
+    const res = lv.resistances.filter(r => {
+      const d = r.value - entry;
+      return d >= stopMin && d <= stopMax;
+    });
+    sl = res.length ? +(res[0].value * 1.002).toFixed(2)
+                    : +(entry + at * am).toFixed(2);
+
+    const risk0    = Math.max(sl - entry, stopMin);
+    const rewMin   = risk0 * RR_OBJETIVO + costAbsLv;
+    const objetivo = entry - rewMin;
+
+    const supAbajo = lv.supports.filter(s => s.value <= objetivo * 1.015);
+    tp2 = supAbajo.length ? +(supAbajo[0].value * 1.002).toFixed(2)
+                          : +objetivo.toFixed(2);
+    const supMedia = lv.supports.filter(s => s.value < entry - costAbsLv && s.value > tp2);
+    tp1 = supMedia.length ? +(supMedia[0].value * 1.002).toFixed(2)
+                          : +(entry - (entry - tp2) * 0.5).toFixed(2);
+    const supLejos = lv.supports.filter(s => s.value < tp2 * 0.995);
+    tp3 = supLejos.length ? +(supLejos[0].value * 1.002).toFixed(2)
+                          : +(entry - (entry - tp2) * 1.6).toFixed(2);
   }
-  // Ordenar objetivos coherentemente
-  if (dirBuy  && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>a-b); tp1=o[0];tp2=o[1];tp3=o[2]; }
-  if (dirSell && tp1 && tp2 && tp3) { const o=[tp1,tp2,tp3].sort((a,b)=>b-a); tp1=o[0];tp2=o[1];tp3=o[2]; }
 
   const risk=sl?Math.abs(entry-sl):0, rew=tp2?Math.abs(tp2-entry):0;
   // R/R neto: descuenta costos de transacción ida+vuelta
-  const costPct = (data[n]?.moneda === "ARS") ? COSTO_MERVAL : COSTO_CEDEAR;
-  const costAbs = entry * costPct/100;
+  const costPct = costPctLv;
+  const costAbs = costAbsLv;
   const rewNeto = Math.max(0, rew - costAbs);
   const rrNeto  = risk>0 ? rewNeto/risk : 0;
 
@@ -1309,13 +1346,19 @@ function applyP80Threshold(results) {
   const usa    = results.filter(r => r.moneda === "USD");
   const merval = results.filter(r => r.moneda === "ARS");
 
+  // FIX: el top 20% se rankea por CONVICCIÓN (|score-50|), no por score crudo.
+  // Antes se ordenaba de mayor a menor score, así que solo entraban los más
+  // alcistas — y la rama "score<=42 → VENTA" era código muerto: un ticker
+  // bajista jamás alcanzaba el top. Ahora un score de 20 (convicción 30)
+  // compite en igualdad con uno de 80 (convicción 30).
   const calcP80set = (arr) => {
     if (!arr.length) return { p80: 0, topTickers: new Set() };
-    const sorted = [...arr].sort((a,b) => (a.sig?.final_sc||0) - (b.sig?.final_sc||0));
+    const convicción = r => Math.abs((r.sig?.final_sc ?? 50) - 50);
+    const sorted = [...arr].sort((a,b) => convicción(a) - convicción(b));
     const p80 = sorted[Math.floor(sorted.length * 0.8)]?.sig?.final_sc ?? 0;
     const topN = Math.max(1, Math.ceil(arr.length * 0.20));
     const topTickers = new Set(
-      [...arr].sort((a,b) => (b.sig?.final_sc||0) - (a.sig?.final_sc||0)).slice(0, topN).map(x => x.ticker)
+      [...arr].sort((a,b) => convicción(b) - convicción(a)).slice(0, topN).map(x => x.ticker)
     );
     return { p80, topTickers };
   };
