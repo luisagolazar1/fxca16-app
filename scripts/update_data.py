@@ -179,6 +179,51 @@ def descargar_diario(tickers_yf, moneda, periodo="10y"):
         print(f"    fallaron: {errores[:10]}")
     return pd.DataFrame(filas), errores
 
+
+# ══════════════════════════════════════════════════════════════
+# CALENDARIO DE EARNINGS REAL
+# Reemplaza la lista hardcodeada (que no tenía GLOB, entre otros).
+# Sin riesgo de sesgo: son fechas, no datos financieros.
+# Se guardan pasadas y futuras para poder marcar tanto el evento
+# próximo como el que explica un salto reciente.
+# ══════════════════════════════════════════════════════════════
+def descargar_earnings(tickers_yf):
+    print(f"\n📅 Bajando calendario de earnings para {len(tickers_yf)} tickers...")
+    cal, fallidos = {}, []
+    hoy = pd.Timestamp.now().normalize()
+    for i, yf_ticker in enumerate(tickers_yf, 1):
+        try:
+            t = yf.Ticker(yf_ticker)
+            ed = t.get_earnings_dates(limit=12)
+            if ed is None or ed.empty:
+                fallidos.append(yf_ticker); continue
+            tk = clean(yf_ticker)
+            fechas = []
+            for idx in ed.index:
+                try:
+                    f = pd.Timestamp(idx).tz_localize(None).normalize()
+                    fechas.append(f.strftime("%Y-%m-%d"))
+                except Exception:
+                    continue
+            if not fechas: 
+                fallidos.append(yf_ticker); continue
+            fechas = sorted(set(fechas))
+            futuras = [f for f in fechas if f >= hoy.strftime("%Y-%m-%d")]
+            pasadas = [f for f in fechas if f <  hoy.strftime("%Y-%m-%d")]
+            cal[tk] = {
+                "prox":   futuras[0] if futuras else None,
+                "ultimo": pasadas[-1] if pasadas else None,
+                "todas":  fechas[-8:],
+            }
+            if i % 25 == 0:
+                print(f"    {i}/{len(tickers_yf)}...")
+        except Exception:
+            fallidos.append(yf_ticker)
+    print(f"    OK: {len(cal)} tickers con calendario")
+    if fallidos:
+        print(f"    sin datos: {len(fallidos)} ({fallidos[:8]})")
+    return cal
+
 def main():
     print("="*55)
     print("FXCA16 — Actualización de datos")
@@ -249,6 +294,13 @@ def main():
         n_dias = int(np.median([len(v) for v in daily_result.values()])) if daily_result else 0
         print(f"✅ Diario: {len(daily_result)} tickers | mediana {n_dias} ruedas por ticker")
 
+    # ── PASO 2c: Calendario de earnings real ──
+    try:
+        earnings_cal = descargar_earnings(USA_TICKERS + MERVAL_TICKERS_YF)
+    except Exception as e:
+        print(f"  earnings falló: {e}")
+        earnings_cal = {}
+
     # ── PASO 3: Calcular dynParams ──
     print("\n⚙️  Calculando dynParams...")
     dyn_params = {}
@@ -271,6 +323,7 @@ def main():
     raw = json.dumps(result, separators=(',',':'))
     dyn_raw = json.dumps(dyn_params, separators=(',',':'))
     daily_raw = json.dumps(daily_result, separators=(',',':'))
+    earn_raw  = json.dumps(earnings_cal, separators=(',',':'))
 
     data_js = f"""// FXCA16 — datos actualizados al {last_date}
 // Generado automáticamente — no editar manualmente
@@ -292,6 +345,10 @@ export function expandDaily(raw) {{
   }}
   return out;
 }}
+
+// Calendario de earnings real por ticker (fechas efectivas de Yahoo).
+// Reemplaza la lista escrita a mano, que tenía huecos.
+export const FXCA16_EARNINGS = {earn_raw};
 
 export const FXCA16_DYN_PARAMS = {dyn_raw};
 

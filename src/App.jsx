@@ -1853,46 +1853,50 @@ function calcSignalQuality(data, sig, W=7, costPct=COSTO_CEDEAR) {
 
 // 3. FILTRO DE EVENTOS — earnings y macro
 function getUpcomingEvents(ticker, moneda) {
-  // Calendario macro fijo (actualizar manualmente o via API)
-  const today = new Date();
-  const mm = today.getMonth()+1, dd = today.getDate();
-  // Fechas aproximadas de eventos FOMC/NFP 2026
-  const macroEvents = [
-    { name:"FOMC Decision", dates:[[1,29],[3,19],[5,7],[6,18],[7,30],[9,17],[11,5],[12,17]] },
-    { name:"NFP (Empleo USA)", dates:[[1,10],[2,7],[3,7],[4,4],[5,2],[6,6],[7,3],[8,1],[9,5],[10,3],[11,7],[12,5]] },
-  ];
+  const hoy = new Date();
+  const iso = d => d.toISOString().slice(0,10);
+  const dias = (a,b) => Math.round((new Date(a) - new Date(b)) / 86400000);
   const upcoming = [];
-  macroEvents.forEach(ev => {
-    ev.dates.forEach(([m,d]) => {
-      const diff = (new Date(today.getFullYear(),m-1,d) - today) / 86400000;
-      if (diff >= -1 && diff <= 7) {
-        upcoming.push({ name:ev.name, daysLeft:Math.round(diff), type:"macro" });
+
+  // ── Calendario macro (fechas fijas conocidas) ──
+  const macro = [
+    { name:"FOMC Decision",     dates:[[1,29],[3,19],[5,7],[6,18],[7,30],[9,17],[11,5],[12,17]] },
+    { name:"NFP (Empleo USA)",  dates:[[1,10],[2,7],[3,7],[4,4],[5,2],[6,6],[7,3],[8,1],[9,5],[10,3],[11,7],[12,5]] },
+  ];
+  macro.forEach(ev => ev.dates.forEach(([m,d]) => {
+    const diff = dias(new Date(hoy.getFullYear(), m-1, d), hoy);
+    if (diff >= -1 && diff <= 7) upcoming.push({ name:ev.name, daysLeft:diff, type:"macro" });
+  }));
+
+  // ── Earnings: calendario REAL de Yahoo si está disponible ──
+  const tk = (ticker||"").replace(".BA","");
+  const real = (typeof DATA_MOD !== "undefined" && DATA_MOD?.FXCA16_EARNINGS)
+    ? DATA_MOD.FXCA16_EARNINGS[tk] : null;
+
+  if (real) {
+    if (real.prox) {
+      const d = dias(real.prox, hoy);
+      if (d >= -1 && d <= 21) upcoming.push({ name:`Earnings ${tk}`, daysLeft:d, type:"earnings", fecha:real.prox });
+    }
+    // Un balance reciente explica saltos de precio de los últimos días
+    if (real.ultimo) {
+      const d = dias(hoy, real.ultimo);
+      if (d >= 0 && d <= 5) {
+        upcoming.push({ name:`Earnings ${tk} (reportado)`, daysLeft:-d, type:"earnings_pasado", fecha:real.ultimo });
       }
-    });
-  });
-  // Earnings — estimación por ticker (próximas semanas)
-  // Lista de earnings aproximados Q1 2026
-  // Earnings Q2/Q3 2026 — próximos reportes estimados
-  const earningsTickers = {
-    // USA — Q2 2026 (julio-agosto)
-    "AAPL":  [7,31], "MSFT":  [7,23], "GOOGL": [7,22], "AMZN":  [8,1],
-    "META":  [7,23], "NVDA":  [8,20], "TSLA":  [7,21], "JPM":   [7,10],
-    "BAC":   [7,14], "GS":    [7,13], "V":     [7,21], "MA":    [7,28],
-    "WMT":   [8,14], "KO":    [7,28], "PEP":   [7,23], "JNJ":   [7,14],
-    "NFLX":  [7,15], "COIN":  [7,31], "AMD":   [7,28], "INTC":  [7,24],
-    "QCOM":  [7,30], "AVGO":  [8,28], "ORCL":  [9,9],  "CRM":   [8,27],
-    "SPOT":  [7,22], "UBER":  [7,30], "PLTR":  [8,4],  "SNOW":  [8,20],
-    // Merval — Q2 2026
-    "GGAL":  [8,14], "YPFD":  [8,7],  "PAMP":  [8,12], "CEPU":  [8,8],
-    "BMA":   [8,14], "SUPV":  [8,14], "TECO2": [8,9],  "BYMA":  [8,10],
-    "ALUA":  [8,12], "TXAR":  [8,11], "EDN":   [8,13], "COME":  [8,15],
-  };
-  const tk = ticker?.replace(".BA","");
-  if (earningsTickers[tk]) {
-    const [m,d] = earningsTickers[tk];
-    const diff = (new Date(today.getFullYear(),m-1,d) - today) / 86400000;
-    if (diff >= -2 && diff <= 14)
-      upcoming.push({ name:`Earnings ${tk}`, daysLeft:Math.round(diff), type:"earnings" });
+    }
+  } else {
+    // Respaldo: lista mínima mientras el calendario real no esté descargado
+    const fallback = {
+      "AAPL":[7,31],"MSFT":[7,23],"GOOGL":[7,22],"AMZN":[8,1],"META":[7,23],
+      "NVDA":[8,20],"TSLA":[7,21],"JPM":[7,10],"KO":[7,28],"PEP":[7,23],
+      "GGAL":[8,14],"YPFD":[8,7],"PAMP":[8,12],
+    };
+    if (fallback[tk]) {
+      const [m,d] = fallback[tk];
+      const diff = dias(new Date(hoy.getFullYear(), m-1, d), hoy);
+      if (diff >= -2 && diff <= 14) upcoming.push({ name:`Earnings ${tk}`, daysLeft:diff, type:"earnings" });
+    }
   }
   return upcoming;
 }
@@ -4573,6 +4577,16 @@ export default function App() {
                             <div style={{display:"flex",gap:"4px",justifyContent:"center",flexWrap:"wrap",marginBottom:"6px"}}>
                               {s?.synthetic&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff335520",border:"1px solid #ff335550",borderRadius:"3px",color:"#ff3355",fontWeight:700}}>⚠ DATOS SINTÉTICOS — no operar con esta señal</span>}
                               {s?.ruedaAbierta&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff904020",border:"1px solid #ff904050",borderRadius:"3px",color:"#ff9040",fontWeight:700}}>⏱ RUEDA ABIERTA — el día no cerró, el precio puede revertir</span>}
+                              {(()=>{
+                                const ev = getUpcomingEvents(sel.ticker, sel.moneda);
+                                const pasado = ev.find(e=>e.type==="earnings_pasado");
+                                const prox   = ev.find(e=>e.type==="earnings");
+                                if (pasado) return <span style={{fontSize:"7px",padding:"2px 7px",background:"#00d4ff20",border:"1px solid #00d4ff50",borderRadius:"3px",color:"#00d4ff",fontWeight:700}}>
+                                  📊 REPORTÓ BALANCE hace {Math.abs(pasado.daysLeft)}d — el movimiento reciente es por la noticia, no técnico</span>;
+                                if (prox && prox.daysLeft<=7) return <span style={{fontSize:"7px",padding:"2px 7px",background:"#ff335520",border:"1px solid #ff335550",borderRadius:"3px",color:"#ff3355",fontWeight:700}}>
+                                  📊 BALANCE EN {prox.daysLeft<=0?"HOY":prox.daysLeft+"d"} — alta volatilidad, considerá esperar</span>;
+                                return null;
+                              })()}
                               {s?.fdr_pass===false&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px",color:"#ffd700"}}>⚠ {s.fdr_note||"Posible falso positivo"}</span>}
                               {s?.fdr_pass===true&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#00ff8815",border:"1px solid #00ff8840",borderRadius:"3px",color:"#00ff88"}}>✓ Supera control FDR</span>}
                             </div>
