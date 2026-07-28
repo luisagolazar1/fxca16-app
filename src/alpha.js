@@ -433,6 +433,16 @@ export function señalCompuesta(datos, pesosIC) {
 //  por IC) daban IC de 0.18–0.38 EN MUESTRA y −0.12 fuera.
 //  La simplicidad acá no es pereza: es lo que generaliza.
 // ══════════════════════════════════════════════════════════════
+// ⚠️ ÁMBITO DE VALIDEZ: solo mercado USA.
+// Medido sobre el Merval (55 tickers, 50 fechas): IC −0.006, t=−0.28,
+// monotonicidad de quintiles −0.70 (invertida). La señal no se traslada:
+// el panel argentino tiene menor liquidez, más peso de flujos locales y
+// dinámica cambiaria que domina el retorno relativo entre papeles.
+export const ALPHA_AMBITO = {
+  USD: { valido: true,  ic: 0.093, t: 3.51,  nota: "Validado sobre 101 tickers" },
+  ARS: { valido: false, ic: -0.006, t: -0.28, nota: "Sin poder predictivo demostrado" },
+};
+
 export const ALPHA_VALIDADA = {
   nombre: 'Acumulación sobre debilidad',
   formula: 'rango(vol_shock) − rango(mom_1m)',

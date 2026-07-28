@@ -3250,7 +3250,10 @@ export default function App() {
           if (b && b.length >= 200) porMoneda[r.moneda === "ARS" ? "ARS" : "USD"][r.ticker] = b;
         });
         const comb = {};
-        for (const m of ["USD","ARS"]) {
+        // Solo USD: el alfa se midió como no predictivo en el Merval
+        // (IC −0.006, monotonicidad invertida). Mostrarlo ahí sería
+        // presentar ruido con apariencia de señal.
+        for (const m of ["USD"]) {
           if (Object.keys(porMoneda[m]).length < 15) continue;
           const rk = ALPHA.rankearUniverso(porMoneda[m]);
           if (rk) Object.assign(comb, rk.porTicker);
@@ -4716,6 +4719,17 @@ export default function App() {
                               </div>
                             );
                           })()}
+
+                          {sel.moneda==="ARS"&&(
+                            <div style={{marginBottom:"12px",padding:"8px 10px",background:"#ff904010",border:"1px solid #ff904030",borderRadius:"5px"}}>
+                              <div style={{fontSize:"7px",color:"#ff9040",fontWeight:700,marginBottom:"3px"}}>α SIN RANKING ALFA EN EL MERVAL</div>
+                              <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                                La señal alfa se midió sobre el panel argentino y no mostró poder predictivo
+                                (IC −0.006, quintiles invertidos). Se aplica solo al mercado USA, donde sí se validó.
+                                Para papeles locales usá el análisis técnico y la calidad fundamental, no el ranking relativo.
+                              </div>
+                            </div>
+                          )}
 
                           {/* ── CALIDAD FUNDAMENTAL ── */}
                           {(()=>{
