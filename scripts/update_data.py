@@ -224,6 +224,105 @@ def descargar_earnings(tickers_yf):
         print(f"    sin datos: {len(fallidos)} ({fallidos[:8]})")
     return cal
 
+
+# ══════════════════════════════════════════════════════════════
+# FUNDAMENTALES — CALIDAD COMO FILTRO DE RIESGO
+#
+# Uso deliberadamente acotado: NO se usa para predecir retornos.
+# Se usa para EXCLUIR empresas frágiles del universo operable.
+#
+# Por qué esta distinción importa: Yahoo entrega la foto ACTUAL,
+# no datos point-in-time. Usar el P/E de hoy para backtestear 2024
+# es sesgo de anticipación. Pero preguntar "¿esta empresa pierde
+# plata hoy?" para decidir si la incluyo hoy es legítimo: no hay
+# ninguna afirmación histórica involucrada.
+#
+# Basado en los factores de calidad de Novy-Marx y Asness (QMJ):
+# rentabilidad, solidez financiera y generación de caja.
+# ══════════════════════════════════════════════════════════════
+def descargar_fundamentales(tickers_yf):
+    print(f"\n🏛️  Bajando fundamentales de {len(tickers_yf)} tickers...")
+    out, sin_datos = {}, []
+    for i, yf_ticker in enumerate(tickers_yf, 1):
+        try:
+            info = yf.Ticker(yf_ticker).get_info() or {}
+            tk = clean(yf_ticker)
+            tipo = info.get("quoteType", "")
+
+            # Los ETF no tienen fundamentales de empresa
+            if tipo in ("ETF", "MUTUALFUND", "INDEX"):
+                out[tk] = {"tipo": "ETF", "calidad": None}
+                continue
+
+            g = lambda k: info.get(k) if isinstance(info.get(k), (int, float)) else None
+            f = {
+                "tipo":        "ACCION",
+                "margenNeto":  g("profitMargins"),
+                "margenOper":  g("operatingMargins"),
+                "roe":         g("returnOnEquity"),
+                "deudaPatr":   g("debtToEquity"),
+                "liquidez":    g("currentRatio"),
+                "fcf":         g("freeCashflow"),
+                "crecIng":     g("revenueGrowth"),
+                "crecGan":     g("earningsGrowth"),
+                "capBursatil": g("marketCap"),
+                "beta":        g("beta"),
+                "sector":      info.get("sector"),
+            }
+
+            # ── Score de calidad 0-100 y banderas rojas ──
+            puntos, maximo, banderas = 0, 0, []
+
+            if f["margenNeto"] is not None:
+                maximo += 25
+                if   f["margenNeto"] > 0.15: puntos += 25
+                elif f["margenNeto"] > 0.05: puntos += 18
+                elif f["margenNeto"] > 0:    puntos += 10
+                else: banderas.append("margen neto negativo")
+
+            if f["roe"] is not None:
+                maximo += 25
+                if   f["roe"] > 0.20: puntos += 25
+                elif f["roe"] > 0.10: puntos += 18
+                elif f["roe"] > 0:    puntos += 10
+                else: banderas.append("ROE negativo")
+
+            if f["deudaPatr"] is not None:
+                maximo += 25
+                d = f["deudaPatr"]
+                if   d < 50:  puntos += 25
+                elif d < 100: puntos += 18
+                elif d < 200: puntos += 10
+                else: banderas.append(f"deuda/patrimonio {d:.0f}%")
+
+            if f["fcf"] is not None:
+                maximo += 15
+                if f["fcf"] > 0: puntos += 15
+                else: banderas.append("flujo de caja libre negativo")
+
+            if f["liquidez"] is not None:
+                maximo += 10
+                if   f["liquidez"] > 1.5: puntos += 10
+                elif f["liquidez"] > 1.0: puntos += 6
+                else: banderas.append(f"liquidez corriente {f['liquidez']:.2f}")
+
+            f["calidad"]  = round(puntos / maximo * 100) if maximo >= 50 else None
+            f["banderas"] = banderas
+            f["fragil"]   = len(banderas) >= 2
+            out[tk] = f
+
+            if i % 25 == 0:
+                print(f"    {i}/{len(tickers_yf)}...")
+        except Exception:
+            sin_datos.append(yf_ticker)
+
+    conCalidad = sum(1 for v in out.values() if v.get("calidad") is not None)
+    fragiles   = sum(1 for v in out.values() if v.get("fragil"))
+    print(f"    OK: {len(out)} tickers | {conCalidad} con score | {fragiles} marcados frágiles")
+    if sin_datos:
+        print(f"    sin datos: {len(sin_datos)}")
+    return out
+
 def main():
     print("="*55)
     print("FXCA16 — Actualización de datos")
@@ -301,6 +400,13 @@ def main():
         print(f"  earnings falló: {e}")
         earnings_cal = {}
 
+    # ── PASO 2d: Fundamentales (calidad como filtro) ──
+    try:
+        fundamentales = descargar_fundamentales(USA_TICKERS + MERVAL_TICKERS_YF)
+    except Exception as e:
+        print(f"  fundamentales falló: {e}")
+        fundamentales = {}
+
     # ── PASO 3: Calcular dynParams ──
     print("\n⚙️  Calculando dynParams...")
     dyn_params = {}
@@ -324,6 +430,7 @@ def main():
     dyn_raw = json.dumps(dyn_params, separators=(',',':'))
     daily_raw = json.dumps(daily_result, separators=(',',':'))
     earn_raw  = json.dumps(earnings_cal, separators=(',',':'))
+    fund_raw  = json.dumps(fundamentales, separators=(',',':'))
 
     data_js = f"""// FXCA16 — datos actualizados al {last_date}
 // Generado automáticamente — no editar manualmente
@@ -349,6 +456,11 @@ export function expandDaily(raw) {{
 // Calendario de earnings real por ticker (fechas efectivas de Yahoo).
 // Reemplaza la lista escrita a mano, que tenía huecos.
 export const FXCA16_EARNINGS = {earn_raw};
+
+// Fundamentales — USO ACOTADO A FILTRO DE RIESGO.
+// Son la foto actual, no datos point-in-time: sirven para decidir qué
+// incluir en el universo HOY, nunca para validar históricamente.
+export const FXCA16_FUNDAMENTALES = {fund_raw};
 
 export const FXCA16_DYN_PARAMS = {dyn_raw};
 

@@ -1852,6 +1852,35 @@ function calcSignalQuality(data, sig, W=7, costPct=COSTO_CEDEAR) {
 }
 
 // 3. FILTRO DE EVENTOS — earnings y macro
+
+// ══════════════════════════════════════════════════════════════
+// CALIDAD FUNDAMENTAL — FILTRO DE RIESGO
+//
+// Nota metodológica: estos datos son la foto ACTUAL de la empresa,
+// no series point-in-time. Por eso NO alimentan el score ni el alfa
+// (sería sesgo de anticipación). Se usan solo para advertir sobre
+// fragilidad financiera antes de tomar una posición.
+//
+// Score 0-100 sobre rentabilidad, solidez y generación de caja.
+// Factores de calidad de Novy-Marx y Asness (Quality Minus Junk).
+// ══════════════════════════════════════════════════════════════
+function calidadDe(ticker) {
+  try {
+    const f = DATA_MOD?.FXCA16_FUNDAMENTALES?.[(ticker||"").replace(".BA","")];
+    if (!f) return null;
+    if (f.tipo === "ETF") return { tipo:"ETF", calidad:null, banderas:[], fragil:false };
+    return f;
+  } catch(e) { return null; }
+}
+
+function nivelCalidad(c) {
+  if (c == null) return { txt:"—",       color:"#4a7a9b" };
+  if (c >= 75)   return { txt:"SÓLIDA",  color:"#00ff88" };
+  if (c >= 55)   return { txt:"BUENA",   color:"#a0cce0" };
+  if (c >= 35)   return { txt:"REGULAR", color:"#ffd700" };
+  return                { txt:"FRÁGIL",  color:"#ff3355" };
+}
+
 function getUpcomingEvents(ticker, moneda) {
   const hoy = new Date();
   const iso = d => d.toISOString().slice(0,10);
@@ -2881,6 +2910,7 @@ export default function App() {
   const [oppScope,  setOppScope]  = useState("senales"); // "senales" | "todos"
   const [alphaRank, setAlphaRank] = useState(null);   // ranking cross-sectional
   const [ordenPor,  setOrdenPor]  = useState("conviccion"); // "conviccion" | "alpha"
+  const [filtroCalidad, setFiltroCalidad] = useState("off");  // "off" | "sinFragiles" | "soloSolidas"
   const [selectividad, setSelectividad] = useState(18);  // convicción mínima |score-50|
   const selectividadRef = useRef(18);
   useEffect(()=>{ selectividadRef.current = selectividad; }, [selectividad]);
@@ -4072,6 +4102,15 @@ export default function App() {
                               <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
                                 <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:SC[s.sig],letterSpacing:".06em"}}>{r.ticker}</span>
                                 {s.scoreTrend&&s.scoreTrend!=="→"&&<span style={{fontSize:"10px",color:s.scoreTrend==="▲"?"#00ff88":"#ff3355",marginLeft:"2px"}}>{s.scoreTrend}</span>}
+                                {(()=>{
+                                  const q = calidadDe(r.ticker);
+                                  if (!q || q.tipo==="ETF" || q.calidad==null) return null;
+                                  const n = nivelCalidad(q.calidad);
+                                  return <span title={q.banderas?.length ? `Alertas: ${q.banderas.join(" · ")}` : `Calidad fundamental ${q.calidad}/100`}
+                                    style={{fontSize:"8px",marginLeft:"4px",padding:"1px 5px",background:`${n.color}18`,border:`1px solid ${n.color}45`,borderRadius:"3px",color:n.color,fontWeight:700}}>
+                                    {q.fragil ? "⚠" : ""}Q{q.calidad}
+                                  </span>;
+                                })()}
                                 {alphaRank?.[r.ticker]&&(()=>{
                                   const a=alphaRank[r.ticker];
                                   const c=a.quintil>=5?"#00ff88":a.quintil>=4?"#a0cce0":a.quintil<=1?"#ff3355":a.quintil<=2?"#ff9040":"#ffd700";
@@ -4126,7 +4165,15 @@ export default function App() {
               const seen = new Set();
               const uniq = rows.filter(r => { if(seen.has(r.ticker)) return false; seen.add(r.ticker); return true; });
               const sectores = ["Todos", ...new Set(uniq.map(r=>r.sector).filter(Boolean).sort())];
-              const bySector = catSector==="Todos" ? uniq : uniq.filter(r=>r.sector===catSector);
+              const porSector = catSector==="Todos" ? uniq : uniq.filter(r=>r.sector===catSector);
+              // Filtro de calidad: excluye empresas financieramente frágiles.
+              // Los ETF nunca se filtran (no tienen fundamentales de empresa).
+              const bySector = filtroCalidad==="off" ? porSector : porSector.filter(r=>{
+                const q = calidadDe(r.ticker);
+                if (!q || q.tipo==="ETF" || q.calidad==null) return true;   // sin datos: no castigar
+                return filtroCalidad==="soloSolidas" ? q.calidad>=55 : !q.fragil;
+              });
+              const nFiltrados = porSector.length - bySector.length;
               // Orden: primero las que superan el control de falsos positivos,
               // después por convicción (distancia al 50 neutro). Con 158 tickers
               // probados a la vez, las que pasan FDR son las creíbles.
@@ -4184,6 +4231,12 @@ export default function App() {
                     <span style={{fontSize:"7px",color:"#5a8fa8"}}>
                       convicción mínima sobre el 50 neutro
                     </span>
+                    <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em",marginLeft:"8px"}}>CALIDAD</span>
+                    {[["off","Todas"],["sinFragiles","Sin frágiles"],["soloSolidas","Solo sólidas"]].map(([k,l])=>(
+                      <button key={k} className={`btn ${filtroCalidad===k?"on":"off"}`} onClick={()=>setFiltroCalidad(k)}
+                        style={{padding:"3px 9px",fontSize:"8px"}}>{l}</button>
+                    ))}
+                    {nFiltrados>0&&<span style={{fontSize:"7px",color:"#ff9040"}}>−{nFiltrados} excluidas</span>}
                     {alphaRank&&(
                       <>
                         <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em",marginLeft:"8px"}}>ORDEN</span>
@@ -4644,6 +4697,63 @@ export default function App() {
                                   {a.diasPromediados ? ` (${a.diasPromediados} días con datos)` : ""}.<br/>
                                   Validado: IC {ALPHA.ALPHA_VALIDADA.metricas.ic} · IR {ALPHA.ALPHA_VALIDADA.metricas.ir} ·
                                   t={ALPHA.ALPHA_VALIDADA.metricas.t} · positivo en {ALPHA.ALPHA_VALIDADA.metricas.pctFechas}% de las fechas
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* ── CALIDAD FUNDAMENTAL ── */}
+                          {(()=>{
+                            const q = calidadDe(sel.ticker);
+                            if (!q) return null;
+                            if (q.tipo === "ETF") return (
+                              <div style={{marginBottom:"12px",padding:"8px 10px",background:"#0c182610",border:"1px solid #1e3a50",borderRadius:"5px",fontSize:"7px",color:"#5a8fa8"}}>
+                                🏛️ Es un ETF — no aplica análisis fundamental de empresa.
+                              </div>
+                            );
+                            if (q.calidad == null) return null;
+                            const n = nivelCalidad(q.calidad);
+                            const fmt = (v,suf="") => v==null ? "—" : `${(v*(suf==="%"?100:1)).toFixed(suf==="%"?1:2)}${suf}`;
+                            return (
+                              <div style={{marginBottom:"12px",padding:"10px",background:`${n.color}0d`,border:`1px solid ${n.color}35`,borderRadius:"6px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"7px"}}>
+                                  <div>
+                                    <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em"}}>🏛️ CALIDAD FUNDAMENTAL</div>
+                                    <div style={{fontSize:"7px",color:"#5a8fa8"}}>Rentabilidad · solidez · generación de caja</div>
+                                  </div>
+                                  <div style={{textAlign:"right"}}>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:n.color,lineHeight:1}}>{q.calidad}</div>
+                                    <div style={{fontSize:"8px",color:n.color,fontWeight:700}}>{n.txt}</div>
+                                  </div>
+                                </div>
+                                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"6px"}}>
+                                  {[
+                                    {l:"Margen neto", v:fmt(q.margenNeto,"%"), ok:q.margenNeto>0.05},
+                                    {l:"ROE",         v:fmt(q.roe,"%"),        ok:q.roe>0.10},
+                                    {l:"Deuda/Patr.", v:q.deudaPatr!=null?`${q.deudaPatr.toFixed(0)}%`:"—", ok:q.deudaPatr!=null&&q.deudaPatr<100},
+                                  ].map(x=>(
+                                    <div key={x.l} style={{padding:"5px 7px",background:"#050c15",borderRadius:"3px",textAlign:"center"}}>
+                                      <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                                      <div style={{fontSize:"12px",fontFamily:"'Bebas Neue'",color:x.ok?"#00ff88":"#ffd700"}}>{x.v}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {q.banderas?.length>0&&(
+                                  <div style={{padding:"6px 8px",background:"#ff335512",border:"1px solid #ff335530",borderRadius:"4px",marginBottom:"5px"}}>
+                                    <div style={{fontSize:"7px",color:"#ff3355",fontWeight:700,marginBottom:"2px"}}>⚠ ALERTAS FINANCIERAS</div>
+                                    <div style={{fontSize:"7px",color:"#ffb380",lineHeight:1.6}}>{q.banderas.join(" · ")}</div>
+                                  </div>
+                                )}
+                                <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                                  {q.fragil
+                                    ? "Empresa con fragilidad financiera. Aunque la señal técnica sea buena, el riesgo de un evento adverso es mayor. Considerá tamaño reducido o directamente excluirla."
+                                    : q.calidad>=75
+                                    ? "Balance sólido. Reduce el riesgo de sorpresas negativas que no aparecen en el análisis técnico."
+                                    : "Situación financiera aceptable, sin alertas relevantes."}
+                                </div>
+                                <div style={{marginTop:"5px",paddingTop:"5px",borderTop:"1px solid #0f2235",fontSize:"6px",color:"#4a7a9b",lineHeight:1.6}}>
+                                  Uso deliberadamente acotado: son datos de HOY, no series point-in-time.
+                                  Por eso no alimentan el score ni el alfa — solo advierten sobre fragilidad antes de tomar posición.
                                 </div>
                               </div>
                             );
