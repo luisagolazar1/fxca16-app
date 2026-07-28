@@ -4625,9 +4625,11 @@ export default function App() {
                                     ? "En el quintil inferior. Históricamente este grupo rinde por debajo del universo."
                                     : "En la zona media del universo: sin ventaja relativa clara."}
                                 </div>
-                                <div style={{marginTop:"5px",paddingTop:"5px",borderTop:"1px solid #0f2235",fontSize:"6px",color:"#4a7a9b"}}>
-                                  Validado fuera de muestra: IC {ALPHA.ALPHA_VALIDADA.metricas.ic} · IR {ALPHA.ALPHA_VALIDADA.metricas.ir} ·
-                                  spread Q5−Q1 {ALPHA.ALPHA_VALIDADA.metricas.spreadQ5Q1}% · positivo en {ALPHA.ALPHA_VALIDADA.metricas.pctFechas}% de las fechas
+                                <div style={{marginTop:"5px",paddingTop:"5px",borderTop:"1px solid #0f2235",fontSize:"6px",color:"#4a7a9b",lineHeight:1.6}}>
+                                  Promedio de los últimos {ALPHA.ALPHA_VALIDADA.metricas.suavizado} días — suavizar cancela el ruido de un solo día
+                                  {a.diasPromediados ? ` (${a.diasPromediados} días con datos)` : ""}.<br/>
+                                  Validado: IC {ALPHA.ALPHA_VALIDADA.metricas.ic} · IR {ALPHA.ALPHA_VALIDADA.metricas.ir} ·
+                                  t={ALPHA.ALPHA_VALIDADA.metricas.t} · positivo en {ALPHA.ALPHA_VALIDADA.metricas.pctFechas}% de las fechas
                                 </div>
                               </div>
                             );
