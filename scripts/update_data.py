@@ -7,7 +7,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import json
-import os, os, sys
+import os
+import time, os, sys
 from datetime import datetime
 
 BARRAS = 1600
@@ -147,11 +148,18 @@ def backtest_w(bars, w):
 # ══════════════════════════════════════════════════════════════
 # (descargar_diario completo quedó obsoleto: reemplazado por
 # descargar_diario_incremental, que reutiliza el histórico ya bajado)
-def descargar_earnings(tickers_yf):
-    print(f"\n📅 Bajando calendario de earnings para {len(tickers_yf)} tickers...")
-    cal, fallidos = {}, []
+def descargar_earnings(tickers_yf, previo=None):
+    previo = previo or {}
+    pendientes = [t for t in tickers_yf if clean(t) not in previo]
+    orden = pendientes + [t for t in tickers_yf if clean(t) in previo]
+    print(f"\n📅 Earnings: {len(pendientes)} sin datos de {len(tickers_yf)}")
+    cal = dict(previo)
+    fallidos, sin_procesar = [], 0
     hoy = pd.Timestamp.now().normalize()
-    for i, yf_ticker in enumerate(tickers_yf, 1):
+    for i, yf_ticker in enumerate(orden, 1):
+        if not hay_tiempo(45):
+            sin_procesar += 1
+            continue
         try:
             t = yf.Ticker(yf_ticker)
             ed = t.get_earnings_dates(limit=12)
@@ -182,6 +190,9 @@ def descargar_earnings(tickers_yf):
     print(f"    OK: {len(cal)} tickers con calendario")
     if fallidos:
         print(f"    sin datos: {len(fallidos)} ({fallidos[:8]})")
+    if sin_procesar:
+        print(f"    ⏭  {sin_procesar} para la próxima corrida")
+    log_tiempo("earnings")
     return cal
 
 
@@ -200,10 +211,17 @@ def descargar_earnings(tickers_yf):
 # Basado en los factores de calidad de Novy-Marx y Asness (QMJ):
 # rentabilidad, solidez financiera y generación de caja.
 # ══════════════════════════════════════════════════════════════
-def descargar_fundamentales(tickers_yf):
-    print(f"\n🏛️  Bajando fundamentales de {len(tickers_yf)} tickers...")
-    out, sin_datos = {}, []
-    for i, yf_ticker in enumerate(tickers_yf, 1):
+def descargar_fundamentales(tickers_yf, previo=None):
+    previo = previo or {}
+    pendientes = [t for t in tickers_yf if clean(t) not in previo]
+    orden = pendientes + [t for t in tickers_yf if clean(t) in previo]
+    print(f"\n🏛️  Fundamentales: {len(pendientes)} sin datos de {len(tickers_yf)}")
+    out = dict(previo)
+    sin_datos, sin_procesar = [], 0
+    for i, yf_ticker in enumerate(orden, 1):
+        if not hay_tiempo(45):
+            sin_procesar += 1
+            continue
         try:
             info = yf.Ticker(yf_ticker).get_info() or {}
             tk = clean(yf_ticker)
@@ -281,8 +299,37 @@ def descargar_fundamentales(tickers_yf):
     print(f"    OK: {len(out)} tickers | {conCalidad} con score | {fragiles} marcados frágiles")
     if sin_datos:
         print(f"    sin datos: {len(sin_datos)}")
+    if sin_procesar:
+        print(f"    ⏭  {sin_procesar} para la próxima corrida")
+    log_tiempo("fundamentales")
     return out
 
+
+
+# ══════════════════════════════════════════════════════════════
+# PRESUPUESTO DE TIEMPO — trabajo repartido entre corridas
+#
+# El workflow tiene 15 minutos. La carga inicial (10 años × 158
+# tickers + earnings + fundamentales) no entra en una sola pasada.
+#
+# En vez de pedir más tiempo, el script trabaja hasta agotar su
+# presupuesto, guarda lo conseguido y termina limpio. Como el modo
+# incremental reutiliza lo ya bajado, la corrida siguiente saltea
+# eso en segundos y avanza con lo que falta. En 3-4 corridas queda
+# todo completo, y a partir de ahí cada una tarda pocos minutos.
+# ══════════════════════════════════════════════════════════════
+INICIO_EJECUCION = time.time()
+PRESUPUESTO_SEG  = int(os.environ.get("FXCA16_BUDGET", "660"))   # 11 min de los 15
+
+def tiempo_restante():
+    return PRESUPUESTO_SEG - (time.time() - INICIO_EJECUCION)
+
+def hay_tiempo(minimo=45):
+    return tiempo_restante() > minimo
+
+def log_tiempo(etapa):
+    usado = time.time() - INICIO_EJECUCION
+    print(f"    ⏱  {etapa}: {usado/60:.1f} min usados · {tiempo_restante()/60:.1f} min restantes")
 
 # ══════════════════════════════════════════════════════════════
 # ACTUALIZACIÓN INCREMENTAL DEL HISTÓRICO DIARIO
@@ -332,9 +379,25 @@ def descargar_diario_incremental(tickers_yf, moneda, previo, periodo_full="10y",
     hoy = pd.Timestamp.now().normalize()
     resultado, completos, incrementales, reajustados = {}, 0, 0, []
 
-    for i, yf_ticker in enumerate(tickers_yf, 1):
+    # Prioridad: primero los que no tienen nada (son los que más aportan),
+    # después los que solo necesitan ponerse al día.
+    faltantes  = [t for t in tickers_yf if len(previo.get(clean(t), [])) < 100]
+    al_dia     = [t for t in tickers_yf if len(previo.get(clean(t), [])) >= 100]
+    orden      = faltantes + al_dia
+    if faltantes:
+        print(f"    {len(faltantes)} sin histórico · {len(al_dia)} a actualizar")
+
+    sin_procesar = 0
+    for i, yf_ticker in enumerate(orden, 1):
         tk = clean(yf_ticker)
         viejo = previo.get(tk, [])
+
+        # Se agotó el presupuesto: conservar lo que había y seguir en la próxima corrida
+        if not hay_tiempo(60):
+            if viejo:
+                resultado[tk] = viejo
+            sin_procesar += 1
+            continue
 
         # Sin datos previos o muy pocos → descarga completa
         if len(viejo) < 100:
@@ -406,6 +469,9 @@ def descargar_diario_incremental(tickers_yf, moneda, previo, periodo_full="10y",
     print(f"    ✅ {len(resultado)} tickers | {incrementales} incrementales | {completos} completos")
     if reajustados:
         print(f"    🔄 Re-descargados por split/dividendo: {reajustados[:10]}")
+    if sin_procesar:
+        print(f"    ⏭  {sin_procesar} quedaron para la próxima corrida (presupuesto agotado)")
+    log_tiempo(f"diario {moneda}")
     return resultado
 
 
@@ -534,10 +600,12 @@ def main():
     todos_tk = USA_TICKERS + MERVAL_TICKERS_YF
     earnings_prev = leer_bloque_existente("FXCA16_EARNINGS")
     refrescar, motivo = necesita_refresco_semanal(earnings_prev, todos_tk)
+    if len(earnings_prev) < len(todos_tk) * 0.9:
+        refrescar, motivo = True, f"faltan {len(todos_tk)-len(earnings_prev)} tickers"
     if refrescar:
         print(f"\n📅 Earnings: descargando ({motivo})")
         try:
-            earnings_cal = descargar_earnings(todos_tk)
+            earnings_cal = descargar_earnings(todos_tk, earnings_prev)
         except Exception as e:
             print(f"  earnings falló: {e}")
             earnings_cal = earnings_prev
@@ -548,10 +616,12 @@ def main():
     # ── PASO 2d: Fundamentales (calidad como filtro) ──
     fund_prev = leer_bloque_existente("FXCA16_FUNDAMENTALES")
     refrescar_f, motivo_f = necesita_refresco_semanal(fund_prev, todos_tk)
+    if len(fund_prev) < len(todos_tk) * 0.9:
+        refrescar_f, motivo_f = True, f"faltan {len(todos_tk)-len(fund_prev)} tickers"
     if refrescar_f:
         print(f"\n🏛️  Fundamentales: descargando ({motivo_f})")
         try:
-            fundamentales = descargar_fundamentales(todos_tk)
+            fundamentales = descargar_fundamentales(todos_tk, fund_prev)
         except Exception as e:
             print(f"  fundamentales falló: {e}")
             fundamentales = fund_prev
@@ -583,6 +653,27 @@ def main():
     daily_raw = json.dumps(daily_result, separators=(',',':'))
     earn_raw  = json.dumps(earnings_cal, separators=(',',':'))
     fund_raw  = json.dumps(fundamentales, separators=(',',':'))
+
+    # ── Resumen de completitud ──
+    n_esp = len(USA_TICKERS) + len(MERVAL_TICKERS_YF)
+    completo = (len(daily_result) >= n_esp*0.95 and
+                len(earnings_cal) >= n_esp*0.9 and
+                len(fundamentales) >= n_esp*0.9)
+    print("\n" + "="*58)
+    print("ESTADO DE LA CARGA")
+    print("="*58)
+    for nom, got in [("Histórico diario", len(daily_result)),
+                     ("Calendario earnings", len(earnings_cal)),
+                     ("Fundamentales", len(fundamentales))]:
+        pct = got/n_esp*100 if n_esp else 0
+        barra = "█"*int(pct/5) + "░"*(20-int(pct/5))
+        print(f"  {nom:22s} {barra} {got:3d}/{n_esp} ({pct:.0f}%)")
+    if completo:
+        print("\n  ✅ Carga completa. Las próximas corridas serán rápidas.")
+    else:
+        print("\n  ⏳ Carga parcial — volvé a correr el workflow para continuar.")
+        print("     Lo ya descargado se conserva; la próxima retoma donde quedó.")
+    print("="*58)
 
     data_js = f"""// FXCA16 — datos actualizados al {last_date}
 // Generado automáticamente — no editar manualmente
