@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import * as Q from "./quant.js";
 import * as Q2 from "./quant2.js";
+import * as ALPHA from "./alpha.js";
 import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
 import logoUrl from './logo.png';
 
@@ -2819,6 +2820,8 @@ export default function App() {
   const [cmpB,      setCmpB]      = useState(""); // ticker B para comparar
   const [catSector, setCatSector] = useState("Todos"); // sector activo
   const [oppScope,  setOppScope]  = useState("senales"); // "senales" | "todos"
+  const [alphaRank, setAlphaRank] = useState(null);   // ranking cross-sectional
+  const [ordenPor,  setOrdenPor]  = useState("conviccion"); // "conviccion" | "alpha"
   const [selectividad, setSelectividad] = useState(18);  // convicción mínima |score-50|
   const selectividadRef = useRef(18);
   useEffect(()=>{ selectividadRef.current = selectividad; }, [selectividad]);
@@ -3141,6 +3144,30 @@ export default function App() {
   }, [lg]);
 
   // buildRows — optimizado: batch de 10 tickers + yield cada batch
+
+  // ── RANKING ALFA CROSS-SECTIONAL ──
+  // Predice retorno RELATIVO al universo, no absoluto. Es lo único que
+  // sobrevivió validación fuera de muestra: IC 0.054, IR 0.37, spread
+  // Q5−Q1 de 1.12% con monotonicidad 0.90.
+  const calcularAlpha = useCallback((filas) => {
+    setTimeout(() => {
+      try {
+        const porMoneda = { USD:{}, ARS:{} };
+        filas.forEach(r => {
+          const b = rowDataRef.current[r.ticker];
+          if (b && b.length >= 200) porMoneda[r.moneda === "ARS" ? "ARS" : "USD"][r.ticker] = b;
+        });
+        const comb = {};
+        for (const m of ["USD","ARS"]) {
+          if (Object.keys(porMoneda[m]).length < 15) continue;
+          const rk = ALPHA.rankearUniverso(porMoneda[m]);
+          if (rk) Object.assign(comb, rk.porTicker);
+        }
+        if (Object.keys(comb).length) setAlphaRank(comb);
+      } catch(e) {}
+    }, 60);
+  }, []);
+
   const buildRows = useCallback(async (prices, label, overrideTickers) => {
     const csv    = csvDataRef.current;
     const yield_ = () => new Promise(r => setTimeout(r, 0));
@@ -3193,6 +3220,7 @@ export default function App() {
 
     const final = applyP80Threshold(raw, selectividadRef.current);
     setRows(final);
+    calcularAlpha(final);
     lg(`✅ ${label} · ${raw.length} tickers`, "ok");
     return final;
   }, [W, lg, TICKERS, optApplied, optParams, userCapital]);
@@ -3221,6 +3249,7 @@ export default function App() {
     const withPrice = raw.filter(r => r.price != null);
     const final = applyP80Threshold(withPrice, selectividadRef.current);
     setRows(final);
+    calcularAlpha(final);
     const nHist = withPrice.filter(r => (rowDataRef.current[r.ticker]||[]).some(d => d.hour !== undefined)).length;
     lg(`✅ Histórico 1h listo | ${nHist}/${TICKERS.length} con precios reales`, "ok");
     return final;
@@ -3979,6 +4008,14 @@ export default function App() {
                               <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
                                 <span style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:SC[s.sig],letterSpacing:".06em"}}>{r.ticker}</span>
                                 {s.scoreTrend&&s.scoreTrend!=="→"&&<span style={{fontSize:"10px",color:s.scoreTrend==="▲"?"#00ff88":"#ff3355",marginLeft:"2px"}}>{s.scoreTrend}</span>}
+                                {alphaRank?.[r.ticker]&&(()=>{
+                                  const a=alphaRank[r.ticker];
+                                  const c=a.quintil>=5?"#00ff88":a.quintil>=4?"#a0cce0":a.quintil<=1?"#ff3355":a.quintil<=2?"#ff9040":"#ffd700";
+                                  return <span title={`Ranking alfa cross-sectional: percentil ${a.percentil} del universo (Q${a.quintil})`}
+                                    style={{fontSize:"8px",marginLeft:"4px",padding:"1px 5px",background:`${c}18`,border:`1px solid ${c}45`,borderRadius:"3px",color:c,fontWeight:700}}>
+                                    α{a.percentil}
+                                  </span>;
+                                })()}
                                 {s.synthetic&&<span title="Historial sintético — no operar" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
                                 {s.synthetic&&<span title="Historial sintético — no son datos reales" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
@@ -4030,11 +4067,13 @@ export default function App() {
               // después por convicción (distancia al 50 neutro). Con 158 tickers
               // probados a la vez, las que pasan FDR son las creíbles.
               const conv = r => Math.abs((r.sig?.final_sc ?? 50) - 50);
-              const rank = (a,b) => {
-                const fa = a.sig?.fdr_pass ? 1 : 0, fb = b.sig?.fdr_pass ? 1 : 0;
-                if (fa !== fb) return fb - fa;
-                return conv(b) - conv(a);
-              };
+              const rank = ordenPor === "alpha"
+                ? (a,b) => (alphaRank?.[b.ticker]?.percentil ?? -1) - (alphaRank?.[a.ticker]?.percentil ?? -1)
+                : (a,b) => {
+                    const fa = a.sig?.fdr_pass ? 1 : 0, fb = b.sig?.fdr_pass ? 1 : 0;
+                    if (fa !== fb) return fb - fa;
+                    return conv(b) - conv(a);
+                  };
               const lista = oppScope==="senales"
                 ? bySector.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL").sort(rank)
                 : [...bySector].sort(rank);
@@ -4081,6 +4120,15 @@ export default function App() {
                     <span style={{fontSize:"7px",color:"#5a8fa8"}}>
                       convicción mínima sobre el 50 neutro
                     </span>
+                    {alphaRank&&(
+                      <>
+                        <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em",marginLeft:"8px"}}>ORDEN</span>
+                        {[["conviccion","Convicción"],["alpha","α Alfa relativo"]].map(([k,l])=>(
+                          <button key={k} className={`btn ${ordenPor===k?"on":"off"}`} onClick={()=>setOrdenPor(k)}
+                            style={{padding:"3px 9px",fontSize:"8px"}}>{l}</button>
+                        ))}
+                      </>
+                    )}
                   </div>
 
                   <div style={{display:"flex",gap:"4px",flexWrap:"wrap",alignItems:"center"}}>
@@ -4461,6 +4509,56 @@ export default function App() {
                               📌 {accion}
                             </div>
                           </div>
+
+                          {/* ── ALFA CROSS-SECTIONAL ── */}
+                          {alphaRank?.[sel.ticker]&&(()=>{
+                            const a=alphaRank[sel.ticker];
+                            const c=a.quintil>=5?"#00ff88":a.quintil>=4?"#a0cce0":a.quintil<=1?"#ff3355":a.quintil<=2?"#ff9040":"#ffd700";
+                            return (
+                              <div style={{marginBottom:"12px",padding:"10px",background:`${c}0d`,border:`1px solid ${c}35`,borderRadius:"6px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+                                  <div>
+                                    <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em"}}>α ALFA CROSS-SECTIONAL</div>
+                                    <div style={{fontSize:"7px",color:"#5a8fa8"}}>{ALPHA.ALPHA_VALIDADA.nombre}</div>
+                                  </div>
+                                  <div style={{textAlign:"right"}}>
+                                    <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:c,lineHeight:1}}>P{a.percentil}</div>
+                                    <div style={{fontSize:"7px",color:c}}>quintil {a.quintil} de 5</div>
+                                  </div>
+                                </div>
+                                <div style={{height:"7px",background:"#0c1826",borderRadius:"4px",position:"relative",marginBottom:"6px"}}>
+                                  {[20,40,60,80].map(p=><div key={p} style={{position:"absolute",left:`${p}%`,top:0,bottom:0,width:"1px",background:"#1e3a50"}}/>)}
+                                  <div style={{position:"absolute",left:`${a.percentil}%`,top:"-3px",bottom:"-3px",width:"3px",background:c,borderRadius:"2px",transform:"translateX(-50%)",boxShadow:`0 0 6px ${c}80`}}/>
+                                </div>
+                                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px",marginBottom:"6px"}}>
+                                  {[
+                                    {l:"Shock de volumen", v:a.vol_shock, bueno:a.vol_shock>0.3},
+                                    {l:"Momentum 1 mes",   v:a.mom_1m,    bueno:a.mom_1m<-0.3},
+                                  ].map(x=>(
+                                    <div key={x.l} style={{padding:"5px 7px",background:"#050c15",borderRadius:"3px"}}>
+                                      <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                                      <div style={{fontSize:"11px",color:x.bueno?"#00ff88":"#a0cce0",fontFamily:"'Bebas Neue'"}}>
+                                        {x.v>=0?"+":""}{x.v.toFixed(2)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                                  {a.quintil>=5
+                                    ? "En el quintil superior del universo. La combinación de volumen entrando sobre precio castigado es el patrón con mejor evidencia del sistema."
+                                    : a.quintil>=4
+                                    ? "Por encima de la media del universo en atractivo relativo."
+                                    : a.quintil<=1
+                                    ? "En el quintil inferior. Históricamente este grupo rinde por debajo del universo."
+                                    : "En la zona media del universo: sin ventaja relativa clara."}
+                                </div>
+                                <div style={{marginTop:"5px",paddingTop:"5px",borderTop:"1px solid #0f2235",fontSize:"6px",color:"#4a7a9b"}}>
+                                  Validado fuera de muestra: IC {ALPHA.ALPHA_VALIDADA.metricas.ic} · IR {ALPHA.ALPHA_VALIDADA.metricas.ir} ·
+                                  spread Q5−Q1 {ALPHA.ALPHA_VALIDADA.metricas.spreadQ5Q1}% · positivo en {ALPHA.ALPHA_VALIDADA.metricas.pctFechas}% de las fechas
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* 4 EJES */}
                           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"8px",marginBottom:"12px"}}>
