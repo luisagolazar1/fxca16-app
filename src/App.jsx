@@ -1211,7 +1211,6 @@ function combinedSignal(data, W=7, allData=null) {
     else if (rrNeto >= 2.0) rrPenalty = -8;   // premia R/R excelente
     else if (rrNeto >= 1.5) rrPenalty = -4;
   }
-  const buyF = sig.includes("COMPRA"), sellF = sig.includes("VENTA");
 
   // Confianza ajustada con factores temporales + penalización BEAR + viabilidad
   let conf = Math.max(0, final_sc - conf_penalty - rrPenalty);
@@ -1369,8 +1368,13 @@ function applyP80Threshold(results) {
   const mapped = results.map(r => {
     if (!r.sig) return r;
     const sc = r.sig.final_sc || 0;
-    const tkMult = TICKER_CONFIDENCE[r.ticker] || 0;
-    const adjSc  = sc + tkMult * 10;
+    // TICKER_CONFIDENCE quedó DESACTIVADO por coherencia: eran ajustes de
+    // ±2 puntos asignados a mano, sin validación — el mismo problema por el
+    // que desactivamos adaptiveScoreAdj. Podían empujar un ticker a través
+    // del umbral de 58 de forma arbitraria.
+    // La confianza por activo ahora se mide en el tab Validación (AUC
+    // fuera de muestra por ticker), que sí es verificable.
+    const adjSc  = sc;
     const isUSA  = r.moneda === "USD";
     const above  = isUSA ? topUSA.has(r.ticker) : topMerval.has(r.ticker);
     const p80val = isUSA ? p80usa : p80merval;
@@ -3991,10 +3995,19 @@ export default function App() {
               const uniq = rows.filter(r => { if(seen.has(r.ticker)) return false; seen.add(r.ticker); return true; });
               const sectores = ["Todos", ...new Set(uniq.map(r=>r.sector).filter(Boolean).sort())];
               const bySector = catSector==="Todos" ? uniq : uniq.filter(r=>r.sector===catSector);
+              // Orden: primero las que superan el control de falsos positivos,
+              // después por convicción (distancia al 50 neutro). Con 158 tickers
+              // probados a la vez, las que pasan FDR son las creíbles.
+              const conv = r => Math.abs((r.sig?.final_sc ?? 50) - 50);
+              const rank = (a,b) => {
+                const fa = a.sig?.fdr_pass ? 1 : 0, fb = b.sig?.fdr_pass ? 1 : 0;
+                if (fa !== fb) return fb - fa;
+                return conv(b) - conv(a);
+              };
               const lista = oppScope==="senales"
-                ? bySector.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL")
-                          .sort((a,b)=>(b.sig?.final_sc||0)-(a.sig?.final_sc||0))
-                : [...bySector].sort((a,b)=>(b.sig?.final_sc||0)-(a.sig?.final_sc||0));
+                ? bySector.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL").sort(rank)
+                : [...bySector].sort(rank);
+              const nFdr = bySector.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL" && r.sig?.fdr_pass).length;
               const nSenales = bySector.filter(r=>r.sig?.above_p80 && r.sig?.sig!=="NEUTRAL").length;
 
               return (
@@ -4007,6 +4020,12 @@ export default function App() {
                       style={{padding:"4px 12px",fontSize:"9px"}}>
                       🎯 Solo señales ({nSenales})
                     </button>
+                    {nSenales>0&&(
+                      <span style={{fontSize:"7px",color:nFdr>0?"#00ff88":"#ff9040",padding:"3px 8px",
+                        background:nFdr>0?"#00ff8812":"#ff904012",borderRadius:"3px",border:`1px solid ${nFdr>0?"#00ff8830":"#ff904030"}`}}>
+                        ✓ {nFdr} superan control de falsos positivos
+                      </span>
+                    )}
                     <button className={`btn ${oppScope==="todos"?"on":"off"}`} onClick={()=>setOppScope("todos")}
                       style={{padding:"4px 12px",fontSize:"9px"}}>
                       📋 Universo completo ({bySector.length})
