@@ -499,3 +499,107 @@ export function selectDiversified(candidates, corrMatrix, maxN, maxCorr = 0.75) 
   }
   return chosen;
 }
+
+// ══════════════════════════════════════════════════════════════
+// 18. CONSISTENCIA TEMPORAL — el test que desenmascara ilusiones
+//
+//  Un t-stat de 5 sobre toda la muestra puede venir de UN solo mes
+//  excepcional. Este test parte el historial por mes y pregunta:
+//  ¿en cuántos períodos el filtro superó al mercado?
+//
+//  Una señal real gana en >60% de los meses.
+//  Una ilusión de cola gana en ~35-50% y concentra todo en 1-2 meses.
+// ══════════════════════════════════════════════════════════════
+export function consistenciaTemporal(observaciones, filtro, { minPorMes = 10 } = {}) {
+  if (!observaciones?.length) return null;
+
+  const meses = {};
+  observaciones.forEach(o => {
+    const m = (o.fecha || '').slice(0, 7);
+    if (m) (meses[m] ||= []).push(o);
+  });
+
+  const filas = [];
+  for (const m of Object.keys(meses).sort()) {
+    const g = meses[m];
+    if (g.length < 30) continue;
+    const sel = g.filter(filtro);
+    if (sel.length < minPorMes) continue;
+    const mercado = mean(g.map(o => o.fwd));
+    const señal   = mean(sel.map(o => o.fwd));
+    filas.push({
+      mes: m, nTotal: g.length, nSeñal: sel.length,
+      mercado: +mercado.toFixed(2),
+      señal:   +señal.toFixed(2),
+      exceso:  +(señal - mercado).toFixed(2),
+    });
+  }
+  if (filas.length < 4) return null;
+
+  const excesos = filas.map(f => f.exceso);
+  const positivos = excesos.filter(x => x > 0).length;
+  const pctPositivos = +(positivos / filas.length * 100).toFixed(0);
+
+  // ¿Cuánto del exceso total aporta el mejor mes?
+  const total = excesos.reduce((a, b) => a + b, 0);
+  const mejor = Math.max(...excesos);
+  const concentracion = total > 0 ? +(mejor / total * 100).toFixed(0) : 0;
+  const sinMejor = excesos.filter(x => x !== mejor);
+  const excesoSinMejor = +mean(sinMejor).toFixed(2);
+
+  // Test binomial: ¿pctPositivos difiere de 50% por azar?
+  const n = filas.length, p = positivos / n;
+  const z = (p - 0.5) / Math.sqrt(0.25 / n);
+
+  let veredicto, color;
+  if (pctPositivos >= 65 && excesoSinMejor > 0) { veredicto = 'EDGE CONSISTENTE';        color = '#00ff88'; }
+  else if (concentracion > 70)                  { veredicto = 'ILUSIÓN DE UN SOLO MES';  color = '#ff3355'; }
+  else if (pctPositivos >= 55)                  { veredicto = 'EDGE DÉBIL';              color = '#ffd700'; }
+  else                                          { veredicto = 'SIN EDGE DEMOSTRABLE';    color = '#ff3355'; }
+
+  return {
+    filas, nMeses: n, positivos, pctPositivos,
+    excesoMedio: +mean(excesos).toFixed(2),
+    excesoSinMejor, concentracion, z: +z.toFixed(2),
+    mejorMes: filas.find(f => f.exceso === mejor)?.mes,
+    veredicto, color,
+  };
+}
+
+// Genera las observaciones necesarias para el test anterior.
+// Sin lookahead: la señal en t usa solo datos hasta t.
+export function generarObservaciones(dataPorTicker, combinedSignalFn, { W = 14, hold = 14, paso = 5, maxTickers = 40 } = {}) {
+  const obs = [];
+  let k = 0;
+  for (const [tk, data] of Object.entries(dataPorTicker)) {
+    if (!data || data.length < 400) continue;
+    const daily = [];
+    const byDay = {};
+    data.forEach(d => {
+      const day = d.date || d.d || '';
+      if (!day) return;
+      if (!byDay[day]) { byDay[day] = { date: day, close: d.close }; daily.push(byDay[day]); }
+      byDay[day].close = d.close;
+    });
+    if (daily.length < 120) continue;
+    const dp = {}; daily.forEach((x, i) => dp[x.date] = i);
+
+    for (let i = 300; i < data.length - 1; i += paso) {
+      let sig = null;
+      try { sig = combinedSignalFn(data.slice(0, i + 1), W); } catch (e) { continue; }
+      if (!sig) continue;
+      const di = dp[data[i].date];
+      if (di === undefined || di + hold >= daily.length) continue;
+      const e0 = daily[di].close, e1 = daily[di + hold].close;
+      if (!e0 || !e1) continue;
+      obs.push({
+        ticker: tk, fecha: data[i].date,
+        sc: sig.final_sc, conf: sig.conf, rr: sig.rr,
+        vol: sig.vol_24h, roc: sig.roc10,
+        fwd: (e1 - e0) / e0 * 100,
+      });
+    }
+    if (++k >= maxTickers) break;
+  }
+  return obs;
+}

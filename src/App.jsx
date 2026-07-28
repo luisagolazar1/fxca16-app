@@ -2830,6 +2830,7 @@ export default function App() {
   const [qlAblation,setQlAblation]= useState(null);
   const [qlMeta,    setQlMeta]    = useState(null);
   const [qlValid,   setQlValid]   = useState(null);
+  const [qlConsist, setQlConsist] = useState(null);
   const [qlParams,  setQlParams]  = useState({ topN:5, holdDays:10, minProb:0.55, useKelly:true });
 
   const saveWatchlists = (wls) => {
@@ -3533,7 +3534,7 @@ export default function App() {
   
   // ══ QUANT LAB: entrenar modelos + backtest de cartera ══
   const runQuantLab = useCallback(async () => {
-    setQlRunning(true); setQlModels(null); setQlPort(null); setQlAblation(null); setQlMeta(null); setQlValid(null);
+    setQlRunning(true); setQlModels(null); setQlPort(null); setQlAblation(null); setQlMeta(null); setQlValid(null); setQlConsist(null);
     const yield_ = () => new Promise(r => setTimeout(r, 0));
     try {
       const tks = rows.map(r => r.ticker);
@@ -3653,6 +3654,24 @@ export default function App() {
         validacion.uniq = Q2.sampleUniqueness(idxs, qlParams.holdDays, universe[0]?.daily.length||200);
       }
       setQlValid(validacion);
+
+      // ── TEST DE CONSISTENCIA TEMPORAL ──
+      // Responde: ¿el edge se repite mes a mes, o vino de un solo período?
+      setQlProgress("Midiendo consistencia mes a mes...");
+      await yield_();
+      try {
+        const dataPorTicker = {};
+        rows.slice(0, 40).forEach(r => {
+          const b = rowDataRef.current[r.ticker];
+          if (b && b.length >= 400) dataPorTicker[r.ticker] = b;
+        });
+        const observ = Q2.generarObservaciones(dataPorTicker, combinedSignal, { W, hold: W, paso: 6, maxTickers: 40 });
+        if (observ.length > 300) {
+          const umbral = 50 + selectividadRef.current;
+          const cons = Q2.consistenciaTemporal(observ, o => o.sc >= umbral);
+          if (cons) setQlConsist({ ...cons, umbral, nObs: observ.length });
+        }
+      } catch(e) { /* no bloquear el resto */ }
 
       modelInfo.sort((a,b) => b.auc - a.auc);
       setQlModels(modelInfo);
@@ -5389,6 +5408,76 @@ export default function App() {
                   );
                 })()}
 
+
+
+                {/* ══ CONSISTENCIA TEMPORAL — el test decisivo ══ */}
+                {qlConsist&&(
+                  <div className="card" style={{padding:"13px",marginBottom:"10px",border:`2px solid ${qlConsist.color}40`}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"3px"}}>
+                      📅 CONSISTENCIA MES A MES — ¿el edge se repite o vino de un solo período?
+                    </div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
+                      Un t-stat alto sobre toda la muestra puede venir de un único mes excepcional.
+                      Este test parte el historial y cuenta en cuántos períodos el filtro superó al mercado.
+                      <strong style={{color:"#a0cce0"}}> Señal real: &gt;65% de meses. Azar: ~50%.</strong>
+                    </div>
+
+                    <div style={{textAlign:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #0f2235"}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"26px",color:qlConsist.color,lineHeight:1.1}}>
+                        {qlConsist.veredicto}
+                      </div>
+                      <div style={{fontSize:"8px",color:"#b0d4e8",marginTop:"3px"}}>
+                        filtro score ≥ {qlConsist.umbral} · {qlConsist.nObs.toLocaleString()} observaciones sin lookahead
+                      </div>
+                    </div>
+
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px",marginBottom:"10px"}}>
+                      {[
+                        {l:"MESES CON EDGE", v:`${qlConsist.positivos}/${qlConsist.nMeses}`, c:qlConsist.pctPositivos>=65?"#00ff88":"#ff3355"},
+                        {l:"% POSITIVOS",    v:`${qlConsist.pctPositivos}%`,                 c:qlConsist.pctPositivos>=65?"#00ff88":qlConsist.pctPositivos>=55?"#ffd700":"#ff3355"},
+                        {l:"EXCESO MEDIO",   v:`${qlConsist.excesoMedio>=0?"+":""}${qlConsist.excesoMedio}%`, c:qlConsist.excesoMedio>0?"#00ff88":"#ff3355"},
+                        {l:"SIN EL MEJOR MES",v:`${qlConsist.excesoSinMejor>=0?"+":""}${qlConsist.excesoSinMejor}%`, c:qlConsist.excesoSinMejor>0?"#00ff88":"#ff3355"},
+                      ].map(x=>(
+                        <div key={x.l} style={{textAlign:"center",padding:"6px 3px",background:"#050c15",borderRadius:"4px",border:`1px solid ${x.c}20`}}>
+                          <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:"17px",color:x.c}}>{x.v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Barras por mes */}
+                    <div style={{marginBottom:"8px"}}>
+                      <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"5px"}}>EXCESO SOBRE EL MERCADO, MES A MES</div>
+                      {(()=>{
+                        const mx = Math.max(...qlConsist.filas.map(f=>Math.abs(f.exceso)), 1);
+                        return qlConsist.filas.map(f=>(
+                          <div key={f.mes} style={{display:"flex",alignItems:"center",gap:"5px",marginBottom:"2px"}}>
+                            <span style={{fontSize:"7px",color:"#a0cce0",width:"48px",flexShrink:0}}>{f.mes}</span>
+                            <div style={{flex:1,height:"9px",background:"#0c1826",borderRadius:"2px",position:"relative",overflow:"hidden"}}>
+                              <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:"1px",background:"#1e3a50"}}/>
+                              <div style={{position:"absolute",top:0,bottom:0,borderRadius:"2px",
+                                left: f.exceso>=0 ? "50%" : `${50 - Math.abs(f.exceso)/mx*48}%`,
+                                width:`${Math.abs(f.exceso)/mx*48}%`,
+                                background: f.exceso>=0?"#00ff88":"#ff3355", opacity:.85}}/>
+                            </div>
+                            <span style={{fontSize:"7px",width:"46px",textAlign:"right",color:f.exceso>=0?"#00ff88":"#ff3355",fontWeight:600}}>
+                              {f.exceso>=0?"+":""}{f.exceso}%
+                            </span>
+                            <span style={{fontSize:"6px",width:"32px",textAlign:"right",color:"#4a7a9b"}}>n={f.nSeñal}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+
+                    <div style={{padding:"8px 10px",background:`${qlConsist.color}10`,border:`1px solid ${qlConsist.color}30`,borderRadius:"4px",fontSize:"8px",color:"#b0d4e8",lineHeight:1.7}}>
+                      📌 {qlConsist.concentracion > 70
+                        ? `El ${qlConsist.concentracion}% del exceso total viene de un solo mes (${qlConsist.mejorMes}). Sin ese mes el exceso medio es ${qlConsist.excesoSinMejor}%. Esto es amplificación de beta en un rally, no capacidad predictiva: el filtro carga activos de alto momentum, que se mueven más cuando el mercado sube fuerte y peor el resto del tiempo.`
+                        : qlConsist.pctPositivos >= 65
+                        ? `El filtro superó al mercado en ${qlConsist.positivos} de ${qlConsist.nMeses} meses (${qlConsist.pctPositivos}%), y mantiene ${qlConsist.excesoSinMejor}% de exceso incluso descartando el mejor período. Eso es consistente con un edge real.`
+                        : `Solo ${qlConsist.pctPositivos}% de los meses tuvieron exceso positivo — no se distingue del azar (50%). El filtro no demuestra capacidad predictiva sostenida en este historial.`}
+                    </div>
+                  </div>
+                )}
 
                 {/* ══ VALIDACIÓN DE ROBUSTEZ ══ */}
                 {qlValid&&(qlValid.dsr||qlValid.pbo)&&(
