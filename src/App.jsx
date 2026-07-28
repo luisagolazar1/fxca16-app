@@ -3854,15 +3854,17 @@ export default function App() {
               <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"8px",letterSpacing:".12em"}}>VENTANA ANÁLISIS</div>
               <div style={{display:"flex",gap:"6px",justifyContent:"center"}}>
                 {[
-                  {d:7,  l:"7D",  sub:"Swing corto"},
-                  {d:14, l:"14D", sub:"Swing medio"},
-                  {d:30, l:"30D", sub:"Posición"},
-                  {d:60, l:"60D", sub:"Tendencia"},
+                  {d:7,  l:"7D",  sub:"−1.4% neto", ok:false},
+                  {d:14, l:"14D", sub:"−1.1% neto", ok:false},
+                  {d:30, l:"30D", sub:"+0.7% neto", ok:true},
+                  {d:60, l:"60D", sub:"+3.0% neto", ok:true},
                 ].map(o=>(
                   <button key={o.d} className={`btn ${W===o.d?"on":"off"}`} onClick={()=>setW(o.d)}
-                    style={{padding:"7px 14px",fontSize:"11px",display:"flex",flexDirection:"column",gap:"1px",lineHeight:1.2}}>
+                    title={o.ok ? "El alfa supera las comisiones en este horizonte" : "Las comisiones se comen el alfa en este horizonte"}
+                    style={{padding:"7px 14px",fontSize:"11px",display:"flex",flexDirection:"column",gap:"1px",lineHeight:1.2,
+                      opacity:o.ok?1:0.55}}>
                     <span>{o.l}</span>
-                    <span style={{fontSize:"7px",opacity:.65}}>{o.sub}</span>
+                    <span style={{fontSize:"7px",color:o.ok?"#00ff88":"#ff6b6b"}}>{o.sub}</span>
                   </button>
                 ))}
               </div>
