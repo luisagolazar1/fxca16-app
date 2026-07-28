@@ -6,7 +6,8 @@ Corre en GitHub Actions (o local)
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import json, os, sys
+import json
+import os, os, sys
 from datetime import datetime
 
 BARRAS = 1600
@@ -144,49 +145,8 @@ def backtest_w(bars, w):
 # a través de varios regímenes (2018, 2020, 2022) en vez de uno solo.
 # Además pesa ~10x menos que la serie horaria.
 # ══════════════════════════════════════════════════════════════
-def descargar_diario(tickers_yf, moneda, periodo="10y"):
-    print(f"  Descargando {len(tickers_yf)} tickers ({moneda}) — 1d / {periodo}")
-    filas, errores = [], []
-    for i, yf_ticker in enumerate(tickers_yf, 1):
-        try:
-            df = yf.download(yf_ticker, period=periodo, interval="1d",
-                             progress=False, auto_adjust=True, threads=False)
-            if df is None or df.empty:
-                errores.append(yf_ticker); continue
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            df = df.reset_index()
-            tk = clean(yf_ticker)
-            for _, r in df.iterrows():
-                fecha = r.get("Date") or r.get("Datetime")
-                if pd.isna(fecha) or pd.isna(r.get("Close")): continue
-                filas.append({
-                    "ticker": tk,
-                    "d": pd.Timestamp(fecha).strftime("%Y-%m-%d"),
-                    "o": round(float(r["Open"]), 4),
-                    "hi": round(float(r["High"]), 4),
-                    "lo": round(float(r["Low"]), 4),
-                    "c": round(float(r["Close"]), 4),
-                    "v": int(r["Volume"]) if not pd.isna(r.get("Volume")) else 0,
-                    "m": moneda,
-                })
-            if i % 20 == 0:
-                print(f"    {i}/{len(tickers_yf)}...")
-        except Exception as e:
-            errores.append(yf_ticker)
-    print(f"    OK: {len(set(f['ticker'] for f in filas))} tickers, {len(filas):,} barras diarias")
-    if errores:
-        print(f"    fallaron: {errores[:10]}")
-    return pd.DataFrame(filas), errores
-
-
-# ══════════════════════════════════════════════════════════════
-# CALENDARIO DE EARNINGS REAL
-# Reemplaza la lista hardcodeada (que no tenía GLOB, entre otros).
-# Sin riesgo de sesgo: son fechas, no datos financieros.
-# Se guardan pasadas y futuras para poder marcar tanto el evento
-# próximo como el que explica un salto reciente.
-# ══════════════════════════════════════════════════════════════
+# (descargar_diario completo quedó obsoleto: reemplazado por
+# descargar_diario_incremental, que reutiliza el histórico ya bajado)
 def descargar_earnings(tickers_yf):
     print(f"\n📅 Bajando calendario de earnings para {len(tickers_yf)} tickers...")
     cal, fallidos = {}, []
@@ -323,6 +283,189 @@ def descargar_fundamentales(tickers_yf):
         print(f"    sin datos: {len(sin_datos)}")
     return out
 
+
+# ══════════════════════════════════════════════════════════════
+# ACTUALIZACIÓN INCREMENTAL DEL HISTÓRICO DIARIO
+#
+# El histórico de años anteriores no cambia: re-descargarlo cada día
+# son ~160 llamadas inútiles a Yahoo y 30 minutos de workflow.
+# Esta función lee lo que ya está en data.js y pide solo lo faltante.
+#
+# EL DETALLE QUE IMPORTA — splits y dividendos:
+# con auto_adjust=True Yahoo reajusta TODO el histórico cuando hay un
+# split. Si uno solo agrega barras al final, el tramo viejo queda con
+# precios en otra escala y todos los indicadores se rompen en silencio.
+# Por eso se descarga una ventana de solapamiento y se comparan los
+# precios de las fechas comunes: si no coinciden, hubo ajuste y ese
+# ticker se re-descarga completo.
+# ══════════════════════════════════════════════════════════════
+def leer_diario_existente(ruta="src/data.js"):
+    """Extrae CSV_DATA_DAILY_RAW del data.js actual."""
+    if not os.path.exists(ruta):
+        return {}
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            txt = f.read()
+        marca = "export const CSV_DATA_DAILY_RAW = "
+        i = txt.find(marca)
+        if i < 0:
+            return {}
+        i += len(marca)
+        prof, fin = 0, i
+        for k in range(i, len(txt)):
+            if txt[k] == "{": prof += 1
+            elif txt[k] == "}":
+                prof -= 1
+                if prof == 0:
+                    fin = k + 1
+                    break
+        prev = json.loads(txt[i:fin])
+        print(f"  📂 Histórico existente: {len(prev)} tickers")
+        return prev
+    except Exception as e:
+        print(f"  ⚠️  No se pudo leer el histórico previo: {e}")
+        return {}
+
+
+def descargar_diario_incremental(tickers_yf, moneda, previo, periodo_full="10y", solape=7):
+    print(f"  Actualizando {len(tickers_yf)} tickers ({moneda}) — modo incremental")
+    hoy = pd.Timestamp.now().normalize()
+    resultado, completos, incrementales, reajustados = {}, 0, 0, []
+
+    for i, yf_ticker in enumerate(tickers_yf, 1):
+        tk = clean(yf_ticker)
+        viejo = previo.get(tk, [])
+
+        # Sin datos previos o muy pocos → descarga completa
+        if len(viejo) < 100:
+            try:
+                df = yf.download(yf_ticker, period=periodo_full, interval="1d",
+                                 progress=False, auto_adjust=True, threads=False)
+                if df is None or df.empty:
+                    continue
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                resultado[tk] = _df_a_barras(df.reset_index(), moneda)
+                completos += 1
+            except Exception:
+                pass
+            continue
+
+        ult = viejo[-1]["d"]
+        dias_faltantes = (hoy - pd.Timestamp(ult)).days
+        if dias_faltantes <= 0:
+            resultado[tk] = viejo          # ya está al día
+            continue
+
+        # Pedir lo faltante + ventana de solapamiento para verificar ajustes
+        rango = f"{min(360, dias_faltantes + solape + 5)}d"
+        try:
+            df = yf.download(yf_ticker, period=rango, interval="1d",
+                             progress=False, auto_adjust=True, threads=False)
+            if df is None or df.empty:
+                resultado[tk] = viejo
+                continue
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            nuevas = _df_a_barras(df.reset_index(), moneda)
+            if not nuevas:
+                resultado[tk] = viejo
+                continue
+
+            # ¿Hubo split o dividendo? Comparar el solapamiento
+            viejo_por_fecha = {b["d"]: b["c"] for b in viejo}
+            desvios = []
+            for b in nuevas:
+                if b["d"] in viejo_por_fecha:
+                    ref = viejo_por_fecha[b["d"]]
+                    if ref:
+                        desvios.append(abs(b["c"] - ref) / ref)
+            hubo_ajuste = bool(desvios) and (sum(desvios) / len(desvios)) > 0.005
+
+            if hubo_ajuste:
+                # Precios reajustados: el histórico viejo ya no es comparable
+                reajustados.append(tk)
+                df = yf.download(yf_ticker, period=periodo_full, interval="1d",
+                                 progress=False, auto_adjust=True, threads=False)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                resultado[tk] = _df_a_barras(df.reset_index(), moneda)
+                completos += 1
+            else:
+                fechas_nuevas = {b["d"] for b in nuevas}
+                fusion = [b for b in viejo if b["d"] not in fechas_nuevas] + nuevas
+                fusion.sort(key=lambda b: b["d"])
+                resultado[tk] = fusion[-2600:]
+                incrementales += 1
+        except Exception:
+            resultado[tk] = viejo
+
+        if i % 40 == 0:
+            print(f"    {i}/{len(tickers_yf)}...")
+
+    print(f"    ✅ {len(resultado)} tickers | {incrementales} incrementales | {completos} completos")
+    if reajustados:
+        print(f"    🔄 Re-descargados por split/dividendo: {reajustados[:10]}")
+    return resultado
+
+
+def _df_a_barras(df, moneda):
+    barras = []
+    for _, r in df.iterrows():
+        fecha = r.get("Date") or r.get("Datetime")
+        if pd.isna(fecha) or pd.isna(r.get("Close")):
+            continue
+        barras.append({
+            "d":  pd.Timestamp(fecha).strftime("%Y-%m-%d"),
+            "o":  round(float(r["Open"]), 4),
+            "hi": round(float(r["High"]), 4),
+            "lo": round(float(r["Low"]), 4),
+            "c":  round(float(r["Close"]), 4),
+            "v":  int(r["Volume"]) if not pd.isna(r.get("Volume")) else 0,
+            "m":  moneda,
+        })
+    return barras
+
+
+def leer_bloque_existente(nombre, ruta="src/data.js"):
+    """Lee cualquier export const NOMBRE = {...} del data.js actual."""
+    if not os.path.exists(ruta):
+        return {}
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            txt = f.read()
+        marca = f"export const {nombre} = "
+        i = txt.find(marca)
+        if i < 0:
+            return {}
+        i += len(marca)
+        prof, fin = 0, i
+        for k in range(i, len(txt)):
+            if txt[k] == "{": prof += 1
+            elif txt[k] == "}":
+                prof -= 1
+                if prof == 0:
+                    fin = k + 1
+                    break
+        return json.loads(txt[i:fin])
+    except Exception:
+        return {}
+
+
+def necesita_refresco_semanal(previo, tickers_esperados):
+    """
+    Earnings y fundamentales cambian por trimestre, no por día.
+    Se refrescan los lunes, o si faltan tickers, o si nunca se bajaron.
+    """
+    if not previo:
+        return True, "sin datos previos"
+    faltantes = [clean(t) for t in tickers_esperados if clean(t) not in previo]
+    if len(faltantes) > 5:
+        return True, f"{len(faltantes)} tickers nuevos"
+    if pd.Timestamp.now().dayofweek == 0:      # lunes
+        return True, "refresco semanal (lunes)"
+    return False, "se reutiliza lo existente"
+
 def main():
     print("="*55)
     print("FXCA16 — Actualización de datos")
@@ -375,37 +518,46 @@ def main():
     # Yahoo solo entrega ~1 año en intervalo 1h. Con esa ventana toda
     # validación cubre un único régimen de mercado. La serie diaria
     # permite medir a través de 2018, 2020 y 2022.
-    print("\n📅 Descargando histórico diario de 10 años...")
-    df_d_usa, _    = descargar_diario(USA_TICKERS, moneda="USD")
-    df_d_merval, _ = descargar_diario(MERVAL_TICKERS_YF, moneda="ARS")
-    frames_d = [f for f in [df_d_usa, df_d_merval] if not f.empty]
-    daily_result = {}
-    if frames_d:
-        df_diario = pd.concat(frames_d, ignore_index=True)
-        df_diario = df_diario.sort_values(["ticker","d"]).reset_index(drop=True)
-        for tk, grp in df_diario.groupby("ticker"):
-            grp = grp.sort_values("d").tail(2600)   # ~10 años de ruedas
-            daily_result[tk] = [
-                {"d":r["d"],"o":r["o"],"hi":r["hi"],"lo":r["lo"],
-                 "c":r["c"],"v":int(r["v"]),"m":r["m"]}
-                for _, r in grp.iterrows()
-            ]
-        n_dias = int(np.median([len(v) for v in daily_result.values()])) if daily_result else 0
-        print(f"✅ Diario: {len(daily_result)} tickers | mediana {n_dias} ruedas por ticker")
+    # Se reutiliza lo ya descargado: el histórico viejo no cambia.
+    # Solo se piden las ruedas faltantes, con verificación de splits.
+    print("\n📅 Actualizando histórico diario (incremental)...")
+    previo = leer_diario_existente()
+    d_usa    = descargar_diario_incremental(USA_TICKERS,        "USD", previo)
+    d_merval = descargar_diario_incremental(MERVAL_TICKERS_YF,  "ARS", previo)
+    daily_result = {**d_usa, **d_merval}
+    if daily_result:
+        n_dias = int(np.median([len(v) for v in daily_result.values()]))
+        total  = sum(len(v) for v in daily_result.values())
+        print(f"✅ Diario: {len(daily_result)} tickers | mediana {n_dias} ruedas | {total:,} barras")
 
     # ── PASO 2c: Calendario de earnings real ──
-    try:
-        earnings_cal = descargar_earnings(USA_TICKERS + MERVAL_TICKERS_YF)
-    except Exception as e:
-        print(f"  earnings falló: {e}")
-        earnings_cal = {}
+    todos_tk = USA_TICKERS + MERVAL_TICKERS_YF
+    earnings_prev = leer_bloque_existente("FXCA16_EARNINGS")
+    refrescar, motivo = necesita_refresco_semanal(earnings_prev, todos_tk)
+    if refrescar:
+        print(f"\n📅 Earnings: descargando ({motivo})")
+        try:
+            earnings_cal = descargar_earnings(todos_tk)
+        except Exception as e:
+            print(f"  earnings falló: {e}")
+            earnings_cal = earnings_prev
+    else:
+        print(f"\n📅 Earnings: {motivo} ({len(earnings_prev)} tickers)")
+        earnings_cal = earnings_prev
 
     # ── PASO 2d: Fundamentales (calidad como filtro) ──
-    try:
-        fundamentales = descargar_fundamentales(USA_TICKERS + MERVAL_TICKERS_YF)
-    except Exception as e:
-        print(f"  fundamentales falló: {e}")
-        fundamentales = {}
+    fund_prev = leer_bloque_existente("FXCA16_FUNDAMENTALES")
+    refrescar_f, motivo_f = necesita_refresco_semanal(fund_prev, todos_tk)
+    if refrescar_f:
+        print(f"\n🏛️  Fundamentales: descargando ({motivo_f})")
+        try:
+            fundamentales = descargar_fundamentales(todos_tk)
+        except Exception as e:
+            print(f"  fundamentales falló: {e}")
+            fundamentales = fund_prev
+    else:
+        print(f"\n🏛️  Fundamentales: {motivo_f} ({len(fund_prev)} tickers)")
+        fundamentales = fund_prev
 
     # ── PASO 3: Calcular dynParams ──
     print("\n⚙️  Calculando dynParams...")
