@@ -3,6 +3,9 @@ import * as Q from "./quant.js";
 import * as Q2 from "./quant2.js";
 import * as ALPHA from "./alpha.js";
 import CSV_DATA_EMBEDDED_RAW, { expandEmbedded as expandEmbeddedImport, FXCA16_DYN_PARAMS as DYN_PARAMS_IMPORTED } from './data.js';
+// La serie diaria de 10 años se agrega a data.js en la próxima actualización.
+// Hasta entonces el sistema sigue operando con la serie horaria.
+import * as DATA_MOD from './data.js';
 import logoUrl from './logo.png';
 
 // ╔══════════════════════════════════════════════════════════════════╗
@@ -1648,6 +1651,30 @@ function calcMarketCorrelation(data, indexData) {
 // ══════════════════════════════════════════════════════════════
 
 // ── Resamplear datos horarios a OHLCV diario ──
+
+// ── SERIE PARA ANÁLISIS ESTADÍSTICO ──
+// Prefiere el histórico diario de 10 años cuando está disponible.
+// La serie horaria solo cubre ~1 año (límite de Yahoo), insuficiente
+// para validar a través de distintos regímenes de mercado.
+let _dailyCache = null;
+function serieLarga(ticker) {
+  try {
+    if (_dailyCache === null) {
+      const src = DATA_MOD?.CSV_DATA_DAILY_RAW || {};
+      _dailyCache = {};
+      for (const [tk, bars] of Object.entries(src)) {
+        _dailyCache[tk] = bars.map(b => ({
+          date:b.d, open:b.o, high:b.hi, low:b.lo,
+          close:b.c, volume:b.v, moneda:b.m, _ticker:tk
+        }));
+      }
+    }
+    const d = _dailyCache[ticker];
+    if (d && d.length >= 250) return d;
+  } catch(e) {}
+  return null;
+}
+
 function resampleToDaily(data, { excluirParcial = true } = {}) {
   if (!data || !data.length) return [];
   const byDay = {};
@@ -3182,7 +3209,9 @@ export default function App() {
       try {
         const porMoneda = { USD:{}, ARS:{} };
         filas.forEach(r => {
-          const b = rowDataRef.current[r.ticker];
+          // Prefiere el histórico diario de 10 años; cae a la serie horaria si no está
+          const larga = serieLarga(r.ticker);
+          const b = larga || rowDataRef.current[r.ticker];
           if (b && b.length >= 200) porMoneda[r.moneda === "ARS" ? "ARS" : "USD"][r.ticker] = b;
         });
         const comb = {};
@@ -3603,9 +3632,10 @@ export default function App() {
         const tk = tks[i];
         setQlProgress(`Entrenando ${tk} (${i+1}/${tks.length})...`);
         if (i % 3 === 0) await yield_();
-        const bars = rowDataRef.current[tk];
+        const larga = serieLarga(tk);
+        const bars = larga || rowDataRef.current[tk];
         if (!bars || bars.length < 200) continue;
-        const daily = resampleToDaily(bars);
+        const daily = larga || resampleToDaily(bars);
         if (!daily || daily.length < 150) continue;
         const moneda = rows.find(r=>r.ticker===tk)?.moneda || "USD";
         const cost = (moneda==="ARS" ? COSTO_MERVAL : COSTO_CEDEAR)/100;

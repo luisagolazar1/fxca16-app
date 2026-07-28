@@ -5,6 +5,7 @@ Corre en GitHub Actions (o local)
 """
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import json, os, sys
 from datetime import datetime
 
@@ -52,6 +53,15 @@ def load_custom_tickers():
         return []
 
 def descargar_grupo(tickers_yf, moneda, periodo="2y", intervalo="1h"):
+    """
+    NOTA IMPORTANTE SOBRE HORIZONTE DE DATOS
+    Yahoo limita el intervalo 1h a ~1 año real, sin importar que se pida "2y".
+    Con 11 meses de historia toda validación cubre un solo régimen de mercado,
+    que fue exactamente el problema detectado: el edge medido provenía de un
+    único mes de rally.
+    Por eso ahora se descarga TAMBIÉN una serie diaria de 10 años (descargar_diario),
+    que es lo que alimenta la validación estadística y el motor de alfa.
+    """
     print(f"\n{'━'*55}")
     print(f"  Descargando {len(tickers_yf)} tickers ({moneda}) — {intervalo} / {periodo}")
     print(f"{'━'*55}")
@@ -127,6 +137,48 @@ def backtest_w(bars, w):
     if not trades: return 0, 0
     return sum(trades)/len(trades), len(trades)
 
+
+# ══════════════════════════════════════════════════════════════
+# HISTÓRICO DIARIO LARGO — 10 años
+# El intervalo 1d no tiene la limitación del 1h. Permite validar
+# a través de varios regímenes (2018, 2020, 2022) en vez de uno solo.
+# Además pesa ~10x menos que la serie horaria.
+# ══════════════════════════════════════════════════════════════
+def descargar_diario(tickers_yf, moneda, periodo="10y"):
+    print(f"  Descargando {len(tickers_yf)} tickers ({moneda}) — 1d / {periodo}")
+    filas, errores = [], []
+    for i, yf_ticker in enumerate(tickers_yf, 1):
+        try:
+            df = yf.download(yf_ticker, period=periodo, interval="1d",
+                             progress=False, auto_adjust=True, threads=False)
+            if df is None or df.empty:
+                errores.append(yf_ticker); continue
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = df.reset_index()
+            tk = clean(yf_ticker)
+            for _, r in df.iterrows():
+                fecha = r.get("Date") or r.get("Datetime")
+                if pd.isna(fecha) or pd.isna(r.get("Close")): continue
+                filas.append({
+                    "ticker": tk,
+                    "d": pd.Timestamp(fecha).strftime("%Y-%m-%d"),
+                    "o": round(float(r["Open"]), 4),
+                    "hi": round(float(r["High"]), 4),
+                    "lo": round(float(r["Low"]), 4),
+                    "c": round(float(r["Close"]), 4),
+                    "v": int(r["Volume"]) if not pd.isna(r.get("Volume")) else 0,
+                    "m": moneda,
+                })
+            if i % 20 == 0:
+                print(f"    {i}/{len(tickers_yf)}...")
+        except Exception as e:
+            errores.append(yf_ticker)
+    print(f"    OK: {len(set(f['ticker'] for f in filas))} tickers, {len(filas):,} barras diarias")
+    if errores:
+        print(f"    fallaron: {errores[:10]}")
+    return pd.DataFrame(filas), errores
+
 def main():
     print("="*55)
     print("FXCA16 — Actualización de datos")
@@ -175,6 +227,28 @@ def main():
             for _, r in grp.iterrows()
         ]
 
+    # ── PASO 2b: HISTÓRICO DIARIO LARGO (10 años) ──
+    # Yahoo solo entrega ~1 año en intervalo 1h. Con esa ventana toda
+    # validación cubre un único régimen de mercado. La serie diaria
+    # permite medir a través de 2018, 2020 y 2022.
+    print("\n📅 Descargando histórico diario de 10 años...")
+    df_d_usa, _    = descargar_diario(USA_TICKERS, moneda="USD")
+    df_d_merval, _ = descargar_diario(MERVAL_TICKERS_YF, moneda="ARS")
+    frames_d = [f for f in [df_d_usa, df_d_merval] if not f.empty]
+    daily_result = {}
+    if frames_d:
+        df_diario = pd.concat(frames_d, ignore_index=True)
+        df_diario = df_diario.sort_values(["ticker","d"]).reset_index(drop=True)
+        for tk, grp in df_diario.groupby("ticker"):
+            grp = grp.sort_values("d").tail(2600)   # ~10 años de ruedas
+            daily_result[tk] = [
+                {"d":r["d"],"o":r["o"],"hi":r["hi"],"lo":r["lo"],
+                 "c":r["c"],"v":int(r["v"]),"m":r["m"]}
+                for _, r in grp.iterrows()
+            ]
+        n_dias = int(np.median([len(v) for v in daily_result.values()])) if daily_result else 0
+        print(f"✅ Diario: {len(daily_result)} tickers | mediana {n_dias} ruedas por ticker")
+
     # ── PASO 3: Calcular dynParams ──
     print("\n⚙️  Calculando dynParams...")
     dyn_params = {}
@@ -196,11 +270,28 @@ def main():
     # ── PASO 4: Generar data.js ──
     raw = json.dumps(result, separators=(',',':'))
     dyn_raw = json.dumps(dyn_params, separators=(',',':'))
+    daily_raw = json.dumps(daily_result, separators=(',',':'))
 
     data_js = f"""// FXCA16 — datos actualizados al {last_date}
 // Generado automáticamente — no editar manualmente
 
 const CSV_DATA_EMBEDDED_RAW = {raw};
+
+// Histórico DIARIO de ~10 años. Yahoo limita el intervalo 1h a ~1 año,
+// insuficiente para validar a través de distintos regímenes de mercado.
+// Esta serie es la que alimenta el tab Validación y el motor de alfa.
+export const CSV_DATA_DAILY_RAW = {daily_raw};
+
+export function expandDaily(raw) {{
+  const out = {{}};
+  for (const [tk, bars] of Object.entries(raw)) {{
+    out[tk] = bars.map(b => ({{
+      date:b.d, open:b.o, high:b.hi, low:b.lo,
+      close:b.c, volume:b.v, moneda:b.m, _ticker:tk
+    }}));
+  }}
+  return out;
+}}
 
 export const FXCA16_DYN_PARAMS = {dyn_raw};
 
