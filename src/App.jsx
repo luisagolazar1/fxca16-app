@@ -1338,26 +1338,35 @@ function normCdf(z) {
 }
 
 
-function applyP80Threshold(results) {
+function applyP80Threshold(results, minConviccion = 18) {
   if (!results.length) return results;
 
   // P80 SEPARADO POR MERCADO (FIX: USA y Merval tienen distribuciones distintas)
   const usa    = results.filter(r => r.moneda === "USD");
   const merval = results.filter(r => r.moneda === "ARS");
 
-  // FIX: el top 20% se rankea por CONVICCIÓN (|score-50|), no por score crudo.
-  // Antes se ordenaba de mayor a menor score, así que solo entraban los más
-  // alcistas — y la rama "score<=42 → VENTA" era código muerto: un ticker
-  // bajista jamás alcanzaba el top. Ahora un score de 20 (convicción 30)
-  // compite en igualdad con uno de 80 (convicción 30).
+  // ══ SELECCIÓN POR CALIDAD ABSOLUTA, NO POR CUOTA FIJA ══
+  //
+  // El defecto anterior: se tomaba siempre el "top 20%" del universo.
+  // Con 103 tickers USA + 55 Merval eso daba SIEMPRE 32 candidatos, sin
+  // importar la ventana ni el estado del mercado — el número de
+  // oportunidades lo definía el tamaño del universo, no las condiciones.
+  // Consecuencia doble: en mercados buenos se descartaban decenas de
+  // señales válidas, y en mercados malos se forzaban 32 igual.
+  //
+  // Ahora manda la CONVICCIÓN absoluta: |score − 50| ≥ MIN_CONVICCION.
+  // El conteo varía naturalmente con el horizonte y con el mercado.
+  const MIN_CONVICCION = minConviccion;
+
   const calcP80set = (arr) => {
     if (!arr.length) return { p80: 0, topTickers: new Set() };
     const convicción = r => Math.abs((r.sig?.final_sc ?? 50) - 50);
+    // P80 se sigue calculando, pero solo como referencia de contexto
     const sorted = [...arr].sort((a,b) => convicción(a) - convicción(b));
     const p80 = sorted[Math.floor(sorted.length * 0.8)]?.sig?.final_sc ?? 0;
-    const topN = Math.max(1, Math.ceil(arr.length * 0.20));
+    // Selección por mérito propio, sin cuota
     const topTickers = new Set(
-      [...arr].sort((a,b) => convicción(b) - convicción(a)).slice(0, topN).map(x => x.ticker)
+      arr.filter(r => convicción(r) >= MIN_CONVICCION).map(x => x.ticker)
     );
     return { p80, topTickers };
   };
@@ -1382,8 +1391,8 @@ function applyP80Threshold(results) {
     // ── FIX CRÍTICO: umbral ABSOLUTO además del relativo ──
     // Estar en el top 20% no basta: el score debe superar un mínimo real.
     // Antes, un score de 50.1 (= azar puro) se convertía en "COMPRA".
-    const MIN_BUY  = 58;   // por debajo de esto no hay ventaja estadística
-    const MIN_SELL = 42;
+    const MIN_BUY  = 50 + MIN_CONVICCION;   // 68
+    const MIN_SELL = 50 - MIN_CONVICCION;   // 32
     const rrOk     = (r.sig.rr ?? 0) >= 1.2;   // R/R neto debe cubrir costos
 
     let sigStr = r.sig.sig;
@@ -2810,6 +2819,9 @@ export default function App() {
   const [cmpB,      setCmpB]      = useState(""); // ticker B para comparar
   const [catSector, setCatSector] = useState("Todos"); // sector activo
   const [oppScope,  setOppScope]  = useState("senales"); // "senales" | "todos"
+  const [selectividad, setSelectividad] = useState(18);  // convicción mínima |score-50|
+  const selectividadRef = useRef(18);
+  useEffect(()=>{ selectividadRef.current = selectividad; }, [selectividad]);
   // ── QUANT LAB ──
   const [qlRunning, setQlRunning] = useState(false);
   const [qlProgress,setQlProgress]= useState("");
@@ -3178,7 +3190,7 @@ export default function App() {
       if ((i+1) % 20 === 0) await yield_();
     }
 
-    const final = applyP80Threshold(raw);
+    const final = applyP80Threshold(raw, selectividadRef.current);
     setRows(final);
     lg(`✅ ${label} · ${raw.length} tickers`, "ok");
     return final;
@@ -3206,7 +3218,7 @@ export default function App() {
     );
     const raw = results.map(r => r.status === "fulfilled" ? r.value : null).filter(Boolean);
     const withPrice = raw.filter(r => r.price != null);
-    const final = applyP80Threshold(withPrice);
+    const final = applyP80Threshold(withPrice, selectividadRef.current);
     setRows(final);
     const nHist = withPrice.filter(r => (rowDataRef.current[r.ticker]||[]).some(d => d.hour !== undefined)).length;
     lg(`✅ Histórico 1h listo | ${nHist}/${TICKERS.length} con precios reales`, "ok");
@@ -4031,6 +4043,27 @@ export default function App() {
                       📋 Universo completo ({bySector.length})
                     </button>
                   </div>
+                  {/* Selectividad: qué tan exigente es el filtro */}
+                  <div style={{display:"flex",gap:"5px",alignItems:"center",marginBottom:"7px",flexWrap:"wrap"}}>
+                    <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em"}}>EXIGENCIA</span>
+                    {[
+                      {v:12, l:"Amplio",      sub:"≥62 / ≤38"},
+                      {v:18, l:"Equilibrado", sub:"≥68 / ≤32"},
+                      {v:25, l:"Estricto",    sub:"≥75 / ≤25"},
+                      {v:32, l:"Excepcional", sub:"≥82 / ≤18"},
+                    ].map(o=>(
+                      <button key={o.v} className={`btn ${selectividad===o.v?"on":"off"}`}
+                        onClick={()=>{ setSelectividad(o.v); selectividadRef.current=o.v; setTimeout(()=>run(mkt),30); }}
+                        style={{padding:"3px 9px",fontSize:"8px",display:"flex",flexDirection:"column",gap:"1px",lineHeight:1.2}}>
+                        <span>{o.l}</span>
+                        <span style={{fontSize:"6px",opacity:.6}}>{o.sub}</span>
+                      </button>
+                    ))}
+                    <span style={{fontSize:"7px",color:"#5a8fa8"}}>
+                      convicción mínima sobre el 50 neutro
+                    </span>
+                  </div>
+
                   <div style={{display:"flex",gap:"4px",flexWrap:"wrap",alignItems:"center"}}>
                     <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em",marginRight:"2px"}}>SECTOR</span>
                     {sectores.map(sec=>{
