@@ -1265,6 +1265,7 @@ function combinedSignal(data, W=7, allData=null) {
     pct6h:evo.pct6h, vol_24h:evo.vol_24h,
     scoreTrend, scoreDelta:+scoreDelta.toFixed(0),
     synthetic: !!data[n]?._synth,
+    ruedaAbierta: ultimoDiaParcial(data),
     rsScore, rsLabel,
     macd_h:mh,
     dist_high:evo.dist_high, dist_low:evo.dist_low,
@@ -1647,19 +1648,46 @@ function calcMarketCorrelation(data, indexData) {
 // ══════════════════════════════════════════════════════════════
 
 // ── Resamplear datos horarios a OHLCV diario ──
-function resampleToDaily(data) {
+function resampleToDaily(data, { excluirParcial = true } = {}) {
   if (!data || !data.length) return [];
   const byDay = {};
   data.forEach(d => {
     const day = d.date || (d.d ? d.d : "");
     if (!day) return;
-    if (!byDay[day]) byDay[day] = { date:day, open:d.open||d.close, high:d.close, low:d.close, close:d.close, volume:0 };
+    if (!byDay[day]) byDay[day] = { date:day, open:d.open||d.close, high:d.close, low:d.close, close:d.close, volume:0, barras:0 };
     byDay[day].high   = Math.max(byDay[day].high, d.high||d.close);
     byDay[day].low    = Math.min(byDay[day].low,  d.low||d.close);
     byDay[day].close  = d.close;
     byDay[day].volume += d.volume||0;
+    byDay[day].barras++;
   });
-  return Object.values(byDay).sort((a,b)=>a.date.localeCompare(b.date));
+  let dias = Object.values(byDay).sort((a,b)=>a.date.localeCompare(b.date));
+
+  // FIX: el último día suele estar incompleto (los datos se bajan durante
+  // la rueda). Un día con 1 de 7 barras distorsiona volumen, rango y
+  // cualquier indicador diario. Se excluye del cálculo histórico.
+  if (excluirParcial && dias.length > 5) {
+    const barrasTipicas = dias.slice(-10, -1).map(d => d.barras).sort((a,b)=>a-b);
+    const mediana = barrasTipicas[Math.floor(barrasTipicas.length/2)] || 1;
+    const ultimo = dias[dias.length-1];
+    if (ultimo.barras < mediana * 0.6) {
+      ultimo.parcial = true;
+      dias = dias.slice(0, -1);   // fuera del histórico
+    }
+  }
+  return dias;
+}
+
+// Detecta si la última barra corresponde a una rueda todavía abierta
+function ultimoDiaParcial(data) {
+  if (!data || data.length < 20) return false;
+  const byDay = {};
+  data.forEach(d => { const k = d.date || d.d; if (k) byDay[k] = (byDay[k]||0) + 1; });
+  const dias = Object.keys(byDay).sort();
+  if (dias.length < 6) return false;
+  const prev = dias.slice(-10, -1).map(k => byDay[k]).sort((a,b)=>a-b);
+  const mediana = prev[Math.floor(prev.length/2)] || 1;
+  return byDay[dias[dias.length-1]] < mediana * 0.6;
 }
 
 // 1. BACKTEST WALK-FORWARD — ventana deslizante con días reales
@@ -4150,6 +4178,18 @@ export default function App() {
                   </div>
                 </div>
 
+                {(()=>{
+                  const parciales = bySector.filter(r=>r.sig?.ruedaAbierta).length;
+                  if (!parciales) return null;
+                  return (
+                    <div style={{padding:"7px 10px",background:"#ff904012",border:"1px solid #ff904035",borderRadius:"5px",marginBottom:"10px",fontSize:"8px",color:"#ffb380",lineHeight:1.6}}>
+                      ⏱ <strong>{parciales} activos con la rueda todavía abierta.</strong> Los datos se descargaron durante el horario de mercado,
+                      así que el último día está incompleto. Los movimientos que ves pueden revertir antes del cierre —
+                      el histórico ya los excluye del cálculo, pero el precio mostrado es intradiario.
+                    </div>
+                  );
+                })()}
+
                 {lista.length===0&&(()=>{
                   if (oppScope!=="senales") return (
                     <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b",fontSize:"11px"}}>Sin datos. Ejecutá el sistema.</div>
@@ -4502,6 +4542,7 @@ export default function App() {
                             <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".2em",marginBottom:"4px"}}>VEREDICTO FINAL</div>
                             <div style={{display:"flex",gap:"4px",justifyContent:"center",flexWrap:"wrap",marginBottom:"6px"}}>
                               {s?.synthetic&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff335520",border:"1px solid #ff335550",borderRadius:"3px",color:"#ff3355",fontWeight:700}}>⚠ DATOS SINTÉTICOS — no operar con esta señal</span>}
+                              {s?.ruedaAbierta&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff904020",border:"1px solid #ff904050",borderRadius:"3px",color:"#ff9040",fontWeight:700}}>⏱ RUEDA ABIERTA — el día no cerró, el precio puede revertir</span>}
                               {s?.fdr_pass===false&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ffd70015",border:"1px solid #ffd70040",borderRadius:"3px",color:"#ffd700"}}>⚠ {s.fdr_note||"Posible falso positivo"}</span>}
                               {s?.fdr_pass===true&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#00ff8815",border:"1px solid #00ff8840",borderRadius:"3px",color:"#00ff88"}}>✓ Supera control FDR</span>}
                             </div>
