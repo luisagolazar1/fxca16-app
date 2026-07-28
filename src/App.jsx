@@ -2765,7 +2765,7 @@ export default function App() {
   const [fase,  setFase]  = useState("init");
   const [mkt,   setMkt]   = useState("USA");   // "USA" | "MERVAL" | "TODOS"
   const TICKERS = mkt === "USA" ? TICKERS_USA.map(t=>({...t,moneda:"USD"})) : mkt === "MERVAL" ? TICKERS_MERVAL.map(t=>({...t,moneda:"ARS"})) : TICKERS_TODOS;
-  const [W,     setW]     = useState(7);
+  const [W,     setW]     = useState(30);  // 30D: IC máximo (0.112) y primer horizonte donde el alfa supera el 1.8% de comisiones
   const [rows,  setRows]  = useState([]);
   const [logs,  setLogs]  = useState([]);
   const [sel,   setSel]   = useState(null);
