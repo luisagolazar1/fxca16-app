@@ -119,7 +119,7 @@ export function extractFeatures(bars, i) {
 //    Reemplaza las constantes escritas a mano (+20 ROC, +18 BB...).
 //    Con regularización L2 para evitar sobreajuste.
 // ══════════════════════════════════════════════════════════════
-export function trainLogistic(X, y, { epochs = 300, lr = 0.08, l2 = 0.01 } = {}) {
+export function trainLogistic(X, y, { epochs = 80, lr = 0.25, l2 = 0.01 } = {}) {
   if (!X.length) return null;
   const d = X[0].length;
   let w = new Array(d).fill(0), b = 0;
@@ -214,7 +214,10 @@ export function aucRoc(probs, outcomes) {
   const neg = probs.filter((_, i) => outcomes[i] === 0);
   if (!pos.length || !neg.length) return 0.5;
   let wins = 0;
-  const step = Math.max(1, Math.floor(pos.length * neg.length / 200000)); // muestreo si es enorme
+  // Muestreo agresivo: el AUC converge rápido y comparar todos los pares
+  // es O(n²) — con 2000 positivos y 2000 negativos serían 4M comparaciones.
+  const maxPares = 40000;
+  const step = Math.max(1, Math.ceil(pos.length * neg.length / maxPares));
   let cnt = 0;
   for (let i = 0; i < pos.length; i += 1) {
     for (let j = 0; j < neg.length; j += step) {
@@ -459,7 +462,7 @@ export function featureAblation(X, y, baseAuc) {
   const out = [];
   for (let j = 0; j < d; j++) {
     const Xr = X.map(row => row.map((v, k) => k === j ? 0 : v));
-    const m = trainLogistic(Xr, y, { epochs: 150 });
+    const m = trainLogistic(Xr, y, { epochs: 50 });
     const p = Xr.map(r => predictProba(m, r));
     const auc = aucRoc(p, y);
     out.push({
@@ -479,7 +482,11 @@ export function trainTicker(daily, { pt = 2.0, sl = 1.5, maxH = 20, cost = 0.018
   if (!daily || daily.length < 150) return null;
 
   const X = [], y = [], rets = [];
-  for (let i = 60; i < daily.length - maxH; i++) {
+  // Submuestreo: con historiales largos (10 años = ~2500 barras) recorrer
+  // cada índice multiplica el costo sin aportar información nueva — las
+  // muestras contiguas están casi perfectamente correlacionadas.
+  const paso = daily.length > 900 ? 3 : 1;
+  for (let i = 60; i < daily.length - maxH; i += paso) {
     const f = extractFeatures(daily, i);
     if (!f) continue;
     const lab = tripleBarrier(daily, i, f._atr, { pt, sl, maxH, cost });
@@ -495,7 +502,7 @@ export function trainTicker(daily, { pt = 2.0, sl = 1.5, maxH = 20, cost = 0.018
   const oosP = new Array(X.length).fill(null);
   for (const fold of folds) {
     const Xtr = fold.train.map(i => X[i]), ytr = fold.train.map(i => y[i]);
-    const m = trainLogistic(Xtr, ytr, { epochs: 250 });
+    const m = trainLogistic(Xtr, ytr, { epochs: 60 });
     fold.test.forEach(i => { oosP[i] = predictProba(m, X[i]); });
   }
   const validIdx = oosP.map((p, i) => p !== null ? i : -1).filter(i => i >= 0);
@@ -508,7 +515,7 @@ export function trainTicker(daily, { pt = 2.0, sl = 1.5, maxH = 20, cost = 0.018
   const pCal = pOos.map(p => applyPlatt(cal, p));
 
   // Modelo final entrenado con todo
-  const model = trainLogistic(X, y, { epochs: 400 });
+  const model = trainLogistic(X, y, { epochs: 120 });
 
   const auc = aucRoc(pOos, yOos);
 

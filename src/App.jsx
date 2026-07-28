@@ -2923,6 +2923,7 @@ export default function App() {
   const [qlMeta,    setQlMeta]    = useState(null);
   const [qlValid,   setQlValid]   = useState(null);
   const [qlConsist, setQlConsist] = useState(null);
+  const qlCancelRef = useRef(false);   // permite abortar el proceso
   const [qlParams,  setQlParams]  = useState({ topN:5, holdDays:10, minProb:0.55, useKelly:true });
 
   const saveWatchlists = (wls) => {
@@ -3654,18 +3655,30 @@ export default function App() {
   
   // ══ QUANT LAB: entrenar modelos + backtest de cartera ══
   const runQuantLab = useCallback(async () => {
+    qlCancelRef.current = false;
     setQlRunning(true); setQlModels(null); setQlPort(null); setQlAblation(null); setQlMeta(null); setQlValid(null); setQlConsist(null);
     const yield_ = () => new Promise(r => setTimeout(r, 0));
     try {
-      const tks = rows.map(r => r.ticker);
+      // Priorizar los tickers con más historia: entrenar 158 modelos en el
+      // hilo principal congela la interfaz varios minutos. Con 70 alcanza
+      // para un backtest de cartera representativo.
+      const MAX_MODELOS = 70;
+      const tks = rows
+        .map(r => ({ tk: r.ticker, n: (serieLarga(r.ticker) || rowDataRef.current[r.ticker] || []).length }))
+        .filter(x => x.n >= 200)
+        .sort((a,b) => b.n - a.n)
+        .slice(0, MAX_MODELOS)
+        .map(x => x.tk);
+
       const universe = [];
       const modelInfo = [];
       let allX = [], allY = [];
 
       for (let i = 0; i < tks.length; i++) {
+        if (qlCancelRef.current) { setQlProgress("Cancelado"); setQlRunning(false); return; }
         const tk = tks[i];
-        setQlProgress(`Entrenando ${tk} (${i+1}/${tks.length})...`);
-        if (i % 3 === 0) await yield_();
+        setQlProgress(`Entrenando modelos · ${tk} (${i+1}/${tks.length})`);
+        await yield_();   // ceder el hilo en CADA ticker, no cada 3
         const larga = serieLarga(tk);
         const bars = larga || rowDataRef.current[tk];
         if (!bars || bars.length < 200) continue;
@@ -3713,7 +3726,9 @@ export default function App() {
       const metas = [];
       for (let i = 0; i < Math.min(universe.length, 25); i++) {
         const u = universe[i];
-        if (i % 4 === 0) { setQlProgress(`Meta-modelo ${u.ticker} (${i+1}/${Math.min(universe.length,25)})...`); await yield_(); }
+        if (qlCancelRef.current) { setQlProgress("Cancelado"); setQlRunning(false); return; }
+        setQlProgress(`Meta-modelo · ${u.ticker} (${i+1}/${Math.min(universe.length,25)})`);
+        await yield_();
         const moneda = rows.find(r=>r.ticker===u.ticker)?.moneda || "USD";
         const cost = (moneda==="ARS" ? COSTO_MERVAL : COSTO_CEDEAR)/100;
         const mm = Q2.trainMetaModel(u.daily, u.model, u.cal, { threshold: qlParams.minProb, cost });
@@ -5617,12 +5632,30 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  <button className={`btn ${qlRunning?"off":"on"}`} onClick={runQuantLab} disabled={qlRunning||!rows.length}
-                    style={{padding:"8px 20px",fontSize:"10px"}}>
-                    {qlRunning?"⏳ Procesando...":"▶ ENTRENAR Y VALIDAR"}
-                  </button>
-                  {qlProgress&&<span style={{fontSize:"8px",color:"#ffd700",marginLeft:"10px"}}>{qlProgress}</span>}
-                  {!rows.length&&<span style={{fontSize:"8px",color:"#ff3355",marginLeft:"10px"}}>Ejecutá el sistema primero</span>}
+                  <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+                    <button className={`btn ${qlRunning?"off":"on"}`} onClick={runQuantLab} disabled={qlRunning||!rows.length}
+                      style={{padding:"8px 20px",fontSize:"10px"}}>
+                      {qlRunning?"⏳ Procesando...":"▶ ENTRENAR Y VALIDAR"}
+                    </button>
+                    {qlRunning&&(
+                      <button className="btn off" onClick={()=>{qlCancelRef.current=true;}}
+                        style={{padding:"8px 16px",fontSize:"10px",color:"#ff3355",borderColor:"#ff335540"}}>
+                        ✕ CANCELAR
+                      </button>
+                    )}
+                    {!rows.length&&<span style={{fontSize:"8px",color:"#ff3355"}}>Ejecutá el sistema primero</span>}
+                  </div>
+                  {qlRunning&&(
+                    <div style={{marginTop:"8px",padding:"8px 10px",background:"#ffd70010",border:"1px solid #ffd70030",borderRadius:"4px"}}>
+                      <div style={{fontSize:"9px",color:"#ffd700",fontWeight:700,marginBottom:"3px"}}>{qlProgress||"Preparando..."}</div>
+                      <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.6}}>
+                        El cálculo corre en el mismo hilo que la interfaz, así que la app va a responder con lentitud.
+                        Podés cambiar de pestaña —tarda unos segundos en reaccionar— y el proceso sigue en segundo plano.
+                        Si preferís, cancelalo y volvé más tarde.
+                      </div>
+                    </div>
+                  )}
+                  {!qlRunning&&qlProgress&&<div style={{fontSize:"8px",color:"#ffd700",marginTop:"6px"}}>{qlProgress}</div>}
                 </div>
 
                 {/* Resultados de cartera */}
