@@ -3308,13 +3308,20 @@ export default function App() {
           if (b && b.length >= 200) porMoneda[r.moneda === "ARS" ? "ARS" : "USD"][r.ticker] = b;
         });
         const comb = {};
-        // Solo USD: el alfa se midió como no predictivo en el Merval
-        // (IC −0.006, monotonicidad invertida). Mostrarlo ahí sería
-        // presentar ruido con apariencia de señal.
-        for (const m of ["USD"]) {
-          if (Object.keys(porMoneda[m]).length < 15) continue;
-          const rk = ALPHA.rankearUniverso(porMoneda[m]);
-          if (rk) Object.assign(comb, rk.porTicker);
+        if (Object.keys(porMoneda.USD).length >= 15) {
+          const rkUSA = ALPHA.rankearUniverso(porMoneda.USD);
+          if (rkUSA) Object.assign(comb, rkUSA.porTicker);
+        }
+        // Merval: señal DISTINTA a la de USA (la de vol_shock/mom_1m medía
+        // invertida). Con iliquidez de Amihud + asimetría, filtrando a los
+        // 20 papeles más líquidos, el IC pasa a +0.236 fuera de muestra.
+        // Marcado como preliminar: 20 tickers × 50 fechas es poco para el
+        // t medido — pendiente de confirmar con más historia.
+        if (Object.keys(porMoneda.ARS).length >= 15) {
+          const rkArs = ALPHA.rankearUniversoMerval(porMoneda.ARS);
+          if (rkArs) {
+            Object.entries(rkArs.porTicker).forEach(([tk,v]) => { comb[tk] = { ...v, esMerval:true }; });
+          }
         }
         if (Object.keys(comb).length) setAlphaRank(comb);
       } catch(e) {}
@@ -4228,9 +4235,11 @@ export default function App() {
                                 {alphaRank?.[r.ticker]&&(()=>{
                                   const a=alphaRank[r.ticker];
                                   const c=a.quintil>=5?"#00ff88":a.quintil>=4?"#a0cce0":a.quintil<=1?"#ff3355":a.quintil<=2?"#ff9040":"#ffd700";
-                                  return <span title={`Ranking alfa cross-sectional: percentil ${a.percentil} del universo (Q${a.quintil})`}
-                                    style={{fontSize:"8px",marginLeft:"4px",padding:"1px 5px",background:`${c}18`,border:`1px solid ${c}45`,borderRadius:"3px",color:c,fontWeight:700}}>
-                                    α{a.percentil}
+                                  return <span title={a.esMerval
+                                      ? `PRELIMINAR (Merval, top 20 líquidos): percentil ${a.percentil} (Q${a.quintil})`
+                                      : `Ranking alfa validado: percentil ${a.percentil} del universo (Q${a.quintil})`}
+                                    style={{fontSize:"8px",marginLeft:"4px",padding:"1px 5px",background:`${c}18`,border:`1px ${a.esMerval?"dashed":"solid"} ${c}45`,borderRadius:"3px",color:c,fontWeight:700}}>
+                                    {a.esMerval?"⚗α":"α"}{a.percentil}
                                   </span>;
                                 })()}
                                 {s.synthetic&&<span title="Historial sintético — no operar" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
@@ -4825,14 +4834,19 @@ export default function App() {
                             );
                           })()}
 
-                          {sel.moneda==="ARS"&&(
+                          {sel.moneda==="ARS"&&!alphaRank?.[sel.ticker]&&(
                             <div style={{marginBottom:"12px",padding:"8px 10px",background:"#ff904010",border:"1px solid #ff904030",borderRadius:"5px"}}>
-                              <div style={{fontSize:"7px",color:"#ff9040",fontWeight:700,marginBottom:"3px"}}>α SIN RANKING ALFA EN EL MERVAL</div>
+                              <div style={{fontSize:"7px",color:"#ff9040",fontWeight:700,marginBottom:"3px"}}>α SIN RANKING PARA {sel.ticker}</div>
                               <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
-                                La señal alfa se midió sobre el panel argentino y no mostró poder predictivo
-                                (IC −0.006, quintiles invertidos). Se aplica solo al mercado USA, donde sí se validó.
-                                Para papeles locales usá el análisis técnico y la calidad fundamental, no el ranking relativo.
+                                El ranking del Merval solo cubre los 20 papeles más líquidos — con volumen tan
+                                dispar entre YPFD/GGAL y el resto del panel, incluir a todos metía más ruido que señal.
                               </div>
+                            </div>
+                          )}
+                          {sel.moneda==="ARS"&&alphaRank?.[sel.ticker]&&(
+                            <div style={{marginBottom:"12px",padding:"7px 10px",background:"#ffd70008",border:"1px solid #ffd70025",borderRadius:"5px",fontSize:"7px",color:"#ffd700",lineHeight:1.6}}>
+                              ⚗️ Señal PRELIMINAR para el Merval — distinta a la de USA (iliquidez + asimetría, no volumen/momentum).
+                              Validada sobre poca historia todavía (20 tickers × 50 fechas). Tratala con más cautela que el ranking USA.
                             </div>
                           )}
 

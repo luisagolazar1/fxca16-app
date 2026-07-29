@@ -440,7 +440,17 @@ export function señalCompuesta(datos, pesosIC) {
 // dinámica cambiaria que domina el retorno relativo entre papeles.
 export const ALPHA_AMBITO = {
   USD: { valido: true,  ic: 0.093, t: 3.51,  nota: "Validado sobre 101 tickers" },
-  ARS: { valido: false, ic: -0.006, t: -0.28, nota: "Sin poder predictivo demostrado" },
+  // ARS: la señal de USA (vol_shock - mom_1m) medía invertida (IC -0.006).
+  // La causa: el universo mezcla YPFD/GGAL (~20.000M ARS/día) con papeles
+  // que mueven <1M/día — casi 4 órdenes de magnitud. En ese rango, un
+  // "shock de volumen" puede ser una sola orden de un solo inversor, no
+  // un patrón real. Filtrando a los 20 más líquidos y cambiando de
+  // feature (iliquidez de Amihud + asimetría de retornos, en vez de
+  // volumen y momentum corto) el IC pasa a +0.236 (OOS, t=7.86).
+  // PRELIMINAR: 20 tickers x 50 fechas es poco — el t tan alto puede
+  // estar inflado por el tamaño de muestra. Confirmar con los 10 años.
+  ARS: { valido: "preliminar", ic: 0.236, t: 7.86, nUniverso: 20,
+         nota: "Señal distinta (iliquidez+asimetría) — muestra chica, confirmar con más historia" },
 };
 
 export const ALPHA_VALIDADA = {
@@ -574,5 +584,102 @@ export function rankearUniverso(dataPorTicker, { minBarras = 200 } = {}) {
     nUniverso: conAlpha.length,
     ranking: conAlpha.sort((a, b) => b.alpha - a.alpha),
     porTicker: Object.fromEntries(conAlpha.map(r => [r.ticker, r])),
+  };
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// ALFA MERVAL — señal distinta, adaptada a la iliquidez del panel
+//
+// PRELIMINAR: validado sobre 20 tickers × 50 fechas (11 meses). El IC es
+// fuerte (0.236, t=7.86 fuera de muestra) pero la muestra es chica para
+// un t tan alto — confirmar cuando estén los 10 años de historia.
+// ══════════════════════════════════════════════════════════════
+export function alphaScoreMerval(d) {
+  const iAmi  = ALPHA_FEATURES.indexOf('amihud');
+  const iSkew = ALPHA_FEATURES.indexOf('skew_ret');
+  // Signo negativo en ambos: menos iliquidez y menos asimetría errática
+  // predicen mejor retorno relativo — el patrón inverso al de USA.
+  return -d.x[iAmi] - d.x[iSkew];
+}
+
+/**
+ * Ranking alfa para el universo ARS. A diferencia de rankearUniverso (USA),
+ * filtra primero a los tickers más líquidos: con el panel completo el
+ * ruido de los papeles de bajo volumen domina el cálculo.
+ */
+export function rankearUniversoMerval(dataPorTicker, { minBarras = 200, topLiquidos = 20 } = {}) {
+  const uni = {};
+  for (const [tk, bars] of Object.entries(dataPorTicker)) {
+    if (!bars?.length) continue;
+    const by = {}, out = [];
+    for (const x of bars) {
+      const dia = x.date || x.d;
+      if (!dia) continue;
+      if (!by[dia]) { by[dia] = { date:dia, high:x.high??x.hi, low:x.low??x.lo, close:x.close??x.c, volume:0 }; out.push(by[dia]); }
+      by[dia].high = Math.max(by[dia].high, x.high??x.hi);
+      by[dia].low  = Math.min(by[dia].low,  x.low??x.lo);
+      by[dia].close = x.close ?? x.c;
+      by[dia].volume += (x.volume ?? x.v) || 0;
+    }
+    if (out.length >= minBarras) uni[tk] = out;
+  }
+  // Filtro de liquidez: pesos ARS/día promedio de los últimos 60 ruedas
+  const conLiquidez = Object.entries(uni).map(([tk, dl]) => {
+    const vd = dl.slice(-60).map(d => d.close * d.volume);
+    return { tk, pesos: vd.length ? mean(vd) : 0 };
+  }).sort((a,b) => b.pesos - a.pesos);
+
+  const tickers = conLiquidez.slice(0, topLiquidos).map(x => x.tk);
+  if (tickers.length < 15) return null;
+
+  const cnt = {};
+  tickers.forEach(tk => uni[tk].forEach(x => cnt[x.date] = (cnt[x.date]||0)+1));
+  const fechas = Object.keys(cnt).filter(f => cnt[f] >= tickers.length*0.7).sort();
+  if (fechas.length < 150) return null;
+
+  const pos = {};
+  tickers.forEach(tk => { pos[tk] = {}; uni[tk].forEach((x,i) => pos[tk][x.date] = i); });
+  const benchRets = [];
+  for (let i=1;i<fechas.length;i++) {
+    const rs = [];
+    for (const tk of tickers) {
+      const a = pos[tk][fechas[i-1]], b = pos[tk][fechas[i]];
+      if (a!=null && b!=null) { const p0=uni[tk][a].close,p1=uni[tk][b].close; if(p0&&p1) rs.push((p1-p0)/p0); }
+    }
+    benchRets.push(rs.length ? mean(rs) : 0);
+  }
+
+  const fUlt = fechas[fechas.length-1];
+  const filas = [];
+  for (const tk of tickers) {
+    const i = pos[tk][fUlt];
+    if (i==null || i<140) continue;
+    const rf = rawFeatures(uni[tk], i, benchRets);
+    if (!rf) continue;
+    filas.push({ ticker: tk, raw: rf });
+  }
+  if (filas.length < 12) return null;
+
+  const rank = (vals, v) => { const o=[...vals].sort((a,b)=>a-b); const p=o.findIndex(x=>x>=v); return (p/Math.max(1,o.length-1))*2-1; };
+  const amiVals = filas.map(r=>r.raw.amihud).filter(isFinite);
+  const skewVals = filas.map(r=>r.raw.skew_ret).filter(isFinite);
+
+  const conAlpha = filas.map(r => {
+    const ami = rank(amiVals, r.raw.amihud);
+    const skew = rank(skewVals, r.raw.skew_ret);
+    return { ticker: r.ticker, alpha: -ami-skew, amihud:ami, skew_ret:skew, raw:r.raw };
+  });
+  const alphas = conAlpha.map(r=>r.alpha).sort((a,b)=>a-b);
+  conAlpha.forEach(r => {
+    const p = alphas.findIndex(x=>x>=r.alpha);
+    r.percentil = Math.round(p/Math.max(1,alphas.length-1)*100);
+    r.quintil = Math.min(5, Math.floor(r.percentil/20)+1);
+  });
+
+  return {
+    fecha: fUlt, nUniverso: conAlpha.length, universoTotal: Object.keys(uni).length,
+    ranking: conAlpha.sort((a,b)=>b.alpha-a.alpha),
+    porTicker: Object.fromEntries(conAlpha.map(r=>[r.ticker,r])),
   };
 }
