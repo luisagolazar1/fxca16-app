@@ -2911,6 +2911,64 @@ export default function App() {
   const [alphaRank, setAlphaRank] = useState(null);   // ranking cross-sectional
   const [ordenPor,  setOrdenPor]  = useState("conviccion"); // "conviccion" | "alpha"
   const [filtroCalidad, setFiltroCalidad] = useState("off");  // "off" | "sinFragiles" | "soloSolidas"
+
+  // ══ TRACKER — registro de seguimiento con ancla de precio/fecha ══
+  // A diferencia de la watchlist (lista de interés), acá cada marca queda
+  // fijada al precio y momento exacto en que se marcó, para medir después
+  // si el sistema acertó. Es evidencia hacia adelante: nada de lo que se
+  // registre acá pudo estar contaminado por resultados ya conocidos.
+  const [tracker, setTracker] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('fxca16_tracker') || '[]'); }
+    catch { return []; }
+  });
+  const guardarTracker = useCallback((items) => {
+    setTracker(items);
+    try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+  }, []);
+  const marcarSeguimiento = useCallback((r) => {
+    if (!r?.ticker || !r?.sig) return;
+    setTracker(prev => {
+      if (prev.some(t => t.ticker === r.ticker && !t.cerrado)) return prev;  // ya en seguimiento
+      const nuevo = {
+        id: `${r.ticker}_${Date.now()}`,
+        ticker: r.ticker,
+        nombre: r.name,
+        moneda: r.moneda,
+        fechaMarca: new Date().toISOString(),
+        precioMarca: r.price,
+        // Se congela TODO lo que el sistema decía en ese momento — es la
+        // predicción que se está poniendo a prueba, no se puede editar después.
+        señalMarca: r.sig.sig,
+        scoreMarca: r.sig.final_sc,
+        confMarca: r.sig.conf,
+        rrMarca: r.sig.rr,
+        alphaMarca: alphaRank?.[r.ticker]?.percentil ?? null,
+        calidadMarca: calidadDe(r.ticker)?.calidad ?? null,
+        entryMarca: r.sig.entry, slMarca: r.sig.sl, tp2Marca: r.sig.tp2,
+        wMarca: W,
+        cerrado: false,
+      };
+      const items = [nuevo, ...prev];
+      try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+      return items;
+    });
+  }, [alphaRank, W]);
+  const cerrarSeguimiento = useCallback((id, precioActual) => {
+    setTracker(prev => {
+      const items = prev.map(t => t.id===id ? {
+        ...t, cerrado:true, fechaCierre:new Date().toISOString(), precioCierre:precioActual
+      } : t);
+      try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+      return items;
+    });
+  }, []);
+  const quitarSeguimiento = useCallback((id) => {
+    setTracker(prev => {
+      const items = prev.filter(t => t.id !== id);
+      try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+      return items;
+    });
+  }, []);
   const [selectividad, setSelectividad] = useState(18);  // convicción mínima |score-50|
   const selectividadRef = useRef(18);
   useEffect(()=>{ selectividadRef.current = selectividad; }, [selectividad]);
@@ -4047,7 +4105,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["cmp","⚖️ Comparar"],["watch","⭐ Seguimiento"],["quant","🔬 Validación"]].map(([k,l])=>
+              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["quant","🔬 Validación"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
@@ -4405,6 +4463,15 @@ export default function App() {
                             </div>
                           )}
                         </div>
+
+                        <button className="btn off"
+                          onClick={(e)=>{e.stopPropagation();marcarSeguimiento(r);}}
+                          disabled={tracker.some(t=>t.ticker===r.ticker && !t.cerrado)}
+                          style={{marginTop:"8px",width:"100%",fontSize:"8px",padding:"5px",
+                            color: tracker.some(t=>t.ticker===r.ticker && !t.cerrado) ? "#4a7a9b" : "#ffd700",
+                            borderColor: tracker.some(t=>t.ticker===r.ticker && !t.cerrado) ? "#1e3a50" : "#ffd70040"}}>
+                          {tracker.some(t=>t.ticker===r.ticker && !t.cerrado) ? "📌 Ya en seguimiento" : "📌 Marcar y seguir"}
+                        </button>
                       </div>
                     );
                   })}
@@ -5173,6 +5240,172 @@ export default function App() {
             )}
 
             {/* ══ TAB: SEGUIMIENTO ══ */}
+            {/* ══ TAB: TRACKER — seguimiento con evidencia hacia adelante ══ */}
+            {tab==="track"&&(()=>{
+              const activos  = tracker.filter(t=>!t.cerrado);
+              const cerrados = tracker.filter(t=>t.cerrado);
+
+              // Precio actual: primero rowDataRef (histórico vivo), luego rows (última corrida)
+              const precioActual = (tk) => {
+                const b = rowDataRef.current[tk];
+                if (b?.length) return b[b.length-1].close;
+                return rows.find(r=>r.ticker===tk)?.price ?? null;
+              };
+
+              const calcResultado = (t) => {
+                const px = t.cerrado ? t.precioCierre : precioActual(t.ticker);
+                if (px == null || !t.precioMarca) return null;
+                const ret = (px - t.precioMarca) / t.precioMarca * 100;
+                const dirEsperada = t.señalMarca?.includes("COMPRA") ? 1 : t.señalMarca?.includes("VENTA") ? -1 : 0;
+                const acierto = dirEsperada !== 0 ? (ret * dirEsperada > 0) : null;
+                const dias = Math.max(0, Math.round((new Date(t.cerrado?t.fechaCierre:new Date()) - new Date(t.fechaMarca)) / 86400000));
+                return { px, ret, acierto, dias };
+              };
+
+              // Estadística agregada — la evidencia real del sistema
+              const conResultado = tracker.map(t=>({...t, r:calcResultado(t)})).filter(t=>t.r);
+              const nTotal = conResultado.length;
+              const aciertos = conResultado.filter(t=>t.r.acierto===true).length;
+              const fallos   = conResultado.filter(t=>t.r.acierto===false).length;
+              const conVeredicto = aciertos+fallos;
+              const winRate = conVeredicto ? Math.round(aciertos/conVeredicto*100) : null;
+              const retProm = nTotal ? (conResultado.reduce((a,t)=>a+t.r.ret,0)/nTotal) : null;
+
+              const TrackCard = ({t}) => {
+                const r = calcResultado(t);
+                if (!r) return null;
+                const dirAlcista = t.señalMarca?.includes("COMPRA");
+                const color = r.acierto===true ? "#00ff88" : r.acierto===false ? "#ff3355" : "#ffd700";
+                return (
+                  <div className="card" style={{padding:"12px",marginBottom:"8px",borderLeft:`3px solid ${color}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"7px"}}>
+                      <div>
+                        <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                          <span style={{fontFamily:"'Bebas Neue'",fontSize:"20px",color:"#e8f4ff"}}>{t.ticker}</span>
+                          <span className="badge" style={{background:SC[t.señalMarca]+"20",color:SC[t.señalMarca],border:`1px solid ${SC[t.señalMarca]}40`,fontSize:"7px"}}>{t.señalMarca}</span>
+                          {t.cerrado&&<span style={{fontSize:"7px",padding:"1px 6px",background:"#4a7a9b20",borderRadius:"3px",color:"#a0cce0"}}>CERRADO</span>}
+                        </div>
+                        <div style={{fontSize:"7px",color:"#5a8fa8",marginTop:"2px"}}>
+                          Marcado {new Date(t.fechaMarca).toLocaleDateString('es-AR')} · {r.dias}d atrás · W{t.wMarca}D
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color}}>{r.ret>=0?"+":""}{r.ret.toFixed(2)}%</div>
+                        {r.acierto!=null&&<div style={{fontSize:"7px",color,fontWeight:700}}>{r.acierto?"✓ acertó dirección":"✗ falló dirección"}</div>}
+                      </div>
+                    </div>
+
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"7px"}}>
+                      {[
+                        {l:"PRECIO MARCA", v:FP(t.precioMarca,t.moneda)},
+                        {l:t.cerrado?"PRECIO CIERRE":"PRECIO HOY", v:FP(r.px,t.moneda)},
+                        {l:"SCORE / CONF", v:`${t.scoreMarca} / ${t.confMarca}%`},
+                      ].map(x=>(
+                        <div key={x.l} style={{textAlign:"center",padding:"4px",background:"#050c15",borderRadius:"3px"}}>
+                          <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                          <div style={{fontSize:"11px",fontFamily:"'Bebas Neue'",color:"#e8f4ff"}}>{x.v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {(t.alphaMarca!=null || t.calidadMarca!=null) && (
+                      <div style={{display:"flex",gap:"8px",marginBottom:"7px",fontSize:"7px",color:"#a0cce0"}}>
+                        {t.alphaMarca!=null && <span>α percentil {t.alphaMarca}</span>}
+                        {t.calidadMarca!=null && <span>· Calidad {t.calidadMarca}/100</span>}
+                        {t.rrMarca!=null && <span>· R/R {t.rrMarca}x</span>}
+                      </div>
+                    )}
+
+                    {/* Barra visual: qué tanto se movió respecto a lo esperado */}
+                    <div style={{marginBottom:"7px"}}>
+                      <div style={{height:"6px",background:"#0c1826",borderRadius:"3px",position:"relative",overflow:"hidden"}}>
+                        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:"1px",background:"#1e3a50"}}/>
+                        <div style={{position:"absolute",top:0,bottom:0,borderRadius:"3px",
+                          left: r.ret>=0 ? "50%" : `${50-Math.min(48,Math.abs(r.ret)*4)}%`,
+                          width:`${Math.min(48,Math.abs(r.ret)*4)}%`,
+                          background: r.ret>=0?"#00ff88":"#ff3355", opacity:.85}}/>
+                      </div>
+                    </div>
+
+                    {!t.cerrado ? (
+                      <div style={{display:"flex",gap:"6px"}}>
+                        <button className="btn off" onClick={()=>{setSel(rows.find(x=>x.ticker===t.ticker)||{ticker:t.ticker,moneda:t.moneda,name:t.nombre});setTab("det");}}
+                          style={{flex:1,fontSize:"8px",padding:"5px"}}>🔍 Ver detalle actual</button>
+                        <button className="btn off" onClick={()=>cerrarSeguimiento(t.id, r.px)}
+                          style={{flex:1,fontSize:"8px",padding:"5px",color:"#a0cce0"}}>✓ Cerrar seguimiento</button>
+                        <button className="btn off" onClick={()=>quitarSeguimiento(t.id)}
+                          style={{fontSize:"8px",padding:"5px 8px",color:"#ff3355"}}>✕</button>
+                      </div>
+                    ) : (
+                      <button className="btn off" onClick={()=>quitarSeguimiento(t.id)}
+                        style={{width:"100%",fontSize:"8px",padding:"5px",color:"#ff3355"}}>✕ Eliminar registro</button>
+                    )}
+                  </div>
+                );
+              };
+
+              return (
+                <div className="fade">
+                  <div style={{padding:"9px 12px",background:"#07101a",border:"1px solid #1e3a50",borderRadius:"6px",marginBottom:"12px"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>📌 TRACKER — EVIDENCIA HACIA ADELANTE</div>
+                    <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                      Cada marca congela la predicción del sistema en ese momento exacto: precio, señal, score, α, calidad.
+                      Nada de esto se puede editar después. Es la única evidencia que ninguna validación con datos
+                      históricos puede reemplazar — porque todavía no existía cuando la marcaste.
+                    </div>
+                  </div>
+
+                  {/* Estadística agregada */}
+                  {nTotal>0&&(
+                    <div className="card" style={{padding:"12px",marginBottom:"12px"}}>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".1em",marginBottom:"8px"}}>RESULTADO ACUMULADO</div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px"}}>
+                        {[
+                          {l:"REGISTROS", v:nTotal, c:"#e8f4ff"},
+                          {l:"WIN RATE",  v:winRate!=null?`${winRate}%`:"—", c:winRate>=55?"#00ff88":winRate!=null&&winRate<45?"#ff3355":"#ffd700"},
+                          {l:"RET. PROMEDIO", v:retProm!=null?`${retProm>=0?"+":""}${retProm.toFixed(2)}%`:"—", c:retProm>0?"#00ff88":"#ff3355"},
+                          {l:"ACTIVOS", v:activos.length, c:"#a0cce0"},
+                        ].map(x=>(
+                          <div key={x.l} style={{textAlign:"center",padding:"6px 3px",background:"#050c15",borderRadius:"4px"}}>
+                            <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:"17px",color:x.c}}>{x.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {nTotal<20 && (
+                        <div style={{marginTop:"8px",padding:"6px 8px",background:"#ffd70010",borderRadius:"3px",fontSize:"7px",color:"#ffd700",lineHeight:1.6}}>
+                          Con {nTotal} registro{nTotal!==1?"s":""} la muestra todavía es chica para sacar conclusiones.
+                          A partir de ~30-40 empieza a ser representativa.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activos.length>0 && (
+                    <>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".1em",marginBottom:"6px"}}>EN SEGUIMIENTO ({activos.length})</div>
+                      {activos.map(t=><TrackCard key={t.id} t={t}/>)}
+                    </>
+                  )}
+
+                  {cerrados.length>0 && (
+                    <>
+                      <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".1em",margin:"14px 0 6px"}}>CERRADOS ({cerrados.length})</div>
+                      {cerrados.map(t=><TrackCard key={t.id} t={t}/>)}
+                    </>
+                  )}
+
+                  {tracker.length===0 && (
+                    <div style={{textAlign:"center",padding:"40px",color:"#4a7a9b"}}>
+                      <div style={{fontSize:"32px",marginBottom:"8px"}}>📌</div>
+                      <div style={{fontSize:"11px",marginBottom:"4px"}}>Todavía no marcaste ninguna acción</div>
+                      <div style={{fontSize:"9px"}}>Andá a Oportunidades y usá "📌 Marcar y seguir" en cualquier card</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {tab==="watch"&&(
               <div className="fade">
                 {/* Barra de listas */}
