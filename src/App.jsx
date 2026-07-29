@@ -3718,12 +3718,14 @@ export default function App() {
   const runQuantLab = useCallback(async () => {
     qlCancelRef.current = false;
     setQlRunning(true); setQlModels(null); setQlPort(null); setQlAblation(null); setQlMeta(null); setQlValid(null); setQlConsist(null);
-    const yield_ = () => new Promise(r => setTimeout(r, 0));
+    const yield_ = () => new Promise(r => {
+      requestAnimationFrame(() => setTimeout(r, 0));
+    });
     try {
       // Priorizar los tickers con más historia: entrenar 158 modelos en el
       // hilo principal congela la interfaz varios minutos. Con 70 alcanza
       // para un backtest de cartera representativo.
-      const MAX_MODELOS = 70;
+      const MAX_MODELOS = 45;
       const tks = rows
         .map(r => ({ tk: r.ticker, n: (serieLarga(r.ticker) || rowDataRef.current[r.ticker] || []).length }))
         .filter(x => x.n >= 200)
@@ -3766,7 +3768,7 @@ export default function App() {
       const pooled = Q.trainLogistic(allX, allY, { epochs: 250 });
       const pooledP = allX.map(r => Q.predictProba(pooled, r));
       const baseAuc = Q.aucRoc(pooledP, allY);
-      const abl = Q.featureAblation(allX.slice(0,1500), allY.slice(0,1500), baseAuc);
+      const abl = Q.featureAblation(allX.slice(0,800), allY.slice(0,800), baseAuc);
       setQlAblation({ baseAuc, items: abl });
 
       // Backtest de cartera
@@ -3807,7 +3809,7 @@ export default function App() {
       }
 
       // ── VALIDACIÓN ESTADÍSTICA DEL BACKTEST ──
-      setQlProgress("Validando robustez (DSR, PBO, bootstrap)...");
+      setQlProgress("Calculando Deflated Sharpe y bootstrap...");
       await yield_();
       const validacion = {};
       if (pb?.equity?.length > 30) {
@@ -3837,8 +3839,10 @@ export default function App() {
           }
           if (ok && row.length>=2) mtx.push(row);
         }
+        await yield_();   // PBO recorre C(8,4)=70 combinaciones × ~300 fechas — cede el hilo antes
         if (mtx.length > 40) validacion.pbo = Q2.computePBO(mtx, 8);
 
+        await yield_();
         // Régimen: usar el primer activo como benchmark aproximado
         const bench = universe.find(u=>u.ticker==="SPY") || universe.find(u=>u.ticker==="GGAL") || universe[0];
         if (bench && pb.trades?.length) {
@@ -3854,15 +3858,49 @@ export default function App() {
 
       // ── TEST DE CONSISTENCIA TEMPORAL ──
       // Responde: ¿el edge se repite mes a mes, o vino de un solo período?
+      // FIX: antes se llamaba a Q2.generarObservaciones para 40 tickers de
+      // una sola vez — un bloque síncrono de cientos de recálculos de señal
+      // sin ceder el hilo, que colgaba la pestaña varios segundos (más en
+      // desktop, donde hay más datos cargados). Ahora se itera acá mismo,
+      // cediendo el control después de cada ticker.
       setQlProgress("Midiendo consistencia mes a mes...");
       await yield_();
       try {
-        const dataPorTicker = {};
-        rows.slice(0, 40).forEach(r => {
-          const b = rowDataRef.current[r.ticker];
-          if (b && b.length >= 400) dataPorTicker[r.ticker] = b;
-        });
-        const observ = Q2.generarObservaciones(dataPorTicker, combinedSignal, { W, hold: W, paso: 6, maxTickers: 40 });
+        const tickersConsist = rows
+          .filter(r => (rowDataRef.current[r.ticker]?.length || 0) >= 400)
+          .slice(0, 25)
+          .map(r => r.ticker);
+
+        const observ = [];
+        for (let i = 0; i < tickersConsist.length; i++) {
+          if (qlCancelRef.current) { setQlProgress("Cancelado"); setQlRunning(false); return; }
+          const tk = tickersConsist[i];
+          setQlProgress(`Consistencia temporal · ${tk} (${i+1}/${tickersConsist.length})`);
+          await yield_();
+          const data = rowDataRef.current[tk];
+          const daily = [];
+          const byDay = {};
+          data.forEach(d => {
+            const day = d.date || d.d || "";
+            if (!day) return;
+            if (!byDay[day]) { byDay[day] = { date: day, close: d.close }; daily.push(byDay[day]); }
+            byDay[day].close = d.close;
+          });
+          if (daily.length < 120) continue;
+          const dp = {}; daily.forEach((x,j) => dp[x.date] = j);
+
+          for (let bi = 300; bi < data.length - 1; bi += 8) {
+            let sig = null;
+            try { sig = combinedSignal(data.slice(0, bi + 1), W); } catch(e) { continue; }
+            if (!sig) continue;
+            const di = dp[data[bi].date];
+            if (di === undefined || di + W >= daily.length) continue;
+            const e0 = daily[di].close, e1 = daily[di + W].close;
+            if (!e0 || !e1) continue;
+            observ.push({ ticker: tk, fecha: data[bi].date, sc: sig.final_sc, fwd: (e1-e0)/e0*100 });
+          }
+        }
+
         if (observ.length > 300) {
           const umbral = 50 + selectividadRef.current;
           const cons = Q2.consistenciaTemporal(observ, o => o.sc >= umbral);

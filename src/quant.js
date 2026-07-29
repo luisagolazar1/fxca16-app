@@ -323,12 +323,18 @@ export function portfolioBacktest(universe, {
   useKelly = true,
   capital0 = 1000000,
   maxWeight = 0.25,  // límite por posición
+  maxDates = 750,    // FIX: acota el trabajo — con historial de 10 años
+                      // (~2500 días) simular todo entero es el bloque
+                      // síncrono que más congelaba la interfaz. ~750 días
+                      // (~3 años) alcanza para medir Sharpe/MaxDD con
+                      // solidez sin bloquear el hilo por minutos.
 } = {}) {
   // universe: [{ ticker, daily:[{date,open,high,low,close,volume}], model, cal }]
   const dateSet = new Set();
   universe.forEach(u => u.daily.forEach(d => dateSet.add(d.date)));
-  const dates = [...dateSet].sort();
+  let dates = [...dateSet].sort();
   if (dates.length < 80) return null;
+  if (dates.length > maxDates) dates = dates.slice(-maxDates);
 
   const idxByTicker = {};
   universe.forEach(u => {
