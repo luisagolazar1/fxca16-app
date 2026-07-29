@@ -2943,6 +2943,7 @@ export default function App() {
         confMarca: r.sig.conf,
         rrMarca: r.sig.rr,
         alphaMarca: alphaRank?.[r.ticker]?.percentil ?? null,
+        alphaPreliminar: alphaRank?.[r.ticker]?.esMerval ?? false,
         calidadMarca: calidadDe(r.ticker)?.calidad ?? null,
         entryMarca: r.sig.entry, slMarca: r.sig.sl, tp2Marca: r.sig.tp2,
         wMarca: W,
@@ -5362,7 +5363,7 @@ export default function App() {
 
                     {(t.alphaMarca!=null || t.calidadMarca!=null) && (
                       <div style={{display:"flex",gap:"8px",marginBottom:"7px",fontSize:"7px",color:"#a0cce0"}}>
-                        {t.alphaMarca!=null && <span>α percentil {t.alphaMarca}</span>}
+                        {t.alphaMarca!=null && <span>{t.alphaPreliminar?"⚗":""}α percentil {t.alphaMarca}{t.alphaPreliminar?" (preliminar)":""}</span>}
                         {t.calidadMarca!=null && <span>· Calidad {t.calidadMarca}/100</span>}
                         {t.rrMarca!=null && <span>· R/R {t.rrMarca}x</span>}
                       </div>
@@ -5430,6 +5431,42 @@ export default function App() {
                           A partir de ~30-40 empieza a ser representativa.
                         </div>
                       )}
+                      {(()=>{
+                        // Separar el desempeño de α validado (USA) vs α preliminar (Merval),
+                        // para poder confirmar si el Merval termina sosteniéndose o no.
+                        const conAlpha = conResultado.filter(t=>t.alphaMarca!=null);
+                        const usa = conAlpha.filter(t=>!t.alphaPreliminar);
+                        const merval = conAlpha.filter(t=>t.alphaPreliminar);
+                        if (!usa.length && !merval.length) return null;
+                        const resumen = (arr) => {
+                          if (!arr.length) return null;
+                          const ret = arr.reduce((a,t)=>a+t.r.ret,0)/arr.length;
+                          const con = arr.filter(t=>t.r.acierto!=null);
+                          const wr = con.length ? Math.round(con.filter(t=>t.r.acierto).length/con.length*100) : null;
+                          return { n:arr.length, ret, wr };
+                        };
+                        const rU = resumen(usa), rM = resumen(merval);
+                        return (
+                          <div style={{marginTop:"8px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
+                            <div style={{padding:"7px 8px",background:"#00ff8808",border:"1px solid #00ff8825",borderRadius:"4px"}}>
+                              <div style={{fontSize:"6px",color:"#4a7a9b"}}>α USA — VALIDADO</div>
+                              {rU ? (
+                                <div style={{fontSize:"9px",color:"#00ff88"}}>
+                                  n={rU.n} · {rU.wr!=null?`${rU.wr}% acierto`:"—"} · {rU.ret>=0?"+":""}{rU.ret.toFixed(2)}%
+                                </div>
+                              ) : <div style={{fontSize:"8px",color:"#4a7a9b"}}>sin registros aún</div>}
+                            </div>
+                            <div style={{padding:"7px 8px",background:"#ffd70008",border:"1px dashed #ffd70030",borderRadius:"4px"}}>
+                              <div style={{fontSize:"6px",color:"#4a7a9b"}}>⚗ MERVAL — PRELIMINAR</div>
+                              {rM ? (
+                                <div style={{fontSize:"9px",color:"#ffd700"}}>
+                                  n={rM.n} · {rM.wr!=null?`${rM.wr}% acierto`:"—"} · {rM.ret>=0?"+":""}{rM.ret.toFixed(2)}%
+                                </div>
+                              ) : <div style={{fontSize:"8px",color:"#4a7a9b"}}>sin registros aún</div>}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
