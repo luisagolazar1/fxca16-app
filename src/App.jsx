@@ -1881,6 +1881,57 @@ function nivelCalidad(c) {
   return                { txt:"FRÁGIL",  color:"#ff3355" };
 }
 
+// Estado del calendario de balances para un ticker.
+//
+// Devuelve SIEMPRE un estado explícito. Que no aparezca un aviso no debe
+// poder confundirse con "no reporta pronto": mientras el calendario real
+// esté incompleto, la ausencia de dato tiene que decirse, no callarse.
+function estadoEarnings(ticker) {
+  const tk  = (ticker || "").replace(".BA", "");
+  const hoy = new Date();
+  const dias = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);
+
+  const real = (typeof DATA_MOD !== "undefined" && DATA_MOD?.FXCA16_EARNINGS)
+    ? DATA_MOD.FXCA16_EARNINGS[tk] : null;
+
+  if (real && (real.prox || real.ultimo)) {
+    return {
+      estado: "real", tk,
+      prox: real.prox || null,
+      ultimo: real.ultimo || null,
+      diasProx:   real.prox   ? dias(real.prox, hoy)   : null,
+      diasUltimo: real.ultimo ? dias(hoy, real.ultimo) : null,
+      todas: real.todas || [],
+    };
+  }
+
+  // Respaldo aproximado mientras el calendario real no esté descargado.
+  // OJO: son fechas típicas hardcodeadas, no confirmadas, y se sabe que
+  // algunas están desfasadas (ej. MSFT figuraba 7/23 y reportó 7/29).
+  // Se marcan como aproximadas y nunca deben tratarse como dato firme.
+  const fallback = {
+    "AAPL":[7,31],"MSFT":[7,23],"GOOGL":[7,22],"AMZN":[8,1],"META":[7,23],
+    "NVDA":[8,20],"TSLA":[7,21],"JPM":[7,10],"KO":[7,28],"PEP":[7,23],
+    "GGAL":[8,14],"YPFD":[8,7],"PAMP":[8,12],
+  };
+  if (fallback[tk]) {
+    const [m, d] = fallback[tk];
+    // Los balances son trimestrales: si la fecha base ya pasó, se avanza
+    // por trimestres hasta caer en el futuro. Nunca devolver una fecha
+    // pasada como "próxima" — sería un aviso falso.
+    let f = new Date(hoy.getFullYear(), m - 1, d);
+    let guard = 0;
+    while (dias(f, hoy) < 0 && guard++ < 8) f.setMonth(f.getMonth() + 3);
+    return {
+      estado: "aproximado", tk,
+      prox: f.toISOString().slice(0, 10),
+      diasProx: dias(f, hoy), ultimo: null, diasUltimo: null, todas: [],
+    };
+  }
+
+  return { estado: "sin_dato", tk };
+}
+
 function getUpcomingEvents(ticker, moneda) {
   const hoy = new Date();
   const iso = d => d.toISOString().slice(0,10);
@@ -4782,6 +4833,75 @@ export default function App() {
                               📌 {accion}
                             </div>
                           </div>
+
+                          {/* ── CALENDARIO DE BALANCE ── */}
+                          {(()=>{
+                            const e = estadoEarnings(sel.ticker);
+                            const fmtF = f => { try { const [y,m,d]=f.split("-"); return `${d}/${m}/${y}`; } catch(_) { return f; } };
+
+                            if (e.estado === "sin_dato") return (
+                              <div style={{marginBottom:"12px",padding:"9px 10px",background:"#0c182640",border:"1px dashed #1e3a50",borderRadius:"6px"}}>
+                                <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em",marginBottom:"3px"}}>📅 CALENDARIO DE BALANCE</div>
+                                <div style={{fontSize:"8px",color:"#ffd700",lineHeight:1.7}}>
+                                  Sin dato de calendario para {e.tk}. <strong>Esto no significa que no reporte pronto</strong> —
+                                  significa que el sistema no tiene la fecha. Verificala en el sitio de la empresa o en tu bróker
+                                  antes de tomar posición: un balance a pocos días puede mover el precio mucho más que la señal técnica.
+                                </div>
+                              </div>
+                            );
+
+                            const prox = e.diasProx;
+                            const inminente = prox != null && prox >= 0 && prox <= 7;
+                            const cerca     = prox != null && prox > 7 && prox <= 21;
+                            const recien    = e.diasUltimo != null && e.diasUltimo >= 0 && e.diasUltimo <= 5;
+                            const c = inminente ? "#ff3355" : recien ? "#00d4ff" : cerca ? "#ffd700" : "#00ff88";
+
+                            return (
+                              <div style={{marginBottom:"12px",padding:"10px",background:`${c}0d`,border:`1px solid ${c}35`,borderRadius:"6px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+                                  <div>
+                                    <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em"}}>📅 CALENDARIO DE BALANCE</div>
+                                    <div style={{fontSize:"7px",color:"#5a8fa8"}}>
+                                      {e.estado==="aproximado" ? "⚠ fecha aproximada — sin confirmar" : "fecha del calendario oficial"}
+                                    </div>
+                                  </div>
+                                  <div style={{textAlign:"right"}}>
+                                    {prox!=null ? (<>
+                                      <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:c,lineHeight:1}}>
+                                        {prox<=0 ? "HOY" : `${prox}d`}
+                                      </div>
+                                      <div style={{fontSize:"7px",color:c}}>{fmtF(e.prox)}</div>
+                                    </>) : (
+                                      <div style={{fontSize:"8px",color:"#5a8fa8"}}>sin próxima fecha</div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {(e.ultimo||prox!=null)&&(
+                                  <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"5px",marginBottom:"6px"}}>
+                                    <div style={{padding:"5px 7px",background:"#050c15",borderRadius:"3px",textAlign:"center"}}>
+                                      <div style={{fontSize:"6px",color:"#4a7a9b"}}>Próximo</div>
+                                      <div style={{fontSize:"11px",fontFamily:"'Bebas Neue'",color:prox!=null?c:"#4a7a9b"}}>{prox!=null?fmtF(e.prox):"—"}</div>
+                                    </div>
+                                    <div style={{padding:"5px 7px",background:"#050c15",borderRadius:"3px",textAlign:"center"}}>
+                                      <div style={{fontSize:"6px",color:"#4a7a9b"}}>Último reportado</div>
+                                      <div style={{fontSize:"11px",fontFamily:"'Bebas Neue'",color:e.ultimo?"#a0cce0":"#4a7a9b"}}>{e.ultimo?fmtF(e.ultimo):"—"}</div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                                  {inminente
+                                    ? "Reporta en días. La volatilidad alrededor del balance no la captura ningún indicador técnico: un gap por sorpresa puede saltarse tu stop. Considerá esperar al reporte o reducir el tamaño."
+                                    : recien
+                                    ? "Reportó hace pocos días. El movimiento reciente del precio probablemente responde a la noticia, no al patrón técnico — cuidado con leerlo como señal."
+                                    : cerca
+                                    ? "Reporta dentro del mes. Si tu horizonte de tenencia cruza esa fecha, el trade queda expuesto al evento."
+                                    : "Sin balance cercano. La señal técnica no está compitiendo con un catalizador de calendario."}
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* ── ALFA CROSS-SECTIONAL ── */}
                           {alphaRank?.[sel.ticker]&&(()=>{
