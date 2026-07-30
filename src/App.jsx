@@ -909,6 +909,26 @@ const COSTO_CEDEAR = 1.8;  // % ida+vuelta CEDEARs (incluye spread)
 // NIVELES ESTRUCTURALES — soportes/resistencias reales del precio
 // Usados para calcular un R/R genuino (no un múltiplo fijo de ATR)
 // ══════════════════════════════════════════════════════════════
+// ── SEMÁFORO VISUAL — recuadro pintado (no solo texto) ──
+// Se usa en todos los paneles de indicadores técnicos y de validación:
+// da fondo teñido + borde del mismo color, para que el estado se lea
+// de un vistazo sin tener que leer el número.
+function semBox(color, alpha = "1f") {
+  return {
+    background: `${color}${alpha}`,
+    border: `1px solid ${color}70`,
+    borderRadius: "4px",
+  };
+}
+// Clasifica un valor en verde/amarillo/rojo dados los cortes [malo, bueno].
+// higherIsBetter=false invierte el sentido (ej. drawdown, PBO: menos es mejor).
+function semaforo(valor, corteRojo, corteVerde, higherIsBetter = true) {
+  if (valor == null || Number.isNaN(valor)) return "#4a7a9b"; // gris: sin dato
+  const enRango = higherIsBetter ? valor >= corteVerde : valor <= corteVerde;
+  const enMalo  = higherIsBetter ? valor <  corteRojo  : valor >  corteRojo;
+  return enRango ? "#00ff88" : enMalo ? "#ff3355" : "#ffd700";
+}
+
 function findStructuralLevels(data, px, lookbackBars = 200) {
   if (!data || data.length < 30) return { resistances: [], supports: [] };
   const slice = data.slice(-Math.min(data.length, lookbackBars));
@@ -4688,8 +4708,8 @@ export default function App() {
                       </div>
                       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px"}}>
                         {[{l:"FXCA16 SCORE",v:`${s.ca15_score}/3`,c:s.ca15_score===3?"#00ff9d":s.ca15_score===2?"#ffd700":"#ff9040"},{l:"EVO PROB",v:s.evo_prob,c:s.evo_prob>=0.65?"#00ff9d":s.evo_prob>=0.5?"#ffd700":"#ff9040"},{l:"VOL 24H",v:`${s.vol_24h}x`,c:s.vol_24h>=1.5?"#00ff9d":s.vol_24h>=1?"#ffd700":"#ff9040"},{l:"PCT 6H",v:`${s.pct6h>=0?"+":""}${(s.pct6h*100).toFixed(2)}%`,c:s.pct6h>0?"#00ff9d":"#ff3355"}].map(x=>
-                          <div key={x.l} style={{textAlign:"center",padding:"7px",background:"#050c15",borderRadius:"3px"}}>
-                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>{x.l}</div>
+                          <div key={x.l} style={{textAlign:"center",padding:"7px",...semBox(x.c)}}>
+                            <div style={{fontSize:"7px",color:"#8fb4cc",marginBottom:"2px"}}>{x.l}</div>
                             <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
                           </div>
                         )}
@@ -4711,8 +4731,8 @@ export default function App() {
                         })}
                         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"4px",marginTop:"8px"}}>
                           {[{l:"R/R",v:`${s.rr}x`,c:s.rr>=2?"#00ff9d":"#ffd700"},{l:"ATR",v:`$${s.atr}`,c:"#a0cce0"},{l:"CONF",v:`${s.conf}%`,c:SC[s.sig]}].map(x=>
-                            <div key={x.l} style={{textAlign:"center",padding:"5px",background:"#050c15",borderRadius:"3px"}}>
-                              <div style={{fontSize:"7px",color:"#4a7a9b"}}>{x.l}</div>
+                            <div key={x.l} style={{textAlign:"center",padding:"5px",...semBox(x.c)}}>
+                              <div style={{fontSize:"7px",color:"#8fb4cc"}}>{x.l}</div>
                               <div style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:x.c}}>{x.v}</div>
                             </div>
                           )}
@@ -4735,18 +4755,28 @@ export default function App() {
                           {l:"BB Sup.", v:`$${s.boll?.u?.toFixed(0)??"─"}`,c:"#3b82f6"},
                           {l:"BB Inf.", v:`$${s.boll?.l?.toFixed(0)??"─"}`,c:"#3b82f6"},
                         ].map(x=>
-                          <div key={x.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #091520",fontSize:"9px"}}>
-                            <span style={{color:"#5a8fa8"}}>{x.l}</span>
-                            <span style={{color:x.c,fontWeight:600}}>{x.v}</span>
+                          <div key={x.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 7px",marginBottom:"3px",fontSize:"9px",...semBox(x.c,"14")}}>
+                            <span style={{color:"#8fb4cc"}}>{x.l}</span>
+                            <span style={{color:x.c,fontWeight:700}}>{x.v}</span>
                           </div>
                         )}
                       </div>
                     </div>}
 
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(85px,1fr))",gap:"5px",marginBottom:"9px"}}>
-                      {[{l:"TRADES",v:sel.bt.n,c:"#b0d4e8"},{l:"WINS",v:sel.bt.hits,c:"#00ff9d"},{l:"LOSSES",v:sel.bt.n-sel.bt.hits,c:"#ff3355"},{l:"EF%",v:`${sel.bt.hr}%`,c:g.c},{l:"AVG RET",v:`${sel.bt.avg>=0?"+":""}${sel.bt.avg}%`,c:sel.bt.avg>=0?"#00ff9d":"#ff3355"},{l:"P.FACTOR",v:`${sel.bt.pf}x`,c:sel.bt.pf>=1.5?"#00ff9d":"#ffd700"},{l:"SHARPE",v:sel.bt.sh,c:sel.bt.sh>=1?"#00ff9d":"#ffd700"},{l:"MAX DD",v:`${sel.bt.dd}%`,c:sel.bt.dd<15?"#00ff9d":"#ff3355"},{l:"EQUITY",v:sel.bt.eq,c:sel.bt.eq>=100?"#00ff9d":"#ff3355"}].map(x=>
-                        <div key={x.l} className="card" style={{padding:"7px"}}>
-                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>{x.l}</div>
+                      {[
+                        {l:"TRADES",v:sel.bt.n,c:"#a0cce0"},
+                        {l:"WINS",v:sel.bt.hits,c:"#00ff9d"},
+                        {l:"LOSSES",v:sel.bt.n-sel.bt.hits,c:"#ff3355"},
+                        {l:"EF%",v:`${sel.bt.hr}%`,c:g.c},
+                        {l:"AVG RET",v:`${sel.bt.avg>=0?"+":""}${sel.bt.avg}%`,c:sel.bt.avg>=0.3?"#00ff9d":sel.bt.avg>=0?"#ffd700":"#ff3355"},
+                        {l:"P.FACTOR",v:`${sel.bt.pf}x`,c:sel.bt.pf>=1.5?"#00ff9d":sel.bt.pf>=1?"#ffd700":"#ff3355"},
+                        {l:"SHARPE",v:sel.bt.sh,c:sel.bt.sh>=1?"#00ff9d":sel.bt.sh>=0?"#ffd700":"#ff3355"},
+                        {l:"MAX DD",v:`${sel.bt.dd}%`,c:sel.bt.dd<10?"#00ff9d":sel.bt.dd<20?"#ffd700":"#ff3355"},
+                        {l:"EQUITY",v:sel.bt.eq,c:sel.bt.eq>=105?"#00ff9d":sel.bt.eq>=100?"#ffd700":"#ff3355"},
+                      ].map(x=>
+                        <div key={x.l} style={{padding:"7px",...semBox(x.c)}}>
+                          <div style={{fontSize:"7px",color:"#8fb4cc",marginBottom:"2px"}}>{x.l}</div>
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
                         </div>
                       )}
@@ -6329,8 +6359,8 @@ export default function App() {
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"10px"}}>
                       {/* Deflated Sharpe */}
                       {qlValid.dsr&&(
-                        <div style={{padding:"9px",background:"#050c15",borderRadius:"5px",border:`1px solid ${qlValid.dsr.significativo?"#00ff88":"#ff3355"}30`}}>
-                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>DEFLATED SHARPE RATIO</div>
+                        <div style={{padding:"9px",...semBox(qlValid.dsr.significativo?"#00ff88":qlValid.dsr.dsr>=0.9?"#ffd700":"#ff3355")}}>
+                          <div style={{fontSize:"7px",color:"#8fb4cc",marginBottom:"2px"}}>DEFLATED SHARPE RATIO</div>
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:qlValid.dsr.significativo?"#00ff88":qlValid.dsr.dsr>=0.9?"#ffd700":"#ff3355",lineHeight:1}}>
                             {qlValid.dsr.veredicto}
                           </div>
@@ -6348,8 +6378,8 @@ export default function App() {
 
                       {/* PBO */}
                       {qlValid.pbo&&(
-                        <div style={{padding:"9px",background:"#050c15",borderRadius:"5px",border:`1px solid ${qlValid.pbo.color}30`}}>
-                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>PROBABILIDAD DE SOBREAJUSTE (PBO)</div>
+                        <div style={{padding:"9px",...semBox(qlValid.pbo.color)}}>
+                          <div style={{fontSize:"7px",color:"#8fb4cc",marginBottom:"2px"}}>PROBABILIDAD DE SOBREAJUSTE (PBO)</div>
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:"22px",color:qlValid.pbo.color,lineHeight:1}}>
                             {qlValid.pbo.veredicto}
                           </div>
@@ -6372,13 +6402,13 @@ export default function App() {
                         </div>
                         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"6px"}}>
                           {[
-                            {l:"SHARPE",  o:qlValid.boot.sharpe, s:""},
-                            {l:"CAGR",    o:qlValid.boot.cagr,   s:"%"},
-                            {l:"MAX DD",  o:qlValid.boot.maxDD,  s:"%"},
+                            {l:"SHARPE",  o:qlValid.boot.sharpe, s:"", c:semaforo(qlValid.boot.sharpe.p50, 0, 1)},
+                            {l:"CAGR",    o:qlValid.boot.cagr,   s:"%", c:semaforo(qlValid.boot.cagr.p50, 0, 5)},
+                            {l:"MAX DD",  o:qlValid.boot.maxDD,  s:"%", c:semaforo(qlValid.boot.maxDD.p50, -20, -10)},
                           ].map(x=>(
-                            <div key={x.l} style={{textAlign:"center",padding:"5px",background:"#07101a",borderRadius:"3px"}}>
-                              <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l} · IC 90%</div>
-                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:"#e8f4ff"}}>{x.o.p50}{x.s}</div>
+                            <div key={x.l} style={{textAlign:"center",padding:"5px",...semBox(x.c)}}>
+                              <div style={{fontSize:"6px",color:"#8fb4cc"}}>{x.l} · IC 90%</div>
+                              <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.o.p50}{x.s}</div>
                               <div style={{fontSize:"7px",color:"#5a8fa8"}}>[{x.o.p05}{x.s} , {x.o.p95}{x.s}]</div>
                             </div>
                           ))}
@@ -6407,16 +6437,17 @@ export default function App() {
                         <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"5px"}}>
                           RENDIMIENTO POR RÉGIMEN DE MERCADO — ¿gana siempre o solo en bull?
                         </div>
-                        {qlValid.regimes.map(r=>(
-                          <div key={r.regime} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",marginBottom:"2px",
-                            background:"#050c15",borderRadius:"3px",borderLeft:`3px solid ${r.avgRet>0?"#00ff88":"#ff3355"}`}}>
+                        {qlValid.regimes.map(r=>{
+                          const cRow = semaforo(r.avgRet, -0.3, 0.3);
+                          return (
+                          <div key={r.regime} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",marginBottom:"2px",...semBox(cRow,"12"),borderLeft:`3px solid ${cRow}`}}>
                             <span style={{fontSize:"7px",color:"#a0cce0",width:"120px",flexShrink:0}}>{r.regime}</span>
                             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
                               {[
                                 {l:"n",v:r.n,c:"#a0cce0"},
-                                {l:"WR",v:r.winRate+"%",c:r.winRate>=50?"#00ff88":"#ff3355"},
-                                {l:"AVG",v:(r.avgRet>=0?"+":"")+r.avgRet+"%",c:r.avgRet>0?"#00ff88":"#ff3355"},
-                                {l:"SR",v:r.sharpe,c:r.sharpe>=0.3?"#00ff88":"#ffd700"},
+                                {l:"WR",v:r.winRate+"%",c:semaforo(r.winRate,45,55)},
+                                {l:"AVG",v:(r.avgRet>=0?"+":"")+r.avgRet+"%",c:semaforo(r.avgRet,-0.3,0.3)},
+                                {l:"SR",v:r.sharpe,c:semaforo(r.sharpe,0,0.3)},
                               ].map(x=>(
                                 <div key={x.l} style={{textAlign:"center"}}>
                                   <span style={{color:"#4a7a9b",fontSize:"6px"}}>{x.l} </span>
@@ -6425,7 +6456,8 @@ export default function App() {
                               ))}
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                         {(()=>{
                           const bull = qlValid.regimes.filter(r=>r.regime.includes("ALCISTA"));
                           const bear = qlValid.regimes.filter(r=>r.regime.includes("BAJISTA"));
@@ -6483,7 +6515,7 @@ export default function App() {
                             setTab("det");
                           }}
                           style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",marginBottom:"2px",cursor:"pointer",
-                          background:"#050c15",borderRadius:"3px",borderLeft:`3px solid ${m.mejora>0?"#00ff88":"#ff3355"}`}}>
+                          ...semBox(m.mejora>0?"#00ff88":"#ff3355","12"),borderLeft:`3px solid ${m.mejora>0?"#00ff88":"#ff3355"}`}}>
                           <span style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:m.mejora>0?"#00ff88":"#ff3355",width:"50px",flexShrink:0}}>{m.ticker}</span>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
                             {[
@@ -6555,7 +6587,7 @@ export default function App() {
                               setSel(rows.find(x=>x.ticker===m.ticker)||{ticker:m.ticker,moneda,name:m.ticker,sector:""});
                               setTab("det");
                             }}
-                            style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 7px",marginBottom:"3px",cursor:"pointer",background:"#050c15",borderRadius:"4px",borderLeft:`3px solid ${c}`}}>
+                            style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 7px",marginBottom:"3px",cursor:"pointer",...semBox(c,"12"),borderLeft:`3px solid ${c}`}}>
                             <span style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:c,width:"52px",flexShrink:0}}>{m.ticker}</span>
                             <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
                               {[
