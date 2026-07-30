@@ -2407,13 +2407,57 @@ function backtestOpt(data, w, weightFx) {
 const STORAGE_VERSION = "2.0";
 const PREFIX = "ca15_";
 
+// ── PERSISTENCIA DE DATOS DEL USUARIO ──
+//
+// Las listas y el tracker los creó el usuario a mano: no se pueden
+// regenerar. El cache de precios sí (está embebido en data.js). Por eso
+// el usuario tiene prioridad absoluta: si la cuota de localStorage se
+// llena, se descarta cache, nunca lo del usuario.
+//
+// Esto antes fallaba EN SILENCIO. El cache (158 tickers × 400 barras)
+// pesa ~5.4 MB contra los ~5 MB de cuota por origen, así que la llenaba;
+// el setItem del usuario lanzaba QuotaExceededError y un catch vacío se
+// lo tragaba. La marca aparecía en pantalla (estado de React) pero no
+// sobrevivía al reload.
+function guardarUsuario(key, value) {
+  let s;
+  try { s = typeof value === "string" ? value : JSON.stringify(value); }
+  catch (e) { return { ok:false, error:"no serializable" }; }
+
+  try {
+    localStorage.setItem(key, s);
+    return { ok:true };
+  } catch (e) {
+    // Cuota llena → liberar el cache de precios (regenerable) y reintentar
+    try {
+      const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith(`${PREFIX}tk_`));
+      for (const k of cacheKeys) localStorage.removeItem(k);
+      localStorage.removeItem(`${PREFIX}meta`);
+      localStorage.setItem(key, s);
+      console.warn(`[FXCA16] Cuota de localStorage llena: se liberaron ${cacheKeys.length} entradas de cache para guardar "${key}". El cache se regenera solo.`);
+      return { ok:true, liberado:cacheKeys.length };
+    } catch (e2) {
+      // Falla dura: avisar fuerte en vez de perder el dato en silencio
+      console.error(`[FXCA16] NO SE PUDO GUARDAR "${key}" — el dato se va a perder al recargar.`, e2);
+      return { ok:false, error:e2?.message || String(e2) };
+    }
+  }
+}
+
 const StorageManager = {
 
   // Guardar todos los tickers del CSV parseado
   async saveCSV(csvData, log) {
     log("💾 Guardando datos en storage...", "sys");
     const tickers = Object.keys(csvData);
-    let saved = 0;
+    // Presupuesto de bytes. localStorage da ~5 MB por origen y el cache
+    // completo (158 tickers × 400 barras) pesa ~5.4 MB: llenaba la cuota
+    // y hacía fallar en silencio el guardado de listas y tracker.
+    // Se reserva margen a propósito — el cache es regenerable desde
+    // data.js, los datos del usuario no.
+    const BUDGET = 3 * 1024 * 1024;
+    let usado = 0, saved = 0, omitidos = 0;
+    const guardados = [];
     for (const tk of tickers) {
       const bars = csvData[tk];
       if (!bars?.length) continue;
@@ -2425,24 +2469,30 @@ const StorageManager = {
         v: Math.round(b.volume||0),
         m: b.moneda || "USD",
       }));
+      const payload = JSON.stringify({
+        bars: compressed,
+        moneda: compressed[0]?.m || "USD",
+        lastUpdate: new Date().toISOString(),
+        count: compressed.length,
+      });
+      if (usado + payload.length > BUDGET) { omitidos++; continue; }
       try {
-        await window.storage.set(`${PREFIX}tk_${tk}`, JSON.stringify({
-          bars: compressed,
-          moneda: compressed[0]?.m || "USD",
-          lastUpdate: new Date().toISOString(),
-          count: compressed.length,
-        }));
+        await window.storage.set(`${PREFIX}tk_${tk}`, payload);
+        usado += payload.length;
+        guardados.push(tk);
         saved++;
       } catch(e) { log(`⚠️ No se pudo guardar ${tk}: ${e.message}`, "warn"); }
     }
-    // Guardar metadata
+    // Metadata: solo los que efectivamente entraron, para que loadAll
+    // no busque tickers que se omitieron por presupuesto.
     await window.storage.set(`${PREFIX}meta`, JSON.stringify({
-      tickers,
+      tickers: guardados,
       savedAt: new Date().toISOString(),
       version: STORAGE_VERSION,
       count: saved,
     }));
-    log(`✅ ${saved}/${tickers.length} tickers guardados en storage`, "ok");
+    log(`✅ ${saved}/${tickers.length} tickers en cache (${(usado/1048576).toFixed(1)} MB)`, "ok");
+    if (omitidos) log(`   ${omitidos} omitidos por presupuesto — se leen de data.js igual`, "info");
     return saved;
   },
 
@@ -2974,7 +3024,7 @@ export default function App() {
   });
   const guardarTracker = useCallback((items) => {
     setTracker(items);
-    try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+    guardarUsuario('fxca16_tracker', items);
   }, []);
   const marcarSeguimiento = useCallback((r) => {
     if (!r?.ticker || !r?.sig) return;
@@ -3001,7 +3051,7 @@ export default function App() {
         cerrado: false,
       };
       const items = [nuevo, ...prev];
-      try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+      guardarUsuario('fxca16_tracker', items);
       return items;
     });
   }, [alphaRank, W]);
@@ -3010,14 +3060,14 @@ export default function App() {
       const items = prev.map(t => t.id===id ? {
         ...t, cerrado:true, fechaCierre:new Date().toISOString(), precioCierre:precioActual
       } : t);
-      try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+      guardarUsuario('fxca16_tracker', items);
       return items;
     });
   }, []);
   const quitarSeguimiento = useCallback((id) => {
     setTracker(prev => {
       const items = prev.filter(t => t.id !== id);
-      try { localStorage.setItem('fxca16_tracker', JSON.stringify(items)); } catch(_) {}
+      guardarUsuario('fxca16_tracker', items);
       return items;
     });
   }, []);
@@ -3038,7 +3088,7 @@ export default function App() {
 
   const saveWatchlists = (wls) => {
     setWatchlists(wls);
-    try { localStorage.setItem('fxca16_watchlists', JSON.stringify(wls)); } catch(_) {}
+    guardarUsuario('fxca16_watchlists', wls);
   };
   const addToWatchlist = (wlIdx, ticker) => {
     const wls = watchlists.map((w,i) => i===wlIdx && !w.tickers.includes(ticker)
