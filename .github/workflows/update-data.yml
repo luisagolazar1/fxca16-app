@@ -3,7 +3,8 @@ name: FXCA16 Update Data
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 14 * * 1-5'
+    - cron: '0 14 * * 1-5'   # 11:00 ART (UTC-3)
+    - cron: '0 19 * * 1-5'   # 16:00 ART (UTC-3)
 
 permissions:
   contents: write
