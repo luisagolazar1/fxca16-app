@@ -6306,7 +6306,13 @@ export default function App() {
 
                     <div style={{maxHeight:"200px",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
                       {qlMeta.items.slice(0,20).map(m=>(
-                        <div key={m.ticker} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",marginBottom:"2px",
+                        <div key={m.ticker}
+                          onClick={()=>{
+                            const moneda = rows.find(x=>x.ticker===m.ticker)?.moneda || "USD";
+                            setSel(rows.find(x=>x.ticker===m.ticker)||{ticker:m.ticker,moneda,name:m.ticker,sector:""});
+                            setTab("det");
+                          }}
+                          style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",marginBottom:"2px",cursor:"pointer",
                           background:"#050c15",borderRadius:"3px",borderLeft:`3px solid ${m.mejora>0?"#00ff88":"#ff3355"}`}}>
                           <span style={{fontFamily:"'Bebas Neue'",fontSize:"13px",color:m.mejora>0?"#00ff88":"#ff3355",width:"50px",flexShrink:0}}>{m.ticker}</span>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
@@ -6373,7 +6379,13 @@ export default function App() {
                         const ok = m.auc>=0.55, mid = m.auc>=0.52;
                         const c = ok?"#00ff88":mid?"#ffd700":"#ff3355";
                         return (
-                          <div key={m.ticker} style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 7px",marginBottom:"3px",background:"#050c15",borderRadius:"4px",borderLeft:`3px solid ${c}`}}>
+                          <div key={m.ticker}
+                            onClick={()=>{
+                              const moneda = rows.find(x=>x.ticker===m.ticker)?.moneda || "USD";
+                              setSel(rows.find(x=>x.ticker===m.ticker)||{ticker:m.ticker,moneda,name:m.ticker,sector:""});
+                              setTab("det");
+                            }}
+                            style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 7px",marginBottom:"3px",cursor:"pointer",background:"#050c15",borderRadius:"4px",borderLeft:`3px solid ${c}`}}>
                             <span style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:c,width:"52px",flexShrink:0}}>{m.ticker}</span>
                             <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"4px",flex:1,fontSize:"7px"}}>
                               {[

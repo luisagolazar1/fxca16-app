@@ -149,6 +149,21 @@ def backtest_w(bars, w):
 # (descargar_diario completo quedó obsoleto: reemplazado por
 # descargar_diario_incremental, que reutiliza el histórico ya bajado)
 def descargar_earnings(tickers_yf, previo=None):
+    """
+    yf.Ticker.get_earnings_dates() quedó roto (Yahoo cambió el endpoint viejo,
+    ver https://github.com/ranaroussi/yfinance/issues/2591 y similares — devuelve
+    None incluso para tickers grandes como AAPL). Se reemplaza por la API nueva
+    de calendarios (yf.Calendars, agregada en yfinance #2615), que consulta por
+    rango de fechas y permite filtrar por ticker vía CalendarQuery de bajo nivel
+    (el wrapper público get_earnings_calendar() no expone ese filtro).
+
+    NOTA: esta función no pudo probarse contra datos reales de Yahoo en el
+    entorno donde se escribió (sandbox sin salida a finance.yahoo.com). Revisar
+    el log de la primera corrida del workflow tras este cambio antes de confiar
+    en los resultados.
+    """
+    from yfinance.calendars import CalendarQuery
+
     previo = previo or {}
     pendientes = [t for t in tickers_yf if clean(t) not in previo]
     orden = pendientes + [t for t in tickers_yf if clean(t) in previo]
@@ -156,25 +171,60 @@ def descargar_earnings(tickers_yf, previo=None):
     cal = dict(previo)
     fallidos, sin_procesar = [], 0
     hoy = pd.Timestamp.now().normalize()
-    for i, yf_ticker in enumerate(orden, 1):
-        if not hay_tiempo(45):
-            sin_procesar += 1
-            continue
+    ini_rango = (hoy - pd.Timedelta(days=200)).strftime("%Y-%m-%d")
+    fin_rango = (hoy + pd.Timedelta(days=200)).strftime("%Y-%m-%d")
+
+    cal_api = yf.Calendars()
+    BATCH = 15  # lotes chicos: la API cap a 100 resultados por consulta y
+                # queremos margen si varios tickers del lote reportan el mismo día
+
+    def consultar_lote(lote):
+        """Devuelve {ticker_yf: [fechas 'YYYY-MM-DD', ...]} para earnings del lote
+        dentro de [ini_rango, fin_rango]."""
+        resultados = {t: [] for t in lote}
+        query = CalendarQuery("and", [
+            CalendarQuery("or", [
+                CalendarQuery("eq", ["eventtype", "EAD"]),
+                CalendarQuery("eq", ["eventtype", "ERA"]),
+            ]),
+            CalendarQuery("gte", ["startdatetime", ini_rango]),
+            CalendarQuery("lte", ["startdatetime", fin_rango]),
+            CalendarQuery("or", [CalendarQuery("eq", ["ticker", t]) for t in lote]),
+        ])
         try:
-            t = yf.Ticker(yf_ticker)
-            ed = t.get_earnings_dates(limit=12)
-            if ed is None or ed.empty:
+            df = cal_api._get_data("EARNINGS", query, limit=100, force=True)
+        except Exception:
+            return None  # distinto de {} — señala fallo de consulta, no "sin earnings"
+        if df is None or df.empty:
+            return resultados
+        col_ticker = next((c for c in df.columns if "ticker" in c.lower() or "symbol" in c.lower()), None)
+        col_fecha  = next((c for c in df.columns if "date" in c.lower() or "time" in c.lower()), None)
+        if col_ticker is None or col_fecha is None:
+            return None
+        for _, row in df.iterrows():
+            tkr = str(row[col_ticker]).upper()
+            if tkr not in resultados:
+                continue
+            try:
+                f = pd.Timestamp(row[col_fecha]).tz_localize(None).normalize()
+                resultados[tkr].append(f.strftime("%Y-%m-%d"))
+            except Exception:
+                continue
+        return resultados
+
+    for i in range(0, len(orden), BATCH):
+        if not hay_tiempo(45):
+            sin_procesar += len(orden) - i
+            break
+        lote = orden[i:i + BATCH]
+        res = consultar_lote(lote)
+        if res is None:
+            fallidos.extend(lote)
+            continue
+        for yf_ticker, fechas in res.items():
+            if not fechas:
                 fallidos.append(yf_ticker); continue
             tk = clean(yf_ticker)
-            fechas = []
-            for idx in ed.index:
-                try:
-                    f = pd.Timestamp(idx).tz_localize(None).normalize()
-                    fechas.append(f.strftime("%Y-%m-%d"))
-                except Exception:
-                    continue
-            if not fechas: 
-                fallidos.append(yf_ticker); continue
             fechas = sorted(set(fechas))
             futuras = [f for f in fechas if f >= hoy.strftime("%Y-%m-%d")]
             pasadas = [f for f in fechas if f <  hoy.strftime("%Y-%m-%d")]
@@ -183,10 +233,8 @@ def descargar_earnings(tickers_yf, previo=None):
                 "ultimo": pasadas[-1] if pasadas else None,
                 "todas":  fechas[-8:],
             }
-            if i % 25 == 0:
-                print(f"    {i}/{len(tickers_yf)}...")
-        except Exception:
-            fallidos.append(yf_ticker)
+        print(f"    {min(i + BATCH, len(orden))}/{len(orden)}...")
+
     print(f"    OK: {len(cal)} tickers con calendario")
     if fallidos:
         print(f"    sin datos: {len(fallidos)} ({fallidos[:8]})")
