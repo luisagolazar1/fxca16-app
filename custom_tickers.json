@@ -3,7 +3,8 @@
     "AMD",
     "GCLA",
     "MELI",
-    "PBR"
+    "PBR",
+    "SPOT"
   ],
   "note": "Tickers agregados manualmente desde la app FXCA16. No editar manualmente."
 }
