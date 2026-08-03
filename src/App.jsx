@@ -601,6 +601,26 @@ function volPriceDivergence(data, n) {
 // Lógica: Índice > SMA200 → Risk-On (BULL) · Índice < SMA200 → Risk-Off (BEAR)
 // En BEAR: bloquea COMPRA y COMPRA FUERTE · solo permite operar en contra
 // ══════════════════════════════════════════════════════════════
+// ── HIPÓTESIS PROBADAS Y DESCARTADAS ──
+//
+// Memoria institucional: patrones investigados manualmente (fuera del
+// pipeline normal de quant.js/quant2.js) con metodología y resultado
+// explícito. Objetivo: no volver a "descubrir" y operar la misma idea
+// unos meses después pensando que es nueva. Ver docs/hallazgos.md para
+// el detalle completo de cada test.
+const HALLAZGOS_DESCARTADOS = [
+  {
+    fecha: "2026-08-03",
+    hipotesis: "MACD subiendo (2-3 días) + volumen bajo predice rally a 3-5 días",
+    origen: "BA, GLOB, ORCL, AAL, BABA subieron juntas la semana del 27-31/7; parecía un patrón técnico común",
+    metodo: "Universo completo (158 activos), julio 2026, 9 variantes (2 vs 3 días MACD, con/sin filtro RSI<50, forward 3 y 5 días)",
+    n: "605 a 1194 casos con señal por variante, contra 2000-2900 sin señal",
+    resultado: "Ninguna variante alcanzó significancia (máx |t|=1.35, umbral 1.96). En 7 de 9 variantes el grupo SIN señal rindió mejor que el grupo CON señal. Win rate 44-52% en todas — indistinguible de azar.",
+    veredicto: "descartada",
+    nota: "La suba real fue por la decisión de la Fed del 29/7 (hold hawkish + rebote), no por una señal técnica — 5 sectores sin relación entre sí subiendo juntos es la firma de un movimiento de mercado amplio (beta), no de alfa individual. Consistente con el ablation existente: macdN ya rankeaba cerca del último lugar en importancia (delta AUC -14.33).",
+  },
+];
+
 const MARKET_REGIME = { regime: "neutral", spyRoc: 0, sma200: 0, currentPx: 0, lastUpdate: 0 };
 
 function getMarketRegime(indexBars) {
@@ -6802,6 +6822,37 @@ export default function App() {
                         </div>
                       );
                     })()}
+                  </div>
+                )}
+
+                {/* ── HIPÓTESIS DESCARTADAS ── */}
+                {HALLAZGOS_DESCARTADOS.length>0&&(
+                  <div className="card" style={{padding:"12px"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>
+                      🗄️ HIPÓTESIS PROBADAS Y DESCARTADAS
+                    </div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
+                      Patrones que parecían prometedores con pocos casos, testeados contra el universo completo,
+                      y descartados por falta de significancia estadística. Se guardan acá para no re-testear
+                      la misma idea más adelante pensando que es nueva.
+                    </div>
+                    {HALLAZGOS_DESCARTADOS.map((h,i)=>(
+                      <div key={i} style={{...semBox("#ff9040","10"),padding:"9px",marginBottom:i<HALLAZGOS_DESCARTADOS.length-1?"6px":0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"4px"}}>
+                          <span style={{fontSize:"9px",color:"#ff9040",fontWeight:700}}>{h.hipotesis}</span>
+                          <span style={{fontSize:"6px",color:"#5a8fa8",flexShrink:0,marginLeft:"8px"}}>{h.fecha}</span>
+                        </div>
+                        <div style={{fontSize:"7px",color:"#8fb4cc",lineHeight:1.6,marginBottom:"3px"}}>
+                          <strong style={{color:"#5a8fa8"}}>Método:</strong> {h.metodo} · n={h.n}
+                        </div>
+                        <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.6,marginBottom:"3px"}}>
+                          <strong style={{color:"#5a8fa8"}}>Resultado:</strong> {h.resultado}
+                        </div>
+                        <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.6,fontStyle:"italic"}}>
+                          {h.nota}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
