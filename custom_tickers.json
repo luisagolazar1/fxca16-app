@@ -4,7 +4,8 @@
     "GCLA",
     "MELI",
     "PBR",
-    "SPOT"
+    "SPOT",
+    "ORCL"
   ],
   "note": "Tickers agregados manualmente desde la app FXCA16. No editar manualmente."
 }
