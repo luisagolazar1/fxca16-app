@@ -913,6 +913,67 @@ const COSTO_CEDEAR = 1.8;  // % ida+vuelta CEDEARs (incluye spread)
 // Se usa en todos los paneles de indicadores técnicos y de validación:
 // da fondo teñido + borde del mismo color, para que el estado se lea
 // de un vistazo sin tener que leer el número.
+// ── ESTADO DE MERCADO ──
+//
+// El sistema calculaba señales igual a las 3am que a las 2pm, sin
+// distinguir si hay sesión abierta o si el último dato es de hace
+// 3 días (fin de semana). Esto es lo que hacía confuso el caso de
+// AAL: la señal cambió porque HUBO sesión de por medio, no porque
+// el sistema "detectara tarde" — pero no había forma de verlo en
+// la UI. Esta función expone ese contexto explícitamente.
+//
+// Horario unificado ~11:00-17:00 ART cubre tanto ByMA/Merval (11-17
+// aprox.) como NYSE/Nasdaq (9:30-16:00 ET ≈ 10:30-17:00 ART en
+// horario de verano EEUU). No son exactamente iguales, pero para
+// mostrar "¿podría haber operado hoy?" alcanza con el solapamiento.
+function estadoMercado(ahoraART) {
+  const d = ahoraART || new Date(new Date().toLocaleString("en-US", {timeZone:"America/Argentina/Buenos_Aires"}));
+  const dow = d.getDay(); // 0=domingo, 6=sabado
+  const horaDecimal = d.getHours() + d.getMinutes()/60;
+  const esFinde = dow === 0 || dow === 6;
+  const enHorario = horaDecimal >= 11 && horaDecimal < 17;
+  const abierto = !esFinde && enHorario;
+
+  let proximaApertura;
+  if (abierto) {
+    proximaApertura = null;
+  } else {
+    const next = new Date(d);
+    if (esFinde || horaDecimal >= 17) {
+      // saltar al proximo dia habil
+      do { next.setDate(next.getDate()+1); } while (next.getDay()===0 || next.getDay()===6);
+    }
+    next.setHours(11,0,0,0);
+    proximaApertura = next;
+  }
+
+  return {
+    abierto,
+    esFinde,
+    horaART: d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'),
+    proximaApertura,
+    mensaje: abierto
+      ? "Mercado abierto — datos en vivo"
+      : esFinde
+      ? "Fin de semana — sin sesión, datos del último cierre hábil"
+      : horaDecimal < 11
+      ? "Pre-apertura — el mercado abre ~11:00 ART"
+      : "Mercado cerrado — sesión de hoy finalizada",
+  };
+}
+
+// Antigüedad del último dato embebido, en términos humanos.
+function antiguedadDato(fechaISO, ahoraART) {
+  if (!fechaISO) return { minutos: null, mensaje: "sin dato" };
+  const ahora = ahoraART || new Date(new Date().toLocaleString("en-US", {timeZone:"America/Argentina/Buenos_Aires"}));
+  const dato = new Date(fechaISO);
+  const minutos = Math.round((ahora - dato) / 60000);
+  if (minutos < 0) return { minutos, mensaje: "dato futuro (?)" };
+  if (minutos < 60) return { minutos, mensaje: `hace ${minutos} min` };
+  if (minutos < 60*24) return { minutos, mensaje: `hace ${(minutos/60).toFixed(1)}h` };
+  return { minutos, mensaje: `hace ${Math.round(minutos/60/24)}d` };
+}
+
 function semBox(color, alpha = "1f") {
   return {
     background: `${color}${alpha}`,
@@ -2983,6 +3044,13 @@ export default function App() {
   const [secs,  setSecs]  = useState(0);
   const [nReal, setNReal] = useState(0);
   const [priceSrc, setPriceSrc] = useState("—");
+  // Tick cada minuto: mantiene vivo el estado de mercado (abierto/cerrado)
+  // y la antigüedad del dato sin necesidad de recargar la página.
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(t=>t+1), 60000);
+    return () => clearInterval(id);
+  }, []);
   const [optResults,  setOptResults]  = useState([]);
   const [learnView,   setLearnView]   = useState("tickers"); // "tickers"|"history"
   const [userCapital, setUserCapital] = useState(1000000); // capital del usuario (editable)
@@ -3194,6 +3262,19 @@ export default function App() {
     }
     return maxDate ? `${maxDate} ${String(maxHour).padStart(2,"0")}:00hs` : "";
   }, []);
+  const embeddedLastISO = useMemo(() => {
+    let maxDate = "", maxHour = 0;
+    for (const bars of Object.values(CSV_DATA_EMBEDDED)) {
+      const last = bars[bars.length-1];
+      if (!last) continue;
+      if (last.d > maxDate || (last.d === maxDate && (last.h||0) > maxHour)) {
+        maxDate = last.d; maxHour = last.h || 0;
+      }
+    }
+    return maxDate ? `${maxDate}T${String(maxHour).padStart(2,"0")}:00:00` : null;
+  }, []);
+  const mercadoInfo = useMemo(() => estadoMercado(), [nowTick]);
+  const datoInfo = useMemo(() => antiguedadDato(embeddedLastISO), [embeddedLastISO, nowTick]);
 
   const LC={sys:"#00d4ff",ok:"#00ff9d",warn:"#ffd700",err:"#ff3355",info:"#a0cce0",dim:"#5a8fa8"};
   const lg=useCallback((msg,type="info")=>{
@@ -4106,6 +4187,68 @@ export default function App() {
     return{ef:0,buy:allSignals.filter(r=>r.sig.sig.includes("COMPRA")).length,sell:allSignals.filter(r=>r.sig.sig.includes("VENTA")).length,p80:p80.toFixed(0)};
   },[rows,opps]);
 
+  // ── ALERTA DE NUEVAS SEÑALES ──
+  //
+  // Antes la señal de compra solo era visible si abrías la app. Esto
+  // compara el set actual de "COMPRA FUERTE dentro del P80" contra el
+  // de la última vez que se calculó, y avisa (banner + notificación
+  // del navegador si el usuario la habilitó) cuando aparece un ticker
+  // nuevo. Solo notifica con mercado abierto — evita que una recarga
+  // en pleno fin de semana, con datos del último cierre, dispare una
+  // alerta como si fuera una señal fresca.
+  const [nuevasSenales, setNuevasSenales] = useState([]);
+  const [notifPermiso, setNotifPermiso] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+  useEffect(() => {
+    if (!rows.length) return;
+    const fuertesActuales = rows
+      .filter(r => r.sig?.above_p80 && r.sig?.sig === "COMPRA FUERTE")
+      .map(r => r.ticker)
+      .sort();
+
+    let previo = null;
+    try {
+      const raw = localStorage.getItem("fxca16_ultimas_senales");
+      previo = raw ? JSON.parse(raw) : null;
+    } catch (_) { previo = null; }
+
+    // Primera vez que corre (no hay snapshot previo): solo sembrar,
+    // no notificar — si no, cada instalación nueva "alerta" de todo
+    // el P80 del día como si fuera nuevo.
+    if (previo && Array.isArray(previo.tickers)) {
+      const antes = new Set(previo.tickers);
+      const nuevos = fuertesActuales.filter(tk => !antes.has(tk));
+      if (nuevos.length && mercadoInfo.abierto) {
+        setNuevasSenales(nuevos);
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          const cuerpo = nuevos.length === 1
+            ? `${nuevos[0]} entró a COMPRA FUERTE (top P80)`
+            : `${nuevos.slice(0,3).join(", ")}${nuevos.length>3?` y ${nuevos.length-3} más`:""} entraron a COMPRA FUERTE`;
+          try {
+            const n = new Notification("FXCA16 — Nueva señal", { body: cuerpo, tag: "fxca16-senales" });
+            n.onclick = () => { window.focus(); };
+          } catch (_) {}
+        }
+        try {
+          // Beep corto, sin depender de un archivo de audio externo.
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value = 880; g.gain.value = 0.08;
+          o.start(); o.stop(ctx.currentTime + 0.15);
+        } catch (_) {}
+      }
+    }
+
+    guardarUsuario("fxca16_ultimas_senales", { tickers: fuertesActuales, at: new Date().toISOString() });
+  }, [rows, mercadoInfo.abierto]);
+
+  const pedirPermisoNotif = useCallback(() => {
+    if (typeof Notification === "undefined") return;
+    Notification.requestPermission().then(p => setNotifPermiso(p));
+  }, []);
+
   const CSS=`
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&display=swap');
     :root{--silver:#b8c8d8;--silver-dim:#6a7a8a;--silver-bg:rgba(184,200,216,0.06);--silver-border:rgba(184,200,216,0.18);--blue:#1a6eff;--blue-bright:#3d8bff;--blue-bg:rgba(26,110,255,0.12);--blue-border:rgba(26,110,255,0.35);--green:#00ff88;--red:#ff1a44;--yellow:#ffe040;--orange:#ff8c3a;--bg:#03070e;--card-bg:#080f1a;--border:#0f1e2e;}
@@ -4161,6 +4304,46 @@ export default function App() {
             </></span>}
           </div>
         </div>
+      </div>
+
+      {/* ── ESTADO DE MERCADO — siempre visible, en todas las tabs ── */}
+      <div style={{padding:"0 16px",marginTop:"10px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",padding:"6px 10px",
+          ...semBox(mercadoInfo.abierto?"#00ff88":datoInfo.minutos>180?"#ff9040":"#5a8fa8","10")}}>
+          <span style={{width:"7px",height:"7px",borderRadius:"50%",flexShrink:0,
+            background:mercadoInfo.abierto?"#00ff88":"#5a8fa8",
+            boxShadow:mercadoInfo.abierto?"0 0 6px #00ff88":"none"}}/>
+          <span style={{fontSize:"8px",color:mercadoInfo.abierto?"#00ff88":"#8fb4cc",fontWeight:700}}>
+            {mercadoInfo.abierto?"● MERCADO ABIERTO":"○ MERCADO CERRADO"}
+          </span>
+          <span style={{fontSize:"7px",color:"#5a8fa8"}}>{mercadoInfo.mensaje}</span>
+          <span style={{marginLeft:"auto",fontSize:"7px",color:datoInfo.minutos>180?"#ff9040":"#5a8fa8"}}>
+            📊 último dato: {datoInfo.mensaje}
+          </span>
+          {notifPermiso!=="unsupported"&&notifPermiso!=="granted"&&(
+            <button onClick={pedirPermisoNotif} className="btn off" style={{padding:"3px 8px",fontSize:"7px"}}>
+              🔔 Activar alertas
+            </button>
+          )}
+          {notifPermiso==="granted"&&(
+            <span style={{fontSize:"7px",color:"#00ff88"}}>🔔 alertas activas</span>
+          )}
+        </div>
+
+        {nuevasSenales.length>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"6px",padding:"8px 10px",
+            ...semBox("#00ff88","20"),animation:"fd .3s ease"}}>
+            <span style={{fontSize:"14px"}}>🔔</span>
+            <span style={{fontSize:"9px",color:"#00ff88",fontWeight:700,flex:1}}>
+              {nuevasSenales.length===1
+                ? `Nueva señal: ${nuevasSenales[0]} entró a COMPRA FUERTE`
+                : `${nuevasSenales.length} nuevas señales: ${nuevasSenales.join(", ")}`}
+            </span>
+            <button onClick={()=>setNuevasSenales([])} className="btn off" style={{padding:"3px 8px",fontSize:"7px"}}>
+              Descartar
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{padding:"14px 16px"}}>
