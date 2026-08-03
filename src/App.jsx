@@ -619,6 +619,16 @@ const HALLAZGOS_DESCARTADOS = [
     veredicto: "descartada",
     nota: "La suba real fue por la decisión de la Fed del 29/7 (hold hawkish + rebote), no por una señal técnica — 5 sectores sin relación entre sí subiendo juntos es la firma de un movimiento de mercado amplio (beta), no de alfa individual. Consistente con el ablation existente: macdN ya rankeaba cerca del último lugar en importancia (delta AUC -14.33).",
   },
+  {
+    fecha: "2026-08-03",
+    hipotesis: "El retorno de la semana siguiente a una reunión FOMC es distinto al de una semana normal",
+    origen: "Derivado del hallazgo anterior — si la Fed movió el mercado en julio, ¿se repite en las demás reuniones de 2026?",
+    metodo: "Las 4 reuniones FOMC de 2026 ya completas (28/1, 18/3, 29/4, 17/6), universo completo, retorno 7d antes/después vs. baseline de semanas normales",
+    n: "158 tickers × 4 fechas = hasta 632 observaciones nominales — pero efectivamente solo 4 eventos independientes (ver nota)",
+    resultado: "t-stat 'después vs. baseline' = -4.66 (aparenta alta significancia). Pero el n nominal está inflado: las 158 observaciones de cada fecha comparten el mismo shock macro del día, no son independientes. La muestra efectiva real son 4 eventos, insuficiente para confiar en cualquier t-stat por alto que parezca.",
+    veredicto: "sin conclusión (muestra insuficiente, no descartada ni confirmada)",
+    nota: "Dato honesto que sí queda: de las 4 reuniones completas, 3 tuvieron retorno negativo la semana después (-2.65%, -1.30%, -0.99%) y solo 1 positivo (+0.61%). La suba de julio fue la excepción del año, no la regla. Para testear esto en serio harían falta ~80 reuniones (10 años de historia diaria ya disponible) en vez de 4 — pendiente, no prioritario por ahora.",
+  },
 ];
 
 const MARKET_REGIME = { regime: "neutral", spyRoc: 0, sma200: 0, currentPx: 0, lastUpdate: 0 };

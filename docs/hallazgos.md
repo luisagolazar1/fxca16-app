@@ -63,3 +63,58 @@ season, dato macro), no una señal técnica reusable. Antes de programar
 cualquier regla basada en esto, repetir este mismo test (universo
 completo, ventana de fechas distinta, idealmente varios meses) y exigir
 significancia real, no solo "funcionó en 5 casos".
+
+---
+
+## 2026-08-03 — "El retorno de la semana siguiente a una reunión FOMC es distinto al de una semana normal"
+
+**Origen:** derivado del hallazgo anterior. Si la Fed fue el catalizador
+real de la suba de fines de julio, ¿el patrón "semana post-FOMC ≠
+semana normal" se repite en las demás reuniones de 2026?
+
+**Método:** las 4 reuniones FOMC de 2026 ya completas al momento del
+test (28/1, 18/3, 29/4, 17/6 — la del 29/7 quedó fuera por no tener
+todavía 7 días completos posteriores), retorno del universo completo
+(158 activos) 7 días antes y 7 días después de cada una, comparado
+contra un baseline de ventanas de 7 días "normales" (lejos de cualquier
+fecha FOMC) a lo largo de 2026.
+
+**Resultado crudo:**
+
+| Ventana | Retorno medio | Win rate | Volatilidad vs. normal |
+|---|---|---|---|
+| 7d antes de la Fed | +0.15% | 45.7% | 0.91x |
+| 7d después de la Fed | -1.08% | 38.6% | 1.07x |
+| Baseline (normal) | +0.52% | 48.9% | 1.00x |
+
+t-stat "después vs. baseline" = -4.66 (aparentemente muy significativo).
+
+**Por qué se descarta igual, a pesar del t-stat alto:** el n nominal
+(632-2319 observaciones) está inflado. Cada fecha FOMC aporta 158
+observaciones (una por ticker), pero esas 158 no son independientes —
+comparten el mismo shock macro del día. La muestra *efectiva* real son
+**4 eventos**, no cientos de observaciones. Con 4 eventos ningún test
+estadístico da margen para confiar en el resultado, sin importar qué
+tan grande se vea el t-stat calculado ingenuamente. Es el mismo
+problema que corrige el panel "Unicidad de muestras" del tab de
+Validación para el backtest de cartera (ahí 3151 observaciones nominales
+eran ~245 efectivas por solapamiento temporal — acá el problema es peor).
+
+**Dato honesto que sí queda:** de las 4 reuniones completas de 2026,
+3 tuvieron retorno negativo o chato la semana después (28/1: -2.65%,
+18/3: -1.30%, 17/6: -0.99%) y solo 1 fue positiva (29/4: +0.61%,
+modesto). La suba fuerte de fines de julio fue la excepción del año, no
+la regla — ni dentro del propio 2026.
+
+**Veredicto: sin conclusión — no se puede afirmar ni descartar la
+relación con esta muestra.** No es un "descartada" tan limpio como el
+de MACD (ahí n grande y resultado claramente nulo); acá directamente no
+hay muestra suficiente para decir nada. No se implementa ninguna regla
+basada en esto.
+
+**Para hacerlo bien:** hay 10 años de historia diaria embebida
+(`CSV_DATA_DAILY_RAW`, ~2500 barras/ticker) — con el calendario FOMC
+real de esos 10 años (~80 reuniones) la muestra efectiva pasaría de 4 a
+80 eventos, ahí sí sería un test con poder estadístico real. Pendiente,
+no se hizo por decisión explícita (bajo prioridad por ahora).
+
