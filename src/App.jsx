@@ -946,6 +946,37 @@ const COSTO_CEDEAR = 1.8;  // % ida+vuelta CEDEARs (incluye spread)
 // aprox.) como NYSE/Nasdaq (9:30-16:00 ET ≈ 10:30-17:00 ART en
 // horario de verano EEUU). No son exactamente iguales, pero para
 // mostrar "¿podría haber operado hoy?" alcanza con el solapamiento.
+// ── CALENDARIO FOMC ──
+//
+// A diferencia del calendario de balances (que depende de una API que
+// se rompe seguido), las fechas de reunión de la Fed son públicas y
+// fijas con meses de anticipación — no hace falta scraping, se
+// hardcodean directo del calendario oficial (federalreserve.gov).
+//
+// Por qué esto SÍ se justifica y el patrón de MACD/volumen que se
+// descartó (ver docs/hallazgos.md) no: la "pre-FOMC announcement
+// drift" es un efecto documentado en la literatura académica (Lucca &
+// Moench, 2015) — no es un patrón inventado mirando 5 casos. Aun así,
+// esto se muestra como CONTEXTO DE RIESGO DE EVENTO, no como señal de
+// compra/venta: no convierte "faltan pocos días para la Fed" en una
+// recomendación direccional, solo advierte que el movimiento de esos
+// días puede no tener nada que ver con el análisis técnico.
+const FOMC_2026 = [
+  "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+  "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+]; // fecha del statement (2do día de cada reunión), 14:00 ET
+
+function estadoFOMC(ahoraART) {
+  const d = ahoraART || new Date(new Date().toLocaleString("en-US", {timeZone:"America/Argentina/Buenos_Aires"}));
+  const hoyStr = d.toISOString().slice(0,10);
+  const futuras = FOMC_2026.filter(f => f >= hoyStr);
+  const pasadas = FOMC_2026.filter(f => f < hoyStr);
+  if (!futuras.length) return { proxima: null, dias: null, ultima: pasadas[pasadas.length-1] || null };
+  const proxima = futuras[0];
+  const dias = Math.round((new Date(proxima) - new Date(hoyStr)) / 86400000);
+  return { proxima, dias, ultima: pasadas[pasadas.length-1] || null };
+}
+
 function estadoMercado(ahoraART) {
   const d = ahoraART || new Date(new Date().toLocaleString("en-US", {timeZone:"America/Argentina/Buenos_Aires"}));
   const dow = d.getDay(); // 0=domingo, 6=sabado
@@ -3294,6 +3325,7 @@ export default function App() {
     return maxDate ? `${maxDate}T${String(maxHour).padStart(2,"0")}:00:00` : null;
   }, []);
   const mercadoInfo = useMemo(() => estadoMercado(), [nowTick]);
+  const fomcInfo = useMemo(() => estadoFOMC(), [nowTick]);
   const datoInfo = useMemo(() => antiguedadDato(embeddedLastISO), [embeddedLastISO, nowTick]);
 
   const LC={sys:"#00d4ff",ok:"#00ff9d",warn:"#ffd700",err:"#ff3355",info:"#a0cce0",dim:"#5a8fa8"};
@@ -4362,6 +4394,19 @@ export default function App() {
             <button onClick={()=>setNuevasSenales([])} className="btn off" style={{padding:"3px 8px",fontSize:"7px"}}>
               Descartar
             </button>
+          </div>
+        )}
+
+        {fomcInfo.dias!=null&&fomcInfo.dias<=14&&(
+          <div style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"6px",padding:"7px 10px",
+            ...semBox(fomcInfo.dias<=3?"#ff3355":"#ffd700","14")}}>
+            <span style={{fontSize:"12px"}}>🏛️</span>
+            <span style={{fontSize:"8px",color:fomcInfo.dias<=3?"#ff3355":"#ffd700",fontWeight:700}}>
+              Reunión de la Fed en {fomcInfo.dias===0?"HOY":fomcInfo.dias===1?"1 día":`${fomcInfo.dias} días`} ({fomcInfo.proxima})
+            </span>
+            <span style={{fontSize:"7px",color:"#8fb4cc",flex:1}}>
+              Movimientos de precio cerca de esta fecha pueden ser por el evento, no por análisis técnico
+            </span>
           </div>
         )}
       </div>
