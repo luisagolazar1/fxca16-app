@@ -647,6 +647,43 @@ const HALLAZGOS_DESCARTADOS = [
   },
 ];
 
+// ── TASAS BASE HISTÓRICAS POR BANDA DE RSI ──
+//
+// Medidas sobre 153 activos × 10 años (363.746 observaciones diarias),
+// excluyendo las 5 series con datos degradados. Para cada banda de RSI:
+// probabilidad de que en los próximos 1-4 días haya un salto de +4% o
+// una caída de -4%, y retorno medio a 4 días.
+//
+// IMPORTANTE — cómo leer esto: la relación NO es lineal, es una U. Los
+// dos extremos (RSI<30 y RSI>70) preceden movimientos más grandes en
+// ambas direcciones; el medio (45-55) es la zona más quieta. Eso es
+// principalmente un efecto de volatilidad, no una señal direccional.
+//
+// Esto es estadística descriptiva, NO una regla de trading: el spread
+// entre RSI bajo y alto promedia 0.82 pp, contra un costo de operación
+// de 1.2-1.8% ida y vuelta. Sirve para saber dónde está parado el
+// activo en términos históricos, no para decidir una entrada.
+//
+// El efecto sí pasa el test de consistencia temporal (RSI bajo le gana
+// a RSI alto en 81 de 118 meses = 69%, sobre el umbral de 65%), pero
+// viene flojo en los últimos 12 meses (5 de 12 = 42%).
+const RSI_TASAS_BASE = [
+  { lo:  0, hi: 30, n: 11849, pUp: 33.0, pDn: 25.0, fwd4: 1.18, wr: 55.3 },
+  { lo: 30, hi: 40, n: 45081, pUp: 25.9, pDn: 21.2, fwd4: 0.63, wr: 54.1 },
+  { lo: 40, hi: 45, n: 42281, pUp: 23.6, pDn: 20.2, fwd4: 0.48, wr: 52.6 },
+  { lo: 45, hi: 50, n: 51463, pUp: 21.6, pDn: 19.7, fwd4: 0.37, wr: 51.5 },
+  { lo: 50, hi: 55, n: 53969, pUp: 20.2, pDn: 19.0, fwd4: 0.33, wr: 51.7 },
+  { lo: 55, hi: 60, n: 49975, pUp: 19.2, pDn: 17.8, fwd4: 0.38, wr: 52.6 },
+  { lo: 60, hi: 70, n: 72056, pUp: 18.8, pDn: 15.8, fwd4: 0.59, wr: 53.6 },
+  { lo: 70, hi:101, n: 37072, pUp: 23.1, pDn: 17.1, fwd4: 1.01, wr: 54.1 },
+];
+const RSI_BASE_PROM_UP = 21.4;  // promedio general de P(+4%) en el universo
+
+function bandaRSI(rsi) {
+  if (rsi == null || Number.isNaN(rsi)) return null;
+  return RSI_TASAS_BASE.find(b => rsi >= b.lo && rsi < b.hi) || null;
+}
+
 const MARKET_REGIME = { regime: "neutral", spyRoc: 0, sma200: 0, currentPx: 0, lastUpdate: 0 };
 
 function getMarketRegime(indexBars) {
@@ -5811,6 +5848,79 @@ export default function App() {
                       </div>
                     </div>
                   </div>;
+                })()}
+
+                {/* ══════════════════════════════════════════════════
+                    NOVEDADES — agregados recientes van acá, al final,
+                    para poder ver de un vistazo qué se fue sumando.
+                    ══════════════════════════════════════════════════ */}
+                {(()=>{
+                  const rsiAct = sel?.sig?.rsi;
+                  const b = bandaRSI(rsiAct);
+                  return (
+                    <div style={{marginTop:"18px",paddingTop:"14px",borderTop:"2px dashed #1e3a50"}}>
+                      <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".2em",marginBottom:"10px"}}>
+                        ⊕ AGREGADOS RECIENTES
+                      </div>
+
+                      <div className="card" style={{padding:"12px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"3px"}}>
+                          <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>📊 RSI — CONTEXTO HISTÓRICO</span>
+                          <span style={{fontSize:"6px",color:"#5a8fa8"}}>153 activos · 10 años · 363.746 obs.</span>
+                        </div>
+                        <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.6,marginBottom:"9px"}}>
+                          Dónde está parado este RSI según la historia. Es estadística descriptiva,
+                          <strong style={{color:"#8fb4cc"}}> no una señal de compra o venta</strong>.
+                        </div>
+
+                        {b ? (
+                          <div style={{...semBox(b.pUp>=RSI_BASE_PROM_UP?"#00ff88":"#ffd700","14"),padding:"9px",marginBottom:"9px"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"5px"}}>
+                              <span style={{fontSize:"8px",color:"#8fb4cc"}}>RSI actual <strong style={{color:"#e8f4ff",fontSize:"11px"}}>{rsiAct}</strong> → banda {b.lo}-{b.hi===101?"100":b.hi}</span>
+                              <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:b.pUp>=RSI_BASE_PROM_UP?"#00ff88":"#ffd700"}}>{b.pUp}%</span>
+                            </div>
+                            <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                              Históricamente, estando en esta banda hubo un salto de <strong>+4% en los próximos 1-4 días</strong> el {b.pUp}% de las veces
+                              (promedio general: {RSI_BASE_PROM_UP}%). Pero también una caída de -4% el {b.pDn}% de las veces.
+                              Retorno medio a 4 días: {b.fwd4>=0?"+":""}{b.fwd4}%.
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{fontSize:"8px",color:"#5a8fa8",marginBottom:"9px"}}>Sin RSI disponible para este activo.</div>
+                        )}
+
+                        <div style={{fontSize:"6px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>TABLA COMPLETA — P(+4%) vs P(-4%) por banda</div>
+                        {RSI_TASAS_BASE.map(x=>{
+                          const activa = b && x.lo===b.lo;
+                          const w = Math.round(x.pUp/35*100);
+                          return (
+                            <div key={x.lo} style={{display:"flex",alignItems:"center",gap:"6px",padding:"2px 5px",marginBottom:"1px",
+                              borderRadius:"3px",background:activa?"#00d4ff14":"transparent",border:activa?"1px solid #00d4ff40":"1px solid transparent"}}>
+                              <span style={{fontSize:"7px",color:activa?"#00d4ff":"#8fb4cc",width:"44px",flexShrink:0,fontWeight:activa?700:400}}>
+                                {x.lo}-{x.hi===101?"100":x.hi}
+                              </span>
+                              <div style={{flex:1,height:"7px",background:"#050c15",borderRadius:"2px",overflow:"hidden"}}>
+                                <div style={{width:`${w}%`,height:"100%",background:activa?"#00d4ff":"#2d6a8f"}}/>
+                              </div>
+                              <span style={{fontSize:"7px",color:activa?"#00d4ff":"#8fb4cc",width:"34px",textAlign:"right"}}>{x.pUp}%</span>
+                              <span style={{fontSize:"6px",color:"#ff6680",width:"34px",textAlign:"right"}}>-{x.pDn}%</span>
+                            </div>
+                          );
+                        })}
+
+                        <div style={{...semBox("#ff9040","10"),padding:"8px",marginTop:"9px"}}>
+                          <div style={{fontSize:"7px",color:"#ffb380",lineHeight:1.7}}>
+                            <strong>Ojo con leer esto como señal.</strong> La relación es una <strong>U, no una rampa</strong>:
+                            los dos extremos (RSI&lt;30 y RSI&gt;70) preceden movimientos más grandes en <em>ambas</em> direcciones — es
+                            volatilidad, no dirección. El medio (45-55) es la zona más quieta.
+                            El spread entre RSI bajo y alto promedia 0.82 pp, <strong>por debajo del costo de operar (1.2-1.8% ida y vuelta)</strong>,
+                            así que no alcanza como regla de entrada por sí solo.
+                            El efecto pasa el test de consistencia (81 de 118 meses = 69%, umbral 65%) pero viene flojo últimamente (5 de los últimos 12 meses).
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
                 })()}
               </div>
             )}
