@@ -635,6 +635,16 @@ const HALLAZGOS_DESCARTADOS = [
     veredicto: "sin conclusión (muestra insuficiente, no descartada ni confirmada)",
     nota: "Dato honesto que sí queda: de las 4 reuniones completas, 3 tuvieron retorno negativo la semana después (-2.65%, -1.30%, -0.99%) y solo 1 positivo (+0.61%). La suba de julio fue la excepción del año, no la regla. Para testear esto en serio harían falta ~80 reuniones (10 años de historia diaria ya disponible) en vez de 4 — pendiente, no prioritario por ahora.",
   },
+  {
+    fecha: "2026-08-03",
+    hipotesis: "Reversión: caído >8% del máximo de 20 días + RSI<45 anticipa suba",
+    origen: "Buscando qué precedía a las subas de las 20 acciones que más subieron en 3 meses. Replicó en el universo completo — a diferencia del patrón de MACD, este sí pasó el primer filtro",
+    metodo: "Universo completo, 10 años (65.047 señales), horizontes 7 a 60 días, con tres correcciones sucesivas: exceso sobre mercado, muestra efectiva por solapamiento, y control de volatilidad",
+    n: "65.047 señales nominales — pero solo ~1.056 efectivas a H=60 por solapamiento de ventanas (59/60)",
+    resultado: "Prometía +1.70% (t=7.27) en la ventana de 3 meses. Al corregir: el edge cayó a +0.32pp en 10 años; a H=7 daba -0.27% neto de costos; y contra papeles de VOLATILIDAD SIMILAR el exceso se derrumbó de 2.59% a 0.24% con t=0.26 (no significativo). Neto de costos ajustado: -1.30% por operación (≈ -5.47% anual). Consistencia anual 6/11 años (55%), debajo del umbral de 65%.",
+    veredicto: "descartada",
+    nota: "Era exposición a beta/volatilidad, no alfa: la señal selecciona papeles 1.36x más volátiles, y comprar papeles golpeados y volátiles en un mercado que subió 10 años paga por el riesgo tomado, no por capacidad predictiva. Lección reutilizable: cuando una señal selecciona activos con volatilidad sistemáticamente distinta, el control correcto es contra activos de volatilidad comparable en la misma fecha — sin eso, casi cualquier filtro de 'papeles golpeados' parece funcionar en un mercado alcista.",
+  },
 ];
 
 const MARKET_REGIME = { regime: "neutral", spyRoc: 0, sma200: 0, currentPx: 0, lastUpdate: 0 };

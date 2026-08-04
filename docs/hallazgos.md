@@ -118,3 +118,61 @@ real de esos 10 años (~80 reuniones) la muestra efectiva pasaría de 4 a
 80 eventos, ahí sí sería un test con poder estadístico real. Pendiente,
 no se hizo por decisión explícita (bajo prioridad por ahora).
 
+
+---
+
+## 2026-08-03 — "Reversión: caído >8% del máximo de 20 días + RSI<45"
+
+**Origen:** buscando qué precedía a las subas fuertes de las 20 acciones
+que más subieron en 3 meses. A diferencia de la hipótesis de MACD, esta
+sí replicó en el universo completo en el primer test: los días previos a
+subas de +8% en 7 días mostraban precio *debajo* del máximo de 20 días,
+RSI bajo y semana previa negativa — firma de reversión, no de momentum.
+
+**Primer resultado (prometedor):** universo completo, mayo-ago 2026,
++1.70% a 7 días vs +0.32% del resto, t=7.27, win rate 60%. Además la
+condición discriminaba dirección (los días previos a *caídas* de -8%
+tenían el perfil opuesto: RSI 54, semana previa +3.09%), así que no era
+solo "volatilidad".
+
+**Batería de validación:**
+
+| Test | Resultado |
+|---|---|
+| Ventana original (3 meses) | +1.38pp, t=7.27 |
+| Extendido a 10 años (65.047 señales) | +0.32pp, t=6.90 — el edge se achica 4x |
+| Neto de costos (H=7) | **-0.27% por operación** |
+| H=60 para amortizar costo, retorno absoluto | +12.33% (engañoso — ver abajo) |
+| H=60, exceso sobre el mercado mismo día | +2.59% |
+| H=60, **contra papeles de volatilidad similar** | **+0.24%, t=0.26 — no significativo** |
+| Neto de costos, ajustado por volatilidad | **-1.30%/op ≈ -5.47% anual** |
+| Consistencia anual (exceso ajustado) | 6/11 años (55%) — umbral >65% |
+
+**Conclusión: DESCARTADA.** Tres correcciones sucesivas fueron
+desarmando el hallazgo:
+
+1. **Retorno absoluto vs exceso:** a 60 días el "+12.33%" era casi todo
+   mercado subiendo (el baseline sin señal daba +8.42%). El exceso real
+   era 2.59%.
+2. **Ventanas solapadas:** con retornos forward de 60 días calculados a
+   diario, el solapamiento es 59/60. El t=20.88 nominal cae a 2.70 con
+   la muestra efectiva (n 63.385 → 1.056).
+3. **Control de volatilidad (decisivo):** la señal selecciona papeles
+   1.36x más volátiles que el promedio. Comparando contra papeles de
+   volatilidad *similar* el mismo día, el exceso cae de 2.59% a 0.24%
+   y el t a 0.26. El desglose por quintil no es monótono (Q0 +2.47%,
+   Q2 -1.05%, Q4 +0.99%) — incoherente, ruido.
+
+**Lo que era en realidad:** exposición a beta/volatilidad, no alfa.
+Comprar papeles golpeados y volátiles en un mercado que subió 10 años
+paga — pero paga por el riesgo tomado, no por capacidad predictiva. Es
+el mismo diagnóstico que el propio tab de Validación ya había hecho
+sobre el score técnico ("amplificación de beta en un rally, no
+capacidad predictiva").
+
+**Lección metodológica reutilizable:** cuando una señal seleccione
+activos con volatilidad sistemáticamente distinta al promedio, el
+control correcto no es contra "el resto del universo" sino contra
+activos de volatilidad comparable en la misma fecha. Sin ese control,
+casi cualquier filtro de "papeles golpeados" va a parecer que funciona
+en un mercado alcista.
