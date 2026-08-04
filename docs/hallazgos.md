@@ -176,3 +176,57 @@ control correcto no es contra "el resto del universo" sino contra
 activos de volatilidad comparable en la misma fecha. Sin ese control,
 casi cualquier filtro de "papeles golpeados" va a parecer que funciona
 en un mercado alcista.
+
+---
+
+## 2026-08-03 — Tasas base de RSI y de patrones de vela (agregados como CONTEXTO, no como señal)
+
+A diferencia de las tres entradas anteriores, estos dos no se descartan:
+se incorporaron a la app como estadística descriptiva, con la advertencia
+explícita de que ninguno alcanza como regla de entrada.
+
+### RSI por bandas (10 años, 363.746 obs)
+
+La relación es una **U, no una rampa**: los dos extremos (RSI<30 y
+RSI>70) preceden movimientos más grandes en *ambas* direcciones, y el
+medio (45-55) es la zona más quieta. Eso es volatilidad, no dirección.
+
+| Banda | P(+4% en 1-4d) | P(-4%) | fwd 4d |
+|---|---|---|---|
+| 0-30 | 33.0% | 25.0% | +1.18% |
+| 45-55 | ~21% | ~19% | +0.35% |
+| 70+ | 23.1% | 17.1% | +1.01% |
+
+- Pasa el test de consistencia: RSI bajo le gana a RSI alto en **81 de
+  118 meses (69%)**, sobre el umbral de 65%. Es lo primero de toda esta
+  investigación que lo pasa.
+- Pero el spread medio es **0.82 pp**, contra 1.2-1.8% de costo de
+  operar. No alcanza como regla autónoma.
+- Últimos 12 meses flojos: 5 de 12 (42%).
+- **Julio 2026 fue atípico** (puesto 21 de 118, top 18%): ahí el patrón
+  se veía monótono y fuerte (RSI<30 → +3.21%, RSI>70 → -1.30%), lo
+  opuesto a la forma en U de la historia larga. Codificar una regla
+  mirando solo julio habría dado una señal invertida para RSI>70.
+
+### Patrones de vela (mismos datos)
+
+De 15 patrones medidos, con corrección de Bonferroni (15 comparaciones)
+más control de volatilidad:
+
+- **Solo 2 sobreviven**: Marubozu Alcista (exceso +0.319 pp, t=2.80) y
+  3 Cuervos (+0.166 pp, t=3.40).
+- **Solo 1 pasa además consistencia mensual**: 3 Cuervos (70%).
+  Marubozu Alcista falla con 60%.
+- **Las etiquetas tradicionales no se sostienen.** "3 Cuervos" es un
+  patrón *bajista* de manual y predice retornos *positivos*. "Martillo"
+  (la reversión alcista clásica) es el **peor** de los 15 (-0.153 pp).
+  "3 Velas Alcistas" y "Engulfing Bajista" dan esencialmente cero.
+- Aun el mejor caso mueve 0.2-0.3 pp, **muy por debajo del costo**.
+
+**Lo que se implementó:** dos paneles en la sección "⊕ AGREGADOS
+RECIENTES" al final del tab Detalle, mostrando la tasa base medida de la
+banda de RSI y del patrón de vela actual, cada uno con su advertencia.
+La idea es que el usuario vea *dónde está parado según la historia* sin
+que eso se lea como un pronóstico. También se agregó detección de
+"3 Cuervos" a detectCandlePattern(), con un `desc` que refleja lo medido
+en vez de repetir la interpretación clásica.

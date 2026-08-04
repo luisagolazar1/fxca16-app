@@ -684,6 +684,34 @@ function bandaRSI(rsi) {
   return RSI_TASAS_BASE.find(b => rsi >= b.lo && rsi < b.hi) || null;
 }
 
+// ── TASAS BASE HISTÓRICAS POR PATRÓN DE VELA ──
+//
+// Mismo método que RSI_TASAS_BASE: 153 activos × 10 años (363.746 obs).
+// `clave` mapea con los nombres que devuelve detectCandlePattern().
+//
+// RESULTADO GENERAL: de 15 patrones medidos, solo 2 sobreviven corrección
+// por comparaciones múltiples (Bonferroni) + control de volatilidad, y
+// solo 1 pasa además el test de consistencia mensual. Los efectos son de
+// 0.2-0.3 pp contra un costo de operar de 1.2-1.8% — ninguno alcanza
+// como regla de entrada.
+//
+// Lo más importante: las etiquetas tradicionales alcista/bajista NO se
+// sostienen. "Martillo" (reversión alcista de manual) es el peor de los
+// 15. "Tres cuervos" (bajista de manual) es el único que pasa todos los
+// tests, y predice retornos POSITIVOS. Por eso el panel muestra la tasa
+// base medida al lado de la etiqueta, en vez de repetir el folklore.
+const VELAS_TASAS_BASE = [
+  { clave:"Marubozu Alcista", etiqueta:"alcista", n:10272, pUp:26.2, pDn:19.0, fwd4:1.04, wr:53.1, exc:+0.319, t:2.80, cons:60, veredicto:"parcial" },
+  { clave:"Engulfing Alcista", etiqueta:"alcista", n:12901, pUp:22.6, pDn:18.4, fwd4:0.72, wr:53.5, exc:+0.052, t:0.35, cons:null, veredicto:"sin efecto" },
+  { clave:"Estrella Fugaz",   etiqueta:"bajista", n: 9914, pUp:23.5, pDn:18.8, fwd4:0.70, wr:54.4, exc:+0.176, t:1.77, cons:null, veredicto:"sin efecto" },
+  { clave:"3 Cuervos",        etiqueta:"bajista", n:43753, pUp:24.4, pDn:20.5, fwd4:0.66, wr:53.7, exc:+0.166, t:3.40, cons:70, veredicto:"pasa" },
+  { clave:"Engulfing Bajista",etiqueta:"bajista", n:15983, pUp:22.2, pDn:19.6, fwd4:0.54, wr:53.7, exc:-0.021, t:-0.27, cons:null, veredicto:"sin efecto" },
+  { clave:"3 Velas Alcistas", etiqueta:"alcista", n:42446, pUp:19.8, pDn:17.1, fwd4:0.52, wr:53.1, exc:-0.058, t:-0.95, cons:null, veredicto:"sin efecto" },
+  { clave:"Doji",             etiqueta:"neutral", n:38506, pUp:21.6, pDn:18.7, fwd4:0.52, wr:52.5, exc:-0.019, t:-0.39, cons:null, veredicto:"sin efecto" },
+  { clave:"Martillo",         etiqueta:"alcista", n:14356, pUp:21.2, pDn:19.8, fwd4:0.35, wr:50.4, exc:-0.153, t:-1.12, cons:null, veredicto:"sin efecto" },
+];
+const VELAS_BASELINE = { pUp:21.8, pDn:18.7, fwd4:0.55, wr:53.0 };
+
 const MARKET_REGIME = { regime: "neutral", spyRoc: 0, sma200: 0, currentPx: 0, lastUpdate: 0 };
 
 function getMarketRegime(indexBars) {
@@ -1854,6 +1882,13 @@ function detectCandlePattern(data) {
   if (data[n-1].close > data[n-2].close && data[n-2].close > data[n-3].close &&
       data[n-1].open > data[n-2].open && data[n-2].open > data[n-3].open)
     patterns.push({ name:"3 Velas Alcistas", type:"bullish", desc:"Tendencia alcista confirmada" });
+  // Tres cuervos (Three Black Crows) — 3 velas bajistas seguidas.
+  // El manual lo llama continuación bajista, pero medido sobre 43.753
+  // casos en 10 años es el ÚNICO patrón que pasa Bonferroni + control de
+  // volatilidad + consistencia mensual (70%), y apunta al alza
+  // (+0.166 pp de exceso). Por eso el desc no repite la etiqueta clásica.
+  if (!isBull && p.close < p.open && pp.close < pp.open)
+    patterns.push({ name:"3 Cuervos", type:"neutral", desc:"Medido: leve sesgo alcista posterior, contra lo que dice el manual" });
   return { patterns, isBull, body: +body.toFixed(2), range: +range.toFixed(2) };
 }
 
@@ -5919,6 +5954,76 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+
+                      {/* ── PATRONES DE VELA — CONTEXTO HISTÓRICO ── */}
+                      {(()=>{
+                        const cand = detectCandlePattern(sel?.data||[]);
+                        const actual = cand?.patterns?.[0]?.name || null;
+                        const fila = actual ? VELAS_TASAS_BASE.find(v=>v.clave===actual) : null;
+                        const colVer = v => v==="pasa"?"#00ff88":v==="parcial"?"#ffd700":"#5a8fa8";
+                        return (
+                          <div className="card" style={{padding:"12px",marginTop:"9px"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"3px"}}>
+                              <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>🕯️ PATRONES DE VELA — CONTEXTO HISTÓRICO</span>
+                              <span style={{fontSize:"6px",color:"#5a8fa8"}}>153 activos · 10 años</span>
+                            </div>
+                            <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.6,marginBottom:"9px"}}>
+                              Qué rindió realmente cada patrón, medido — al lado de la etiqueta que le da el manual.
+                            </div>
+
+                            {fila ? (
+                              <div style={{...semBox(colVer(fila.veredicto),"14"),padding:"9px",marginBottom:"9px"}}>
+                                <div style={{fontSize:"8px",color:"#8fb4cc",marginBottom:"4px"}}>
+                                  Patrón detectado hoy: <strong style={{color:"#e8f4ff",fontSize:"10px"}}>{actual}</strong>
+                                  <span style={{color:"#5a8fa8"}}> (el manual lo llama {fila.etiqueta})</span>
+                                </div>
+                                <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
+                                  Medido sobre {fila.n.toLocaleString()} casos: retorno medio a 4 días <strong>{fila.fwd4>=0?"+":""}{fila.fwd4}%</strong> (baseline {VELAS_BASELINE.fwd4}%),
+                                  salto de +4% el {fila.pUp}% de las veces (baseline {VELAS_BASELINE.pUp}%), caída de -4% el {fila.pDn}%.
+                                  <br/>Controlando volatilidad y fecha: exceso {fila.exc>=0?"+":""}{fila.exc} pp, t={fila.t} —
+                                  <strong style={{color:colVer(fila.veredicto)}}> {fila.veredicto==="pasa"?"pasa los tests":fila.veredicto==="parcial"?"pasa volatilidad pero falla consistencia mensual (60%)":"sin efecto medible"}</strong>.
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{fontSize:"8px",color:"#5a8fa8",marginBottom:"9px"}}>Sin patrón de vela detectado hoy en este activo.</div>
+                            )}
+
+                            <div style={{fontSize:"6px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>TODOS LOS PATRONES — exceso real vs baseline (controlado por volatilidad)</div>
+                            {VELAS_TASAS_BASE.map(v=>{
+                              const act = actual===v.clave;
+                              const c = colVer(v.veredicto);
+                              return (
+                                <div key={v.clave} style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 5px",marginBottom:"1px",borderRadius:"3px",
+                                  background:act?"#00d4ff14":"transparent",border:act?"1px solid #00d4ff40":"1px solid transparent"}}>
+                                  <span style={{fontSize:"7px",color:act?"#00d4ff":"#8fb4cc",width:"86px",flexShrink:0,fontWeight:act?700:400}}>{v.clave}</span>
+                                  <span style={{fontSize:"6px",width:"38px",flexShrink:0,color:v.etiqueta==="alcista"?"#00ff8880":v.etiqueta==="bajista"?"#ff335580":"#5a8fa8"}}>{v.etiqueta}</span>
+                                  <div style={{flex:1,height:"6px",background:"#050c15",borderRadius:"2px",position:"relative",overflow:"hidden"}}>
+                                    <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:"1px",background:"#1e3a50"}}/>
+                                    <div style={{position:"absolute",top:0,bottom:0,background:v.exc>=0?"#2d8f6a":"#8f2d3d",
+                                      left:v.exc>=0?"50%":`${50-Math.min(45,Math.abs(v.exc)*100)}%`,
+                                      width:`${Math.min(45,Math.abs(v.exc)*100)}%`}}/>
+                                  </div>
+                                  <span style={{fontSize:"6px",color:v.exc>=0?"#00ff88":"#ff6680",width:"36px",textAlign:"right"}}>{v.exc>=0?"+":""}{v.exc}</span>
+                                  <span style={{fontSize:"6px",color:c,width:"22px",textAlign:"right"}}>{v.veredicto==="pasa"?"★":v.veredicto==="parcial"?"~":"—"}</span>
+                                </div>
+                              );
+                            })}
+
+                            <div style={{...semBox("#ff9040","10"),padding:"8px",marginTop:"9px"}}>
+                              <div style={{fontSize:"7px",color:"#ffb380",lineHeight:1.7}}>
+                                <strong>Las etiquetas del manual no se sostienen.</strong> De 15 patrones medidos, solo 2 sobreviven
+                                corrección por comparaciones múltiples más control de volatilidad, y <strong>solo 1 pasa además el test de
+                                consistencia mensual: "3 Cuervos"</strong> — que es un patrón <em>bajista</em> de manual y predice retornos
+                                <em> positivos</em> (+0.166 pp, t=3.40, gana en 70% de los meses).
+                                En el otro extremo, "Martillo" (la reversión alcista clásica) es el <strong>peor</strong> de los 15 medidos.
+                                <br/><br/>
+                                Y aun el mejor caso mueve 0.2-0.3 pp, <strong>muy por debajo del costo de operar (1.2-1.8% ida y vuelta)</strong>:
+                                ninguno alcanza como regla de entrada por sí solo. Sirven para describir lo que pasó, no para pronosticar.
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
