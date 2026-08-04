@@ -645,6 +645,36 @@ const HALLAZGOS_DESCARTADOS = [
     veredicto: "descartada",
     nota: "Era exposición a beta/volatilidad, no alfa: la señal selecciona papeles 1.36x más volátiles, y comprar papeles golpeados y volátiles en un mercado que subió 10 años paga por el riesgo tomado, no por capacidad predictiva. Lección reutilizable: cuando una señal selecciona activos con volatilidad sistemáticamente distinta, el control correcto es contra activos de volatilidad comparable en la misma fecha — sin eso, casi cualquier filtro de 'papeles golpeados' parece funcionar en un mercado alcista.",
   },
+  {
+    fecha: "2026-08-03",
+    hipotesis: "El score técnico marca COMPRA cuando el activo ya subió — ¿se puede detectar 'el paso antes'?",
+    origen: "Observación directa: las señales de COMPRA FUERTE aparecían después de que el papel ya se había movido",
+    metodo: "combinedSignal() real sobre 39 tickers, último año, ~2.300 señales; más 5 reglas de entrada distintas basadas en el perfil precursor (estado 7 días antes de que dispare la señal)",
+    n: "2.301 señales medidas · 2.184 días evaluados para las reglas precursoras",
+    resultado: "COMPRA FUERTE llega después de +13.7% (20d) y captura +0.42% — ratio 34:1, y por debajo del baseline de 0.97%. Ninguna de las 5 reglas precursoras supera al baseline; la mejor da 0.83% vs 0.89%, y 'RSI 50-65' da -0.32% (t=-3.15, peor de forma significativa). Correlación con retorno a 20d: RSI 0.004, ya-subió-10d 0.095, vs-SMA20 0.085.",
+    veredicto: "no existe el paso antes (en estos indicadores)",
+    nota: "Razón estructural, no de calibración: los indicadores del score se calculan A PARTIR del movimiento de precio, así que no lo anticipan — lo describen. Adelantar la señal solo agrega falsos positivos. No alcanza para afirmar que la señal esté invertida (t VENTA vs COMPRA FUERTE = 1.48), pero sí que COMPRA FUERTE no aporta sobre comprar al azar.",
+  },
+  {
+    fecha: "2026-08-03",
+    hipotesis: "Búsqueda exhaustiva: 43 indicadores técnicos + 66 combinaciones de a dos",
+    origen: "Barrido sistemático buscando cualquier indicador o par que anticipe subas",
+    metodo: "IC de Spearman cross-seccional por fecha, horizonte 10 días. Primero en 3 meses, después validado sobre 10 años (110.806 obs), con Bonferroni por 43 pruebas, control de volatilidad y descuento de costos",
+    n: "110.806 observaciones a 10 años · 24 indicadores pasan Bonferroni",
+    resultado: "HAY señal detectable: 24 indicadores pasan Bonferroni y casi todos con IC NEGATIVO — el momentum está invertido a 10 días (más RSI/ROC/sobre-SMA20 → menor retorno futuro). Signo estable entre 3 meses y 10 años en 23 de 24. Mejor combinación roc20+roc5 (IC +0.0387, t=6.26) pero IR de solo 0.18. Test operativo: exceso +0.41% cae a +0.279% (t=1.47, no significativo) al controlar volatilidad, y NETO DE COSTOS da -1.327% por operación (-33% anual).",
+    veredicto: "señal real pero no operable",
+    nota: "El efecto es 5-6x más chico que el costo de transacción. Implicación importante: la dirección es CONTRARIA a cómo el score técnico usa estos indicadores — el score marca COMPRA FUERTE con momentum alto, y los datos dicen que el momentum alto precede retornos menores. Eso explica por qué COMPRA FUERTE rinde debajo del baseline. Combinar indicadores casi no agrega: están muy correlacionados entre sí.",
+  },
+  {
+    fecha: "2026-08-03",
+    hipotesis: "El alfa cross-sectional es lo único validado fuera de muestra (según el traspaso: IC 0.127, IR 1.06, t=8.38)",
+    origen: "Verificar la afirmación del documento de traspaso contra los 10 años de serie diaria",
+    metodo: "Reproducir la fórmula documentada (rango(vol_shock) − rango(mom_1m), suavizado 10d) sobre 10 años de datos que el modelo nunca vio — se desarrolló sobre la serie horaria de ~1 año",
+    n: "103 activos USD × 10 años, evaluado por período y en agregado",
+    resultado: "Solo funciona en 2026, el período donde se construyó (monotonía +0.76). En el agregado 2016-2026 la monotonía entre quintil y exceso da -0.66 (INVERTIDA) y el t de Q5 da exactamente 0.00. Por período: 2016-19 mono -0.17, 2020-22 -0.94, 2023-24 -0.48, 2025 -0.78.",
+    veredicto: "sobreajustado a su ventana de desarrollo",
+    nota: "Lo que sí es cierto y vale rescatar: el alfa dispara ANTES que el score técnico — Q5 compra papeles que vienen -6.9% en 20 días, contra el score que marca COMPRA FUERTE después de +13.7%. El mecanismo es el correcto, el problema es que el ranking no predice. Salvedad: la reproducción usa la fórmula documentada y puede diferir en detalles de la implementación real de alpha.js.",
+  },
 ];
 
 // ── TASAS BASE HISTÓRICAS POR BANDA DE RSI ──
@@ -5425,6 +5455,19 @@ export default function App() {
                                   {a.diasPromediados ? ` (${a.diasPromediados} días con datos)` : ""}.<br/>
                                   Validado: IC {ALPHA.ALPHA_VALIDADA.metricas.ic} · IR {ALPHA.ALPHA_VALIDADA.metricas.ir} ·
                                   t={ALPHA.ALPHA_VALIDADA.metricas.t} · positivo en {ALPHA.ALPHA_VALIDADA.metricas.pctFechas}% de las fechas
+                                </div>
+                                <div style={{marginTop:"7px",padding:"7px 8px",background:"#ff335512",border:"1px solid #ff335540",borderRadius:"4px"}}>
+                                  <div style={{fontSize:"7px",color:"#ff6680",fontWeight:700,marginBottom:"3px"}}>⚠ ESA VALIDACIÓN NO SE SOSTIENE FUERA DE SU VENTANA</div>
+                                  <div style={{fontSize:"7px",color:"#ffb3c0",lineHeight:1.7}}>
+                                    El IC/IR de arriba se midió sobre la serie horaria (~1 año), que es donde se construyó la fórmula.
+                                    Reproducida sobre los <strong>10 años de serie diaria</strong> — datos que el modelo nunca vio — el
+                                    ranking <strong>no discrimina</strong>: la monotonía entre quintil y exceso da <strong>-0.66</strong> (invertida)
+                                    y el t de Q5 da <strong>0.00</strong>. Solo funciona en 2026, el período sobre el que se desarrolló.
+                                    <br/><br/>
+                                    Lo que sí es cierto: el alfa dispara <em>antes</em> que el score técnico (Q5 compra papeles que vienen -6.9%
+                                    en 20 días, contra el score que marca COMPRA FUERTE después de +13.7%). El mecanismo es el correcto;
+                                    el problema es que el ranking no predice. Ver <code>docs/hallazgos.md</code>.
+                                  </div>
                                 </div>
                               </div>
                             );

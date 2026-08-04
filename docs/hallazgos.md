@@ -230,3 +230,131 @@ La idea es que el usuario vea *dónde está parado según la historia* sin
 que eso se lea como un pronóstico. También se agregó detección de
 "3 Cuervos" a detectCandlePattern(), con un `desc` que refleja lo medido
 en vez de repetir la interpretación clásica.
+
+---
+
+## 2026-08-03 — El alfa cross-sectional NO sobrevive fuera de su ventana de desarrollo
+
+**Contexto:** el documento de traspaso describía a `alpha.js` como "lo
+único que sobrevivió validación fuera de muestra en toda la sesión",
+con IC +0.127, IR 1.06, t=8.38, validado con split temporal 60/40.
+
+**Test:** reproducir la fórmula documentada
+(`rango(vol_shock) − rango(mom_1m)`, con suavizado de 10 días) y
+evaluarla sobre los **10 años de serie diaria** — datos que el modelo
+nunca vio, porque se desarrolló sobre la serie horaria de ~1 año.
+
+**Resultado por período** (H=30d; "mono" = correlación entre número de
+quintil y exceso; debería ser cercana a +1 si el ranking funciona):
+
+| Período | Monotonía | t(Q5) |
+|---|---|---|
+| 2016-2019 | -0.17 | 0.16 |
+| 2020-2022 | **-0.94** | -0.11 |
+| 2023-2024 | -0.48 | 0.01 |
+| 2025 | -0.78 | -0.61 |
+| **2026** | **+0.76** | 0.66 |
+| **Todo 2016-2026** | **-0.66** | **0.00** |
+
+**Conclusión: el alfa solo "funciona" en 2026 — el período sobre el que
+se construyó.** En el agregado de 10 años la monotonía es -0.66 (ranking
+invertido) y el t de Q5 es exactamente 0.00. Es el patrón clásico de
+sobreajuste a la ventana de desarrollo.
+
+**Lo que sí es cierto y vale rescatar:** el alfa efectivamente dispara
+*antes* que el score técnico. Q5 compra papeles que vienen -6.9% en 20
+días, mientras el score técnico marca COMPRA FUERTE después de +13.7%.
+El mecanismo es el correcto — el problema es que el ranking no predice.
+
+**Salvedad:** la reproducción usa la fórmula documentada, pero puede
+diferir en detalles de la implementación real de `alpha.js`.
+
+---
+
+## 2026-08-03 — Diagnóstico del timing del score técnico
+
+Motivado por la observación de que "el sistema marca compra cuando el
+activo ya subió". Medido corriendo `combinedSignal()` real sobre 39
+tickers, último año, ~2.300 señales:
+
+| Señal | Ya subió (20d antes) | Queda (20d después) |
+|---|---|---|
+| COMPRA FUERTE | **+13.7%** | **+0.42%** |
+| COMPRA | +7.1% | +1.1% |
+| VENTA | -0.8% | +1.46% |
+| VENTA FUERTE | -9.2% | +0.79% |
+| *baseline* | — | *+0.97%* |
+
+**COMPRA FUERTE captura +0.42% después de un movimiento de +13.7%** —
+ratio 34:1 entre lo ya ocurrido y lo disponible. Y rinde por debajo del
+baseline (0.97%).
+
+No se puede afirmar que la señal esté invertida (t(VENTA vs COMPRA
+FUERTE) = 1.48, no significativo), pero **sí que COMPRA FUERTE no aporta
+nada sobre comprar al azar**.
+
+**No existe "el paso antes" en estos indicadores.** Se probaron 5 reglas
+de entrada basadas en el perfil precursor (el estado 7 días antes de que
+dispare la señal) y **ninguna supera al baseline**; la mejor da 0.83% vs
+0.89%, y "RSI 50-65" da -0.32% (t=-3.15, peor de forma significativa).
+Correlaciones con el retorno a 20 días: RSI **0.004**, ya-subió-10d
+0.095, vs-SMA20 0.085.
+
+**Razón estructural:** los indicadores del score se calculan *a partir*
+del movimiento de precio. No lo anticipan, lo describen. Adelantar la
+señal solo agrega falsos positivos.
+
+---
+
+## 2026-08-03 — Búsqueda exhaustiva: 43 indicadores + 66 combinaciones de a dos
+
+**Método:** biblioteca de 43 indicadores técnicos (RSI 7/14/21, MACD
+línea e histograma, estocástico K/D, Williams %R, CCI, ROC 5/10/20/60,
+Bollinger posición y ancho, ATR y ratio, ADX/DMI, OBV, MFI, CMF, Aroon,
+TRIX, CMO, Force Index, Stochastic RSI, Vortex, Donchian, Ultimate
+Oscillator, distancias a máximos, gap, cuerpo de vela, volumen relativo
+y shock). IC de Spearman cross-seccional por fecha, horizonte 10 días,
+primero en 3 meses y después validado sobre 10 años (110.806 obs).
+
+**Hallazgo principal — el momentum está invertido a 10 días:**
+24 indicadores pasan Bonferroni sobre 10 años, y **casi todos con IC
+negativo**. Más RSI, más ROC, más por encima de la SMA20, más cerca del
+techo de Donchian → *menor* retorno futuro. El signo coincide entre la
+ventana de 3 meses y los 10 años en 23 de 24 casos.
+
+| Indicador | IC 10a | t | IC 3m | mismo signo |
+|---|---|---|---|---|
+| vsSma20 | -0.0366 | -5.80 | -0.0625 | sí |
+| roc20 | -0.0337 | -5.51 | -0.0967 | sí |
+| roc5 | -0.0328 | -5.34 | -0.0521 | sí |
+| pctDesdeMax20 | -0.0320 | -5.27 | -0.0531 | sí |
+| cci | -0.0294 | -5.20 | -0.0294 | sí |
+| adx | **+0.0141** | 3.24 | +0.0709 | sí |
+| volRatio | +0.0172 | 4.02 | -0.0044 | no |
+
+**Mejores combinaciones de a dos** (ambos invertidos): roc20+roc5
+(IC +0.0387, t=6.26, IR 0.18), vsSma20+roc20 (+0.0370, t=5.95),
+vsSma20+roc5 (+0.0372, t=5.93). La ganancia sobre el mejor indicador
+individual es marginal — los indicadores están muy correlacionados
+entre sí, combinarlos no agrega información nueva.
+
+**Test operativo (quintil más castigado por vsSma20):**
+
+| Etapa | Exceso | t |
+|---|---|---|
+| Sin control | +0.41% | 2.26 |
+| **Con control de volatilidad** | **+0.279%** | **1.47 (no significativo)** |
+| Neto de costos (1.61%) | **-1.327%** | — |
+| Anualizado | **-33.45%** | — |
+
+**Conclusión: existe señal detectable pero NO operable.** El efecto es
+real y consistente (10 años, signo estable, Bonferroni), pero es 5-6x
+más chico que el costo de transacción. Y el IR de la mejor combinación
+es 0.18 — muy lejos del 1.06 que reportaba el traspaso para el alfa, lo
+que refuerza que aquel número estaba sobreajustado.
+
+**Implicación importante para el sistema:** la dirección del efecto es
+*contraria* a cómo el score técnico usa estos indicadores. El score
+marca COMPRA FUERTE con momentum alto; los datos dicen que el momentum
+alto precede retornos menores. Eso explica por qué COMPRA FUERTE rinde
+por debajo del baseline.
