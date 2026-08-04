@@ -611,6 +611,24 @@ def main():
     if not df_custom.empty: frames.append(df_custom)
     df_total = pd.concat(frames, ignore_index=True)
     df_total = df_total.sort_values(["ticker","datetime"]).reset_index(drop=True)
+
+    # ── Deduplicar (ticker, datetime) ──
+    # Si un ticker está a la vez en la lista estándar y en custom_tickers.json
+    # se descarga dos veces y el concat de arriba produce barras duplicadas
+    # exactas. Eso rompe los indicadores: cada barra repetida es una barra de
+    # variación cero intercalada, lo que aplana el RSI hacia 50 y duplica de
+    # hecho el período de suavizado de EMA/MACD.
+    #
+    # Caso real (2026-08-03): AMD, MELI, ORCL, PBR y SPOT tenían el 100% de sus
+    # barras horarias duplicadas por estar en ambas listas. Corregirlo cambiaba
+    # la señal en 5 de 10 casos medidos — AMD 30D pasaba de COMPRA FUERTE a
+    # VENTA y SPOT 7D de VENTA a COMPRA.
+    antes = len(df_total)
+    df_total = df_total.drop_duplicates(subset=["ticker","datetime"], keep="last").reset_index(drop=True)
+    dups = antes - len(df_total)
+    if dups:
+        print(f"🧹 Deduplicadas {dups:,} barras repetidas (tickers en lista estándar + custom)")
+
     last_date = str(df_total["datetime"].max())[:10]
 
     print(f"\n✅ Total: {df_total['ticker'].nunique()} tickers | {len(df_total):,} filas | hasta {last_date}")

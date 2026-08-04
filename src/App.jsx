@@ -50,7 +50,13 @@ if(typeof window!=='undefined')window.storage=storage;
 // ── DATOS REALES: 80 tickers · 60 barras 1h · hasta 2026-03-25 ──
 const CSV_DATA_EMBEDDED = CSV_DATA_EMBEDDED_RAW;
 const LAST_PRICES = {};
-function expandEmbedded(raw){const out={};for(const [tk,bars] of Object.entries(raw)){out[tk]=bars.map(b=>({date:b.d,hour:b.h,open:b.o,high:b.hi,low:b.lo,close:b.c,volume:b.v,moneda:b.m,_ticker:tk}));}return out;}
+// Deduplica por (fecha, hora) al expandir. Defensa del lado de la app:
+// data.js puede venir con barras repetidas si un ticker quedó en la lista
+// estándar y en custom_tickers.json a la vez (ver el fix en update_data.py).
+// Las barras repetidas rompen los indicadores — cada una es una barra de
+// variación cero intercalada, que aplana el RSI hacia 50 y duplica de hecho
+// el período de suavizado del MACD.
+function expandEmbedded(raw){const out={};for(const [tk,bars] of Object.entries(raw)){const seen=new Set();out[tk]=bars.filter(b=>{const k=b.d+'|'+b.h;if(seen.has(k))return false;seen.add(k);return true;}).map(b=>({date:b.d,hour:b.h,open:b.o,high:b.hi,low:b.lo,close:b.c,volume:b.v,moneda:b.m,_ticker:tk}));}return out;}
 
 
 // ═══════════════════════════════════════════════════════════════
@@ -1033,6 +1039,46 @@ function antiguedadDato(fechaISO, ahoraART) {
   if (minutos < 60) return { minutos, mensaje: `hace ${minutos} min` };
   if (minutos < 60*24) return { minutos, mensaje: `hace ${(minutos/60).toFixed(1)}h` };
   return { minutos, mensaje: `hace ${Math.round(minutos/60/24)}d` };
+}
+
+// ── CALIDAD DE LA SERIE DE PRECIOS ──
+//
+// Detecta series degradadas: papeles ilíquidos del Merval donde el
+// precio queda congelado por falta de operaciones, no por estabilidad
+// real. El motor técnico no distingue "el precio no se movió porque
+// nadie operó" de "el precio no se movió porque hay equilibrio", y
+// produce señales con confianza alta sobre ruido.
+//
+// Caso real que motivó esto (2026-08-03): POLL mostraba COMPRA FUERTE
+// con CONF 100% sin haber operado desde el 31/7, con 63% de días sin
+// volumen. GAMI tuvo el precio clavado en 15.50 durante 3 meses con
+// volumen 0 y después un único print de 404 (+2506%) con volumen 1906.
+//
+// Devuelve nivel: "ok" | "dudosa" | "degradada"
+function calidadSerie(bars, lookback = 100) {
+  if (!bars || bars.length < 20) return { nivel: "degradada", motivo: "serie muy corta", pctSinVol: 1, pctCongelado: 1 };
+  const ult = bars.slice(-lookback);
+  const n = ult.length;
+  const sinVol = ult.filter(b => !b.volume).length;
+  let congelado = 0;
+  for (let i = 1; i < n; i++) if (ult[i].close === ult[i-1].close) congelado++;
+  const pctSinVol = sinVol / n;
+  const pctCongelado = congelado / (n - 1);
+
+  // Barras desde la última con volumen real
+  let stale = 0;
+  for (let i = n - 1; i >= 0 && !ult[i].volume; i--) stale++;
+
+  const motivos = [];
+  if (pctSinVol > 0.30) motivos.push(`${(pctSinVol*100).toFixed(0)}% sin volumen`);
+  if (pctCongelado > 0.40) motivos.push(`${(pctCongelado*100).toFixed(0)}% precio congelado`);
+  if (stale > 5) motivos.push(`${stale} barras sin operar`);
+
+  let nivel = "ok";
+  if (pctSinVol > 0.30 || pctCongelado > 0.50 || stale > 10) nivel = "degradada";
+  else if (pctSinVol > 0.15 || pctCongelado > 0.30 || stale > 5) nivel = "dudosa";
+
+  return { nivel, motivo: motivos.join(" · "), pctSinVol, pctCongelado, stale };
 }
 
 function semBox(color, alpha = "1f") {
@@ -5151,6 +5197,15 @@ export default function App() {
                             <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".2em",marginBottom:"4px"}}>VEREDICTO FINAL</div>
                             <div style={{display:"flex",gap:"4px",justifyContent:"center",flexWrap:"wrap",marginBottom:"6px"}}>
                               {s?.synthetic&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff335520",border:"1px solid #ff335550",borderRadius:"3px",color:"#ff3355",fontWeight:700}}>⚠ DATOS SINTÉTICOS — no operar con esta señal</span>}
+                              {(()=>{
+                                const q = calidadSerie(sel.data||[]);
+                                if (q.nivel==="ok") return null;
+                                const esDeg = q.nivel==="degradada";
+                                const c = esDeg ? "#ff3355" : "#ff9040";
+                                return <span style={{fontSize:"7px",padding:"2px 7px",background:`${c}20`,border:`1px solid ${c}50`,borderRadius:"3px",color:c,fontWeight:700}}>
+                                  {esDeg ? "⚠ SERIE ILÍQUIDA" : "⚠ LIQUIDEZ BAJA"} — {q.motivo||"pocas operaciones"}. El precio quedó quieto por falta de operaciones, no por estabilidad: los indicadores acá miden ruido.
+                                </span>;
+                              })()}
                               {s?.ruedaAbierta&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff904020",border:"1px solid #ff904050",borderRadius:"3px",color:"#ff9040",fontWeight:700}}>⏱ RUEDA ABIERTA — el día no cerró, el precio puede revertir</span>}
                               {(()=>{
                                 const ev = getUpcomingEvents(sel.ticker, sel.moneda);
