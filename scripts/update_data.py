@@ -148,7 +148,7 @@ def backtest_w(bars, w):
 # ══════════════════════════════════════════════════════════════
 # (descargar_diario completo quedó obsoleto: reemplazado por
 # descargar_diario_incremental, que reutiliza el histórico ya bajado)
-def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
+def descargar_noticias(df_total, tickers_yf, previo=None):
     """
     Noticias del día, embebidas en data.js.
 
@@ -156,9 +156,15 @@ def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
     API de noticias desde el navegador sin exponer credenciales. Se bajan
     acá y viajan en data.js, igual que los precios.
 
-    Criterio de relevancia: se piden noticias de los activos que MÁS SE
-    MOVIERON hoy. Ahí es donde una noticia efectivamente explica algo —
-    pedirlas de un papel que no se movió devuelve ruido de agenda.
+    Cubre TODOS los tickers del universo, guardando las 2 noticias más
+    recientes de cada uno (el Detalle de cada acción las muestra al final).
+    Se prioriza a los que todavía no tienen noticias y, dentro de esos, a
+    los que más se movieron: si el presupuesto de tiempo del workflow
+    corta antes de terminar, la corrida siguiente sigue por donde quedó.
+
+    Aparte se arma "destacadas" para la pantalla principal, con las de los
+    activos de mayor movimiento del día — ahí una noticia efectivamente
+    explica algo, a diferencia de un papel que no se movió.
 
     NOTA: no pudo probarse contra Yahoo real en el entorno donde se
     escribió (sandbox sin salida a finance.yahoo.com). El parseo tolera
@@ -167,7 +173,7 @@ def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
     "📰 Noticias", antes de confiar en el resultado.
     """
     previo = previo or {}
-    print(f"\n📰 Noticias: buscando en los {max_tickers} activos que más se movieron")
+    print(f"\n📰 Noticias: {len(tickers_yf)} activos (2 por activo, prioriza los que faltan)")
     if df_total is None or df_total.empty:
         print("    sin datos de precios — se omite")
         return previo
@@ -188,8 +194,19 @@ def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
         print(f"    no se pudo calcular variación: {e}")
         return previo
     movs.sort(key=lambda x: -x[1])
-    candidatos = [tk for tk, _ in movs[:max_tickers]]
     var_por_tk = dict(movs)
+    prev_pt = (previo or {}).get("porTicker", {}) or {}
+
+    # Orden de trabajo: primero los que no tienen noticias guardadas
+    # (y dentro de esos, los de mayor movimiento), después el resto para
+    # refrescarlos. Así, si el tiempo corta, la próxima corrida completa.
+    con_mov = [tk for tk, _ in movs]
+    resto   = [t for t in tickers_yf if t not in set(con_mov)]
+    orden_completo = con_mov + resto
+    sin_datos = [t for t in orden_completo if clean(t) not in prev_pt]
+    con_datos = [t for t in orden_completo if clean(t) in prev_pt]
+    candidatos = sin_datos + con_datos
+    print(f"    {len(sin_datos)} sin noticias previas · {len(con_datos)} a refrescar")
 
     def extraer(art):
         """Tolera varias formas: el shape de Yahoo cambia seguido."""
@@ -218,11 +235,12 @@ def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
                 "fuente": str(fuente)[:60], "fecha": str(fecha)[:25]}
 
     hoy = pd.Timestamp.now().normalize()
-    por_ticker, todas = {}, []
+    por_ticker, todas = dict(prev_pt), []
     fallidos = 0
+    sin_procesar = 0
     for i, yf_tk in enumerate(candidatos, 1):
         if not hay_tiempo(45):
-            print(f"    ⏭  corte por presupuesto de tiempo en {i}/{len(candidatos)}")
+            sin_procesar = len(candidatos) - i + 1
             break
         try:
             arts = yf.Ticker(yf_tk).get_news(count=6, tab="news") or []
@@ -237,7 +255,9 @@ def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
         if not limpias:
             continue
         tk = clean(yf_tk)
-        por_ticker[tk] = limpias[:4]
+        # Solo 2 por ticker: es lo que muestra el Detalle, y mantiene
+        # acotado el peso de data.js con 158 activos.
+        por_ticker[tk] = limpias[:2]
         for e in limpias[:3]:
             reciente = True
             try:
@@ -260,9 +280,11 @@ def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
         if len(destacadas) >= 6:
             break
 
-    print(f"    OK: {len(por_ticker)} tickers con noticias · {len(destacadas)} destacadas")
+    print(f"    OK: {len(por_ticker)}/{len(tickers_yf)} tickers con noticias · {len(destacadas)} destacadas")
     if fallidos:
         print(f"    sin noticias o error: {fallidos}")
+    if sin_procesar:
+        print(f"    ⏭  {sin_procesar} quedan para la próxima corrida")
     log_tiempo("noticias")
     return {"destacadas": destacadas, "porTicker": por_ticker,
             "actualizado": pd.Timestamp.now().strftime("%Y-%m-%dT%H:%M:%S")}

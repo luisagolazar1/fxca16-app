@@ -5990,35 +5990,6 @@ export default function App() {
                         ⊕ AGREGADOS RECIENTES
                       </div>
 
-                      {/* ── NOTICIAS DE ESTE ACTIVO ── */}
-                      {(()=>{
-                        const tkl = (sel?.ticker||"").replace(".BA","");
-                        const ns = DATA_MOD?.FXCA16_NOTICIAS?.porTicker?.[tkl] || [];
-                        const fmt = f => { try { const d=new Date(f); return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}); } catch(_) { return ""; } };
-                        return (
-                          <div className="card" style={{padding:"12px",marginBottom:"9px"}}>
-                            <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"6px"}}>📰 NOTICIAS DE {tkl}</div>
-                            {ns.length ? ns.map((n,i)=>(
-                              <a key={i} href={n.url||"#"} target="_blank" rel="noopener noreferrer"
-                                 onClick={e=>{ if(!n.url) e.preventDefault(); }}
-                                 style={{display:"block",textDecoration:"none",padding:"6px 8px",marginBottom:"3px",
-                                   background:"#050c15",borderRadius:"4px"}}>
-                                <div style={{fontSize:"9px",color:"#b0d4e8",lineHeight:1.5,marginBottom:"2px"}}>
-                                  {n.titulo} {n.url && <span style={{color:"#00d4ff"}}>↗</span>}
-                                </div>
-                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{n.fuente}{n.fecha?" · "+fmt(n.fecha):""}</div>
-                              </a>
-                            )) : (
-                              <div style={{fontSize:"8px",color:"#5a8fa8",lineHeight:1.6}}>
-                                Sin noticias cargadas para este activo. Solo se descargan las de los activos que
-                                más se movieron cada día, así que <strong>la ausencia no significa que no haya noticias</strong> —
-                                significa que este papel no estuvo entre los de mayor movimiento.
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
                       <div className="card" style={{padding:"12px"}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"3px"}}>
                           <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>📊 RSI — CONTEXTO HISTÓRICO</span>
@@ -6145,6 +6116,40 @@ export default function App() {
                           </div>
                         );
                       })()}
+
+                      {/* ── NOTICIAS DE ESTE ACTIVO ── */}
+                      {(()=>{
+                        const tkl = (sel?.ticker||"").replace(".BA","");
+                        const ns = DATA_MOD?.FXCA16_NOTICIAS?.porTicker?.[tkl] || [];
+                        const fmt = f => { try { const d=new Date(f); return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}); } catch(_) { return ""; } };
+                        return (
+                          <div className="card" style={{padding:"12px",marginBottom:"9px"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px"}}>
+                              <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>📰 NOTICIAS DE {tkl}</span>
+                              <span style={{fontSize:"6px",color:"#5a8fa8"}}>las 2 más recientes</span>
+                            </div>
+                            {ns.length ? ns.map((n,i)=>(
+                              <a key={i} href={n.url||"#"} target="_blank" rel="noopener noreferrer"
+                                 onClick={e=>{ if(!n.url) e.preventDefault(); }}
+                                 style={{display:"block",textDecoration:"none",padding:"6px 8px",marginBottom:"3px",
+                                   background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{fontSize:"9px",color:"#b0d4e8",lineHeight:1.5,marginBottom:"2px"}}>
+                                  {n.titulo} {n.url && <span style={{color:"#00d4ff"}}>↗</span>}
+                                </div>
+                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{n.fuente}{n.fecha?" · "+fmt(n.fecha):""}</div>
+                              </a>
+                            )) : (
+                              <div style={{fontSize:"8px",color:"#5a8fa8",lineHeight:1.6}}>
+                                Sin noticias cargadas para este activo todavía. Se descargan en el workflow y
+                                pueden faltar si la corrida se quedó sin tiempo — la próxima completa los que faltan.
+                                <strong>La ausencia acá no significa que no haya noticias</strong>: conviene verificar
+                                igual antes de operar.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                     </div>
                   );
                 })()}
