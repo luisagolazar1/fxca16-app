@@ -358,3 +358,60 @@ que refuerza que aquel número estaba sobreajustado.
 marca COMPRA FUERTE con momentum alto; los datos dicen que el momentum
 alto precede retornos menores. Eso explica por qué COMPRA FUERTE rinde
 por debajo del baseline.
+
+---
+
+## 2026-08-03 — CONCLUSIÓN CAUSAL: por qué el score marca COMPRA después de la suba
+
+Cierre del diagnóstico. La pregunta ya no era *si* llega tarde (medido:
+COMPRA FUERTE aparece tras +13.7% y captura +0.42%) sino **qué** lo hace
+llegar tarde. Análisis forense del código de `combinedSignal()` más
+medición sobre 13.380 arranques de suba (+15% en ≤40 días).
+
+### La causa: cada regla exige que el movimiento ya haya ocurrido
+
+Las reglas del Motor A (momentum) no son predicciones, son
+**verificaciones de que la suba pasó**. Literalmente: `roc10 > 3.0`
+significa "ya subió más de 3% en 10 días".
+
+| Regla | Puntos | Día mediano en que se enciende |
+|---|---|---|
+| `roc5 > 1%` | +8 | 5 |
+| `m5 > 3%` | +8 | 5 |
+| MACD hist > umbral | +10/+20 | 7 |
+| `roc10 > 3%` | **+20** | 9 |
+| `SMA20 > SMA50` | +12 | **14** |
+
+El cruce de medias es el más lento por razón matemática: una SMA de 20
+ruedas necesita que los precios nuevos pesen lo suficiente para arrastrar
+el promedio sobre otra de 50. Ese retraso es inherente al promedio móvil.
+
+### Resultado agregado (motor real sobre 315 arranques)
+
+- Marca COMPRA en el día 8, **COMPRA FUERTE en el día 12**
+- El tramo completo dura 19 días
+- Al marcar COMPRA FUERTE ya subió **9.0%** de un total de 16.7%
+- Queda **7.3%** por delante
+- **→ el score se enciende con el 54% de la suba ya consumida**
+
+### Hipótesis que se probó y resultó FALSA
+
+Se sospechaba que la selección de motor amplificaba el retraso: como
+`wMom = 0.35 + 0.5·min(1, |SMA20−SMA50|/SMA50 / 0.03)`, al arranque las
+medias están juntas → menos peso al momentum. **Medido, no es así**: el
+wMom es plano a lo largo del tramo (0.770 en día 0 → 0.747 en día 30) e
+incluso baja levemente. La ponderación no es la culpable; el retraso está
+enteramente en los componentes.
+
+### Implicación: no se arregla bajando umbrales
+
+Bajar `roc10 > 3%` a `roc10 > 1%` adelanta el encendido pero también lo
+dispara en cientos de movimientos que no van a ningún lado — se cambia
+retraso por falsos positivos. Es exactamente lo que mostró el test de
+reglas precursoras: la que se encendía más temprano ("RSI 50-65") rendía
+−0.32%, peor que el azar.
+
+**Un sistema que se encienda antes necesita información que no derive del
+precio.** Todo indicador calculado a partir del precio va a llegar, por
+construcción, después de que el precio se movió. Ver la sección de
+disparadores no-precio en `docs/disparadores.md`.
