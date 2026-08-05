@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FXCA16 · Checklist de activos</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050c15;color:#b0d4e8;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;padding:12px 10px 60px}
+h1{font-size:16px;color:#e8f4ff;letter-spacing:.08em;margin-bottom:2px}
+.sub{font-size:10px;color:#5a8fa8;margin-bottom:12px;line-height:1.6}
+.aviso{background:#ff904012;border:1px solid #ff904040;border-radius:6px;padding:10px;margin-bottom:14px;font-size:10px;color:#ffb380;line-height:1.7}
+.ctr{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+button,select,input{background:#0c1926;color:#b0d4e8;border:1px solid #1e3a50;border-radius:5px;padding:6px 10px;font-size:11px;font-family:inherit;cursor:pointer}
+button.on{background:#1a6eff;color:#fff;border-color:#1a6eff}
+input{cursor:text;flex:1;min-width:120px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(85px,1fr));gap:5px;margin-bottom:12px}
+.st{background:#0a1622;border:1px solid #16293c;border-radius:5px;padding:7px;text-align:center}
+.st .v{font-size:17px;color:#e8f4ff;line-height:1.1}
+.st .l{font-size:8px;color:#5a8fa8;margin-top:2px}
+.card{background:#0a1622;border:1px solid #16293c;border-radius:7px;margin-bottom:7px;overflow:hidden}
+.hd{display:flex;align-items:center;gap:7px;padding:9px 10px;cursor:pointer}
+.hd:hover{background:#0e1d2c}
+.tk{font-size:15px;color:#e8f4ff;font-weight:700;min-width:62px}
+.nm{font-size:9px;color:#5a8fa8;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:8px;padding:2px 6px;border-radius:3px;white-space:nowrap}
+.px{font-size:12px;color:#a0cce0;text-align:right}
+.body{display:none;padding:0 10px 10px;border-top:1px solid #16293c}
+.card.open .body{display:block}
+.sec{margin-top:10px}
+.sec h3{font-size:9px;color:#4a7a9b;letter-spacing:.12em;margin-bottom:5px;font-weight:400}
+.row{display:flex;justify-content:space-between;padding:4px 7px;margin-bottom:2px;border-radius:3px;font-size:10px;background:#07121c}
+.row .k{color:#8fb4cc}
+.chk{display:flex;gap:7px;align-items:flex-start;padding:6px 7px;margin-bottom:3px;border-radius:4px;font-size:10px;line-height:1.6}
+.chk .ic{flex-shrink:0;font-size:11px}
+.ok{background:#00ff8810;border:1px solid #00ff8830}
+.wa{background:#ffd70010;border:1px solid #ffd70030}
+.bad{background:#ff335510;border:1px solid #ff335530}
+.nd{background:#5a8fa810;border:1px solid #5a8fa830}
+.g{color:#00ff88}.y{color:#ffd700}.r{color:#ff3355}.b{color:#5a8fa8}.o{color:#ff9040}
+.foot{margin-top:16px;padding:10px;background:#0a1622;border:1px solid #16293c;border-radius:6px;font-size:9px;color:#5a8fa8;line-height:1.8}
+.none{text-align:center;padding:24px;color:#5a8fa8;font-size:11px}
+</style>
+</head>
+<body>
+<h1>FXCA16 · CHECKLIST DE ACTIVOS</h1>
+<div class="sub" id="meta"></div>
+
+<div class="aviso">
+<strong>Esto no predice qué va a pasar.</strong> Se verificó empíricamente que ningún indicador de precio del sistema anticipa movimientos: el score marca COMPRA con el 54% de la suba ya consumida, y el efecto residual es 5-6× menor al costo de operar. Lo que sigue es un <strong>checklist de verificación previa</strong>: qué revisar antes de tomar posición, con los umbrales que se validaron. Úsese para descartar, no para elegir.
+</div>
+
+<div class="ctr">
+  <button data-f="all" class="on">Todos</button>
+  <button data-f="USA">USA</button>
+  <button data-f="MERVAL">Merval</button>
+  <button data-f="seg">★ Seguimiento</button>
+  <button data-f="alerta">⚠ Con alertas</button>
+  <button data-f="limpio">✓ Sin alertas</button>
+</div>
+<div class="ctr">
+  <input id="q" placeholder="Buscar ticker, nombre o sector...">
+  <select id="ord">
+    <option value="tk">Orden: ticker</option>
+    <option value="r90">Retorno 90d</option>
+    <option value="r20">Retorno 20d</option>
+    <option value="rs">RSI</option>
+    <option value="cf">Calidad fundamental</option>
+    <option value="v">Volatilidad</option>
+    <option value="alertas">Cantidad de alertas</option>
+  </select>
+</div>
+
+<div class="stats" id="stats"></div>
+<div id="lista"></div>
+
+<div class="foot">
+<strong style="color:#8fb4cc">Cómo se arma cada check</strong><br>
+<span class="r">■</span> rojo = problema verificado que debería frenar la operación ·
+<span class="y">■</span> amarillo = revisar antes de decidir ·
+<span class="g">■</span> verde = verificado sin problema ·
+<span class="b">■</span> gris = el sistema no tiene el dato (no significa que esté bien)<br><br>
+<strong style="color:#8fb4cc">Umbrales usados</strong><br>
+Calidad fundamental &lt;40 o marcada frágil → alerta roja · liquidez corriente &lt;1 → pasivos corrientes superan activos corrientes · deuda/patrimonio &gt;200% → apalancamiento alto · RSI &gt;70 sobrecompra / &lt;30 sobreventa (relación medida es en U, no lineal) · serie con &gt;30% sin volumen o &gt;50% precio congelado → degradada · volatilidad &gt;5% diaria → dimensionar más chico.
+</div>
+
+<script>
+const D = /*__DATA__*/[];
+let filtro='all', orden='tk', busq='';
+
+function alertas(a){
+  const L=[];
+  if(a.q!=='ok') L.push({n:'bad',t:'Serie de precios degradada: '+(a.qm||'pocas operaciones')+'. El precio quedó quieto por falta de operaciones, no por estabilidad — los indicadores acá miden ruido.'});
+  if(a.fr) L.push({n:'bad',t:'Marcada FRÁGIL por calidad fundamental'+(a.bn?': '+a.bn:'')});
+  else if(a.bn) L.push({n:'wa',t:'Alertas financieras: '+a.bn});
+  if(a.lq!=null&&a.lq<1) L.push({n:'bad',t:'Liquidez corriente '+a.lq.toFixed(2)+' — los pasivos de corto plazo superan a los activos de corto plazo'});
+  if(a.dp!=null&&a.dp>200) L.push({n:'wa',t:'Deuda/patrimonio '+a.dp.toFixed(0)+'% — apalancamiento alto'});
+  if(a.mn!=null&&a.mn<0) L.push({n:'bad',t:'Margen neto negativo ('+a.mn.toFixed(1)+'%) — la empresa pierde dinero por cada venta'});
+  if(a.rs!=null&&a.rs>70) L.push({n:'wa',t:'RSI '+a.rs+' en zona de sobrecompra'});
+  if(a.v>5) L.push({n:'wa',t:'Volatilidad diaria '+a.v.toFixed(1)+'% — dimensionar la posición más chica'});
+  if(a.cf==null) L.push({n:'nd',t:'Sin datos fundamentales cargados'});
+  return L;
+}
+function nAlertasGraves(a){ return alertas(a).filter(x=>x.n==='bad').length; }
+
+function sigColor(g){ return g&&g.includes('COMPRA FUERTE')?'#00ff88':g&&g.includes('COMPRA')?'#4ade80':g==='NEUTRAL'?'#5a8fa8':g==='VENTA'?'#ff9040':'#ff3355'; }
+function pc(v){ return v==null?'—':(v>=0?'+':'')+v.toFixed(1)+'%'; }
+function pcls(v){ return v==null?'b':v>0?'g':v<0?'r':'b'; }
+
+function filtrar(){
+  let L=D.slice();
+  if(filtro==='USA') L=L.filter(a=>a.m==='USA');
+  else if(filtro==='MERVAL') L=L.filter(a=>a.m==='MERVAL');
+  else if(filtro==='seg') L=L.filter(a=>a.sg);
+  else if(filtro==='alerta') L=L.filter(a=>nAlertasGraves(a)>0);
+  else if(filtro==='limpio') L=L.filter(a=>nAlertasGraves(a)===0&&a.q==='ok');
+  if(busq){ const b=busq.toLowerCase();
+    L=L.filter(a=>a.t.toLowerCase().includes(b)||(a.n||'').toLowerCase().includes(b)||(a.s||'').toLowerCase().includes(b)); }
+  L.sort((x,y)=>{
+    if(orden==='tk') return x.t.localeCompare(y.t);
+    if(orden==='alertas') return nAlertasGraves(y)-nAlertasGraves(x);
+    const a=x[orden],b=y[orden];
+    if(a==null) return 1; if(b==null) return -1;
+    return b-a;
+  });
+  return L;
+}
+
+function render(){
+  const L=filtrar();
+  const st=document.getElementById('stats');
+  const conAl=L.filter(a=>nAlertasGraves(a)>0).length;
+  st.innerHTML=[
+    ['<span style="color:#e8f4ff">'+L.length+'</span>','activos'],
+    ['<span class="g">'+L.filter(a=>a.g&&a.g.includes('COMPRA')).length+'</span>','señal compra'],
+    ['<span class="r">'+L.filter(a=>a.g&&a.g.includes('VENTA')).length+'</span>','señal venta'],
+    ['<span class="r">'+conAl+'</span>','con alerta grave'],
+    ['<span class="y">'+L.filter(a=>a.fr).length+'</span>','frágiles'],
+    ['<span class="o">'+L.filter(a=>a.q!=='ok').length+'</span>','serie dudosa'],
+  ].map(([v,l])=>'<div class="st"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>').join('');
+
+  const cont=document.getElementById('lista');
+  if(!L.length){ cont.innerHTML='<div class="none">Sin resultados para ese filtro.</div>'; return; }
+  cont.innerHTML=L.map(a=>{
+    const AL=alertas(a);
+    const graves=AL.filter(x=>x.n==='bad').length;
+    const est = graves>0?'<span class="badge" style="background:#ff335520;color:#ff3355">⚠ '+graves+'</span>'
+              : AL.some(x=>x.n==='wa')?'<span class="badge" style="background:#ffd70020;color:#ffd700">revisar</span>'
+              : '<span class="badge" style="background:#00ff8820;color:#00ff88">sin alertas</span>';
+    return '<div class="card"><div class="hd" onclick="this.parentNode.classList.toggle(\'open\')">'
+      +'<span class="tk">'+a.t+'</span>'
+      +(a.sg?'<span class="badge" style="background:#ffd70020;color:#ffd700">★</span>':'')
+      +'<span class="badge" style="background:'+(a.m==='USA'?'#1a6eff20;color:#5a9bff':'#00d4ff20;color:#00d4ff')+'">'+(a.m==='USA'?'US':'AR')+'</span>'
+      +'<span class="nm">'+a.n+'</span>'
+      +est
+      +'<span class="badge" style="background:'+sigColor(a.g)+'20;color:'+sigColor(a.g)+'">'+(a.g||'—')+'</span>'
+      +'<span class="px">'+a.p+'</span>'
+      +'</div><div class="body">'
+
+      +'<div class="sec"><h3>CHECKLIST DE VERIFICACIÓN</h3>'
+      +(AL.length?AL.map(x=>'<div class="chk '+x.n+'"><span class="ic">'+(x.n==='bad'?'✕':x.n==='wa'?'!':'?')+'</span><span>'+x.t+'</span></div>').join('')
+        :'<div class="chk ok"><span class="ic">✓</span><span>Sin alertas de calidad de datos ni de fundamentales.</span></div>')
+      +'<div class="chk nd"><span class="ic">?</span><span><strong>Fecha del próximo balance: sin dato.</strong> El calendario de earnings está vacío en el sistema. Verificar en el sitio de la empresa o en el bróker antes de operar — un balance a pocos días mueve el precio más que cualquier señal técnica.</span></div>'
+      +'<div class="chk nd"><span class="ic">?</span><span>Noticias, guidance, cambios regulatorios y revisiones de analistas: <strong>el sistema no los cubre</strong>. Son los disparadores que sí anticipan (ver docs/disparadores.md).</span></div>'
+      +'</div>'
+
+      +'<div class="sec"><h3>RETORNOS</h3>'
+      +['5 días|r5','20 días|r20','60 días|r60','90 días|r90'].map(s=>{const[l,k]=s.split('|');
+        return '<div class="row"><span class="k">'+l+'</span><span class="'+pcls(a[k])+'">'+pc(a[k])+'</span></div>';}).join('')
+      +'</div>'
+
+      +'<div class="sec"><h3>ESTADO TÉCNICO</h3>'
+      +'<div class="row"><span class="k">Señal (30D)</span><span style="color:'+sigColor(a.g)+'">'+(a.g||'—')+(a.c!=null?' · conf '+a.c+'%':'')+'</span></div>'
+      +'<div class="row"><span class="k">RSI</span><span class="'+(a.rs>70?'r':a.rs<30?'g':'b')+'">'+(a.rs??'—')+'</span></div>'
+      +'<div class="row"><span class="k">Volatilidad diaria</span><span class="'+(a.v>5?'y':'b')+'">'+a.v.toFixed(2)+'%</span></div>'
+      +'<div class="row"><span class="k">Desde máx. 20 ruedas</span><span class="'+pcls(a.dm)+'">'+pc(a.dm)+'</span></div>'
+      +'<div class="row"><span class="k">Desde máx. 52 semanas</span><span class="'+pcls(a.d52)+'">'+pc(a.d52)+'</span></div>'
+      +'<div class="row"><span class="k">Calidad de la serie</span><span class="'+(a.q==='ok'?'g':a.q==='dudosa'?'y':'r')+'">'+a.q+'</span></div>'
+      +'</div>'
+
+      +'<div class="sec"><h3>FUNDAMENTALES</h3>'
+      +'<div class="row"><span class="k">Score de calidad</span><span class="'+(a.cf==null?'b':a.cf>=70?'g':a.cf>=40?'y':'r')+'">'+(a.cf??'sin dato')+(a.fr?' · FRÁGIL':'')+'</span></div>'
+      +'<div class="row"><span class="k">Margen neto</span><span class="'+(a.mn==null?'b':a.mn>0?'g':'r')+'">'+(a.mn!=null?a.mn+'%':'—')+'</span></div>'
+      +'<div class="row"><span class="k">ROE</span><span class="'+(a.roe==null?'b':a.roe>0?'g':'r')+'">'+(a.roe!=null?a.roe+'%':'—')+'</span></div>'
+      +'<div class="row"><span class="k">Deuda / patrimonio</span><span class="'+(a.dp==null?'b':a.dp>200?'y':'g')+'">'+(a.dp!=null?a.dp.toFixed(0)+'%':'—')+'</span></div>'
+      +'<div class="row"><span class="k">Liquidez corriente</span><span class="'+(a.lq==null?'b':a.lq<1?'r':'g')+'">'+(a.lq!=null?a.lq.toFixed(2):'—')+'</span></div>'
+      +'<div class="row"><span class="k">Sector</span><span class="b">'+a.s+'</span></div>'
+      +'</div>'
+
+      +'</div></div>';
+  }).join('');
+}
+
+document.querySelectorAll('button[data-f]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('button[data-f]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); filtro=b.dataset.f; render();
+});
+document.getElementById('q').oninput=e=>{busq=e.target.value;render();};
+document.getElementById('ord').onchange=e=>{orden=e.target.value;render();};
+document.getElementById('meta').textContent=D.length+' activos · '+D.filter(a=>a.m==='USA').length+' USA · '+D.filter(a=>a.m==='MERVAL').length+' Merval · tocá cualquier fila para abrir su checklist';
+render();
+</script>
+</body>
+</html>
