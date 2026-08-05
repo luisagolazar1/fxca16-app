@@ -148,6 +148,126 @@ def backtest_w(bars, w):
 # ══════════════════════════════════════════════════════════════
 # (descargar_diario completo quedó obsoleto: reemplazado por
 # descargar_diario_incremental, que reutiliza el histórico ya bajado)
+def descargar_noticias(df_total, tickers_yf, max_tickers=25, previo=None):
+    """
+    Noticias del día, embebidas en data.js.
+
+    La app es 100% estática (sin backend), así que no puede llamar a una
+    API de noticias desde el navegador sin exponer credenciales. Se bajan
+    acá y viajan en data.js, igual que los precios.
+
+    Criterio de relevancia: se piden noticias de los activos que MÁS SE
+    MOVIERON hoy. Ahí es donde una noticia efectivamente explica algo —
+    pedirlas de un papel que no se movió devuelve ruido de agenda.
+
+    NOTA: no pudo probarse contra Yahoo real en el entorno donde se
+    escribió (sandbox sin salida a finance.yahoo.com). El parseo tolera
+    varias formas de respuesta porque la API de noticias de Yahoo cambia
+    de shape seguido. Revisar el log de la primera corrida, sección
+    "📰 Noticias", antes de confiar en el resultado.
+    """
+    previo = previo or {}
+    print(f"\n📰 Noticias: buscando en los {max_tickers} activos que más se movieron")
+    if df_total is None or df_total.empty:
+        print("    sin datos de precios — se omite")
+        return previo
+
+    # Variación del último día por ticker
+    movs = []
+    try:
+        for tk, g in df_total.groupby("ticker"):
+            g = g.sort_values("datetime")
+            if len(g) < 2:
+                continue
+            cierres = g["close"].dropna()
+            if len(cierres) < 2:
+                continue
+            var = abs(cierres.iloc[-1] / cierres.iloc[-2] - 1) * 100
+            movs.append((tk, var))
+    except Exception as e:
+        print(f"    no se pudo calcular variación: {e}")
+        return previo
+    movs.sort(key=lambda x: -x[1])
+    candidatos = [tk for tk, _ in movs[:max_tickers]]
+    var_por_tk = dict(movs)
+
+    def extraer(art):
+        """Tolera varias formas: el shape de Yahoo cambia seguido."""
+        c = art.get("content") if isinstance(art.get("content"), dict) else art
+        titulo = c.get("title") or c.get("headline") or ""
+        if not titulo:
+            return None
+        url = ""
+        for k in ("canonicalUrl", "clickThroughUrl", "link"):
+            v = c.get(k)
+            if isinstance(v, dict):
+                url = v.get("url") or ""
+            elif isinstance(v, str):
+                url = v
+            if url:
+                break
+        prov = c.get("provider")
+        fuente = prov.get("displayName", "") if isinstance(prov, dict) else (prov or "")
+        fecha = c.get("pubDate") or c.get("displayTime") or c.get("providerPublishTime") or ""
+        if isinstance(fecha, (int, float)):
+            try:
+                fecha = pd.to_datetime(fecha, unit="s").strftime("%Y-%m-%dT%H:%M:%S")
+            except Exception:
+                fecha = ""
+        return {"titulo": str(titulo)[:220], "url": str(url)[:400],
+                "fuente": str(fuente)[:60], "fecha": str(fecha)[:25]}
+
+    hoy = pd.Timestamp.now().normalize()
+    por_ticker, todas = {}, []
+    fallidos = 0
+    for i, yf_tk in enumerate(candidatos, 1):
+        if not hay_tiempo(45):
+            print(f"    ⏭  corte por presupuesto de tiempo en {i}/{len(candidatos)}")
+            break
+        try:
+            arts = yf.Ticker(yf_tk).get_news(count=6, tab="news") or []
+        except Exception:
+            fallidos += 1
+            continue
+        limpias = []
+        for a in arts:
+            e = extraer(a)
+            if e and e["titulo"]:
+                limpias.append(e)
+        if not limpias:
+            continue
+        tk = clean(yf_tk)
+        por_ticker[tk] = limpias[:4]
+        for e in limpias[:3]:
+            reciente = True
+            try:
+                if e["fecha"]:
+                    d = pd.Timestamp(e["fecha"]).tz_localize(None).normalize()
+                    reciente = (hoy - d).days <= 2
+            except Exception:
+                pass
+            if reciente:
+                todas.append({**e, "ticker": tk, "var": round(var_por_tk.get(yf_tk, 0), 2)})
+
+    # Destacadas: las de los activos con mayor movimiento, sin repetir ticker
+    todas.sort(key=lambda x: -x["var"])
+    destacadas, vistos = [], set()
+    for n in todas:
+        if n["ticker"] in vistos:
+            continue
+        vistos.add(n["ticker"])
+        destacadas.append(n)
+        if len(destacadas) >= 6:
+            break
+
+    print(f"    OK: {len(por_ticker)} tickers con noticias · {len(destacadas)} destacadas")
+    if fallidos:
+        print(f"    sin noticias o error: {fallidos}")
+    log_tiempo("noticias")
+    return {"destacadas": destacadas, "porTicker": por_ticker,
+            "actualizado": pd.Timestamp.now().strftime("%Y-%m-%dT%H:%M:%S")}
+
+
 def descargar_earnings(tickers_yf, previo=None):
     """
     yf.Ticker.get_earnings_dates() quedó roto (Yahoo cambió el endpoint viejo,
@@ -679,6 +799,14 @@ def main():
         print(f"\n📅 Earnings: {motivo} ({len(earnings_prev)} tickers)")
         earnings_cal = earnings_prev
 
+    # ── PASO 2c-bis: Noticias del día ──
+    noticias_prev = leer_bloque_existente("FXCA16_NOTICIAS")
+    try:
+        noticias = descargar_noticias(df_total, todos_tk, previo=noticias_prev)
+    except Exception as e:
+        print(f"  noticias falló: {e}")
+        noticias = noticias_prev or {}
+
     # ── PASO 2d: Fundamentales (calidad como filtro) ──
     fund_prev = leer_bloque_existente("FXCA16_FUNDAMENTALES")
     refrescar_f, motivo_f = necesita_refresco_semanal(fund_prev, todos_tk)
@@ -719,6 +847,7 @@ def main():
     daily_raw = json.dumps(daily_result, separators=(',',':'))
     earn_raw  = json.dumps(earnings_cal, separators=(',',':'))
     fund_raw  = json.dumps(fundamentales, separators=(',',':'))
+    news_raw  = json.dumps(noticias, separators=(',',':'), ensure_ascii=False)
 
     # ── Resumen de completitud ──
     n_esp = len(USA_TICKERS) + len(MERVAL_TICKERS_YF)
@@ -770,6 +899,11 @@ export const FXCA16_EARNINGS = {earn_raw};
 // Son la foto actual, no datos point-in-time: sirven para decidir qué
 // incluir en el universo HOY, nunca para validar históricamente.
 export const FXCA16_FUNDAMENTALES = {fund_raw};
+
+// Noticias del día. Se bajan en el workflow porque la app es estática y
+// no puede llamar a una API de noticias sin exponer credenciales.
+// "destacadas" = las de los activos que más se movieron hoy.
+export const FXCA16_NOTICIAS = {news_raw};
 
 export const FXCA16_DYN_PARAMS = {dyn_raw};
 
