@@ -1186,6 +1186,29 @@ function calidadSerie(bars, lookback = 100) {
   return { nivel, motivo: motivos.join(" · "), pctSinVol, pctCongelado, stale };
 }
 
+// Nota colapsable. Los avisos metodológicos (por qué una señal no es
+// confiable, qué mide realmente un indicador) son necesarios pero
+// ocupaban párrafos enteros en pantalla. Acá quedan a un toque de
+// distancia sin desaparecer: el dato importante se ve siempre, el
+// desarrollo queda plegado.
+function Nota({ titulo, color = "#ff9040", children }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <div style={{ marginTop: "6px" }}>
+      <button onClick={() => setAbierto(a => !a)}
+        style={{ background: "transparent", border: "none", padding: "2px 0", cursor: "pointer",
+                 fontSize: "7px", color, fontFamily: "inherit", letterSpacing: ".05em" }}>
+        {abierto ? "▾" : "▸"} {titulo}
+      </button>
+      {abierto && (
+        <div style={{ ...semBox(color, "10"), padding: "7px 8px", marginTop: "3px" }}>
+          <div style={{ fontSize: "7px", color: "#b0d4e8", lineHeight: 1.7 }}>{children}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function semBox(color, alpha = "1f") {
   return {
     background: `${color}${alpha}`,
@@ -3264,6 +3287,10 @@ export default function App() {
   const [nReal, setNReal] = useState(0);
   const [priceSrc, setPriceSrc] = useState("—");
   const [verMasNoticias, setVerMasNoticias] = useState(false);
+  const [verIndicadores, setVerIndicadores] = useState(false);
+  const [verBacktest, setVerBacktest] = useState(false);
+  const [verTablaRsi, setVerTablaRsi] = useState(false);
+  const [verTablaVelas, setVerTablaVelas] = useState(false);
   // Tick cada minuto: mantiene vivo el estado de mercado (abierto/cerrado)
   // y la antigüedad del dato sin necesidad de recargar la página.
   const [nowTick, setNowTick] = useState(0);
@@ -5204,48 +5231,84 @@ export default function App() {
                         </div>
                       </div>
                       <div className="card" style={{padding:"12px"}}>
-                        <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"8px"}}>INDICADORES FXCA16</div>
-                        {[
-                          {l:"ROC 10h",v:`${s.roc10>=0?"+":""}${s.roc10}%`,c:s.roc10>1.5?"#00ff9d":s.roc10<-1.5?"#ff3355":"#ffd700"},
-                          {l:"ROC 5h", v:`${s.roc5>=0?"+":""}${s.roc5}%`, c:s.roc5>1?"#00ff9d":s.roc5<-1?"#ff3355":"#ffd700"},
-                          {l:"Vol.Div.",v:s.volDiv>0?"▲ ACUM":s.volDiv<0?"▼ DIST":"─",c:s.volDiv>0?"#00ff9d":s.volDiv<0?"#ff3355":"#ffd700"},
-                          {l:"MACD",   v:(s.macd>0?"▲ ":"▼ ")+Math.abs(s.macd),c:s.macd>0?"#00ff9d":"#ff3355"},
-                          {l:"Mom. 5h",v:`${s.mom5>=0?"+":""}${s.mom5}%`,c:s.mom5>=0?"#00ff9d":"#ff3355"},
-                          {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
-                          {l:"WF peso", v:s.wfWeight,c:s.wfWeight>=1.05?"#00ff9d":s.wfWeight<=0.95?"#ff3355":"#ffd700"},
-                          {l:"H-Factor",v:s.hourFactor,c:s.hourFactor>=1?"#00ff9d":s.hourFactor<0.9?"#ff3355":"#ffd700"},
-                          {l:"RSI ref.", v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#5a8fa8"},
-                          {l:"SMA 20",  v:`$${s.sma20?.toFixed(0)??"─"}`,c:"#8b5cf6"},
-                          {l:"SMA 50",  v:`$${s.sma50?.toFixed(0)??"─"}`,c:"#f59e0b"},
-                          {l:"BB Sup.", v:`$${s.boll?.u?.toFixed(0)??"─"}`,c:"#3b82f6"},
-                          {l:"BB Inf.", v:`$${s.boll?.l?.toFixed(0)??"─"}`,c:"#3b82f6"},
-                        ].map(x=>
-                          <div key={x.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 7px",marginBottom:"3px",fontSize:"9px",...semBox(x.c,"14")}}>
-                            <span style={{color:"#8fb4cc"}}>{x.l}</span>
-                            <span style={{color:x.c,fontWeight:700}}>{x.v}</span>
-                          </div>
-                        )}
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"8px"}}>
+                          <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>INDICADORES FXCA16</span>
+                          <span style={{fontSize:"6px",color:"#5a8fa8"}}>correlación con retorno futuro ≈ 0</span>
+                        </div>
+                        {(()=>{
+                          // Solo los que aportan lectura distinta entre sí. Se sacaron:
+                          // WF peso y H-Factor (parámetros internos del modelo, sin
+                          // significado operativo), roc5 (casi idéntico a mom5), y
+                          // SMA20/50 + bandas de Bollinger (ya están en NIVELES y en
+                          // el gráfico). De 13 filas a 6.
+                          const base=[
+                            {l:"ROC 10h",v:`${s.roc10>=0?"+":""}${s.roc10}%`,c:s.roc10>1.5?"#00ff9d":s.roc10<-1.5?"#ff3355":"#ffd700"},
+                            {l:"Mom. 5h",v:`${s.mom5>=0?"+":""}${s.mom5}%`,c:s.mom5>=0?"#00ff9d":"#ff3355"},
+                            {l:"MACD",   v:(s.macd>0?"▲ ":"▼ ")+Math.abs(s.macd),c:s.macd>0?"#00ff9d":"#ff3355"},
+                            {l:"RSI",    v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#5a8fa8"},
+                            {l:"Vol.Div.",v:s.volDiv>0?"▲ ACUM":s.volDiv<0?"▼ DIST":"─",c:s.volDiv>0?"#00ff9d":s.volDiv<0?"#ff3355":"#ffd700"},
+                            {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
+                          ];
+                          const extra=[
+                            {l:"ROC 5h", v:`${s.roc5>=0?"+":""}${s.roc5}%`, c:s.roc5>1?"#00ff9d":s.roc5<-1?"#ff3355":"#ffd700"},
+                            {l:"SMA 20",  v:`$${s.sma20?.toFixed(0)??"─"}`,c:"#8b5cf6"},
+                            {l:"SMA 50",  v:`$${s.sma50?.toFixed(0)??"─"}`,c:"#f59e0b"},
+                            {l:"BB Sup.", v:`$${s.boll?.u?.toFixed(0)??"─"}`,c:"#3b82f6"},
+                            {l:"BB Inf.", v:`$${s.boll?.l?.toFixed(0)??"─"}`,c:"#3b82f6"},
+                          ];
+                          const fila=x=>(
+                            <div key={x.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 7px",marginBottom:"3px",fontSize:"9px",...semBox(x.c,"14")}}>
+                              <span style={{color:"#8fb4cc"}}>{x.l}</span>
+                              <span style={{color:x.c,fontWeight:700}}>{x.v}</span>
+                            </div>
+                          );
+                          return (<>
+                            {base.map(fila)}
+                            {verIndicadores && extra.map(fila)}
+                            <button onClick={()=>setVerIndicadores(v=>!v)}
+                              style={{background:"transparent",border:"none",padding:"3px 0",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
+                              {verIndicadores ? "▾ menos" : `▸ ${extra.length} indicadores más`}
+                            </button>
+                            <Nota titulo="qué tanto sirven estos indicadores">
+                              Medido sobre 10 años y 110.806 observaciones: la correlación de estos
+                              indicadores con el retorno futuro a 10 días es ≈0 (RSI 0.004, momentum 0.095).
+                              Los que sí dan significativos apuntan en dirección <strong>contraria</strong> a como
+                              los usa el score — momentum alto precede retornos menores — y el efecto es
+                              5-6× menor al costo de operar. Sirven para describir el estado actual,
+                              no para anticipar.
+                            </Nota>
+                          </>);
+                        })()}
                       </div>
                     </div>}
 
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(85px,1fr))",gap:"5px",marginBottom:"9px"}}>
-                      {[
-                        {l:"TRADES",v:sel.bt.n,c:"#a0cce0"},
-                        {l:"WINS",v:sel.bt.hits,c:"#00ff9d"},
-                        {l:"LOSSES",v:sel.bt.n-sel.bt.hits,c:"#ff3355"},
+                      {(verBacktest?[
                         {l:"EF%",v:`${sel.bt.hr}%`,c:g.c},
-                        {l:"AVG RET",v:`${sel.bt.avg>=0?"+":""}${sel.bt.avg}%`,c:sel.bt.avg>=0.3?"#00ff9d":sel.bt.avg>=0?"#ffd700":"#ff3355"},
                         {l:"P.FACTOR",v:`${sel.bt.pf}x`,c:sel.bt.pf>=1.5?"#00ff9d":sel.bt.pf>=1?"#ffd700":"#ff3355"},
                         {l:"SHARPE",v:sel.bt.sh,c:sel.bt.sh>=1?"#00ff9d":sel.bt.sh>=0?"#ffd700":"#ff3355"},
                         {l:"MAX DD",v:`${sel.bt.dd}%`,c:sel.bt.dd<10?"#00ff9d":sel.bt.dd<20?"#ffd700":"#ff3355"},
+                        {l:"TRADES",v:sel.bt.n,c:"#a0cce0"},
+                        {l:"WINS",v:sel.bt.hits,c:"#00ff9d"},
+                        {l:"LOSSES",v:sel.bt.n-sel.bt.hits,c:"#ff3355"},
+                        {l:"AVG RET",v:`${sel.bt.avg>=0?"+":""}${sel.bt.avg}%`,c:sel.bt.avg>=0.3?"#00ff9d":sel.bt.avg>=0?"#ffd700":"#ff3355"},
                         {l:"EQUITY",v:sel.bt.eq,c:sel.bt.eq>=105?"#00ff9d":sel.bt.eq>=100?"#ffd700":"#ff3355"},
-                      ].map(x=>
+                      ]:[
+                        {l:"EF%",v:`${sel.bt.hr}%`,c:g.c},
+                        {l:"P.FACTOR",v:`${sel.bt.pf}x`,c:sel.bt.pf>=1.5?"#00ff9d":sel.bt.pf>=1?"#ffd700":"#ff3355"},
+                        {l:"SHARPE",v:sel.bt.sh,c:sel.bt.sh>=1?"#00ff9d":sel.bt.sh>=0?"#ffd700":"#ff3355"},
+                        {l:"MAX DD",v:`${sel.bt.dd}%`,c:sel.bt.dd<10?"#00ff9d":sel.bt.dd<20?"#ffd700":"#ff3355"},
+                      ]).map(x=>
                         <div key={x.l} style={{padding:"7px",...semBox(x.c)}}>
                           <div style={{fontSize:"7px",color:"#8fb4cc",marginBottom:"2px"}}>{x.l}</div>
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:"14px",color:x.c}}>{x.v}</div>
                         </div>
                       )}
                     </div>
+                    <button onClick={()=>setVerBacktest(v=>!v)}
+                      style={{background:"transparent",border:"none",padding:"2px 0 8px",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
+                      {verBacktest ? "▾ menos métricas" : "▸ 5 métricas más del backtest"}
+                    </button>
 
                     {/* ══ VEREDICTO FINAL ══ */}
                     {(()=>{
@@ -6016,8 +6079,11 @@ export default function App() {
                           <div style={{fontSize:"8px",color:"#5a8fa8",marginBottom:"9px"}}>Sin RSI disponible para este activo.</div>
                         )}
 
-                        <div style={{fontSize:"6px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>TABLA COMPLETA — P(+4%) vs P(-4%) por banda</div>
-                        {RSI_TASAS_BASE.map(x=>{
+                        <button onClick={()=>setVerTablaRsi(v=>!v)}
+                          style={{background:"transparent",border:"none",padding:"3px 0",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
+                          {verTablaRsi ? "▾ ocultar tabla por banda" : "▸ ver las 8 bandas"}
+                        </button>
+                        {verTablaRsi && RSI_TASAS_BASE.map(x=>{
                           const activa = b && x.lo===b.lo;
                           const w = Math.round(x.pUp/35*100);
                           return (
@@ -6035,16 +6101,16 @@ export default function App() {
                           );
                         })}
 
-                        <div style={{...semBox("#ff9040","10"),padding:"8px",marginTop:"9px"}}>
+                        <Nota titulo="ojo con leer esto como señal">
                           <div style={{fontSize:"7px",color:"#ffb380",lineHeight:1.7}}>
-                            <strong>Ojo con leer esto como señal.</strong> La relación es una <strong>U, no una rampa</strong>:
+                            La relación es una <strong>U, no una rampa</strong>:
                             los dos extremos (RSI&lt;30 y RSI&gt;70) preceden movimientos más grandes en <em>ambas</em> direcciones — es
                             volatilidad, no dirección. El medio (45-55) es la zona más quieta.
                             El spread entre RSI bajo y alto promedia 0.82 pp, <strong>por debajo del costo de operar (1.2-1.8% ida y vuelta)</strong>,
                             así que no alcanza como regla de entrada por sí solo.
                             El efecto pasa el test de consistencia (81 de 118 meses = 69%, umbral 65%) pero viene flojo últimamente (5 de los últimos 12 meses).
                           </div>
-                        </div>
+                        </Nota>
                       </div>
 
                       {/* ── PATRONES DE VELA — CONTEXTO HISTÓRICO ── */}
@@ -6080,8 +6146,11 @@ export default function App() {
                               <div style={{fontSize:"8px",color:"#5a8fa8",marginBottom:"9px"}}>Sin patrón de vela detectado hoy en este activo.</div>
                             )}
 
-                            <div style={{fontSize:"6px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>TODOS LOS PATRONES — exceso real vs baseline (controlado por volatilidad)</div>
-                            {VELAS_TASAS_BASE.map(v=>{
+                            <button onClick={()=>setVerTablaVelas(v=>!v)}
+                              style={{background:"transparent",border:"none",padding:"3px 0",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
+                              {verTablaVelas ? "▾ ocultar todos los patrones" : "▸ ver los 8 patrones medidos"}
+                            </button>
+                            {verTablaVelas && VELAS_TASAS_BASE.map(v=>{
                               const act = actual===v.clave;
                               const c = colVer(v.veredicto);
                               return (
@@ -6101,9 +6170,9 @@ export default function App() {
                               );
                             })}
 
-                            <div style={{...semBox("#ff9040","10"),padding:"8px",marginTop:"9px"}}>
+                            <Nota titulo="las etiquetas del manual no se sostienen">
                               <div style={{fontSize:"7px",color:"#ffb380",lineHeight:1.7}}>
-                                <strong>Las etiquetas del manual no se sostienen.</strong> De 15 patrones medidos, solo 2 sobreviven
+                                De 15 patrones medidos, solo 2 sobreviven
                                 corrección por comparaciones múltiples más control de volatilidad, y <strong>solo 1 pasa además el test de
                                 consistencia mensual: "3 Cuervos"</strong> — que es un patrón <em>bajista</em> de manual y predice retornos
                                 <em> positivos</em> (+0.166 pp, t=3.40, gana en 70% de los meses).
@@ -6112,7 +6181,7 @@ export default function App() {
                                 Y aun el mejor caso mueve 0.2-0.3 pp, <strong>muy por debajo del costo de operar (1.2-1.8% ida y vuelta)</strong>:
                                 ninguno alcanza como regla de entrada por sí solo. Sirven para describir lo que pasó, no para pronosticar.
                               </div>
-                            </div>
+                            </Nota>
                           </div>
                         );
                       })()}
