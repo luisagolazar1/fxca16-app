@@ -292,115 +292,101 @@ def descargar_noticias(df_total, tickers_yf, previo=None):
 
 def descargar_earnings(tickers_yf, previo=None):
     """
-    yf.Ticker.get_earnings_dates() quedó roto (Yahoo cambió el endpoint viejo,
-    ver https://github.com/ranaroussi/yfinance/issues/2591 y similares — devuelve
-    None incluso para tickers grandes como AAPL). Se reemplaza por la API nueva
-    de calendarios (yf.Calendars, agregada en yfinance #2615), que consulta por
-    rango de fechas y permite filtrar por ticker vía CalendarQuery de bajo nivel
-    (el wrapper público get_earnings_calendar() no expone ese filtro).
+    Calendario de earnings.
 
-    NOTA: esta función no pudo probarse contra datos reales de Yahoo en el
-    entorno donde se escribió (sandbox sin salida a finance.yahoo.com). Revisar
-    el log de la primera corrida del workflow tras este cambio antes de confiar
-    en los resultados.
+    Historia de este código: primero usaba yf.Ticker.get_earnings_dates(),
+    que Yahoo rompió (devuelve None hasta para AAPL). El reemplazo siguiente
+    usaba yf.Calendars()._get_data() — método PRIVADO — para filtrar por
+    ticker; tampoco funcionó en producción y dejó el calendario vacío.
+
+    Este enfoque usa solo API pública y da vuelta la estrategia: en vez de
+    preguntar "¿cuándo reporta este ticker?" ticker por ticker, pide el
+    calendario COMPLETO del mercado por ventanas de fechas y filtra por los
+    tickers del universo. Menos llamadas, sin métodos privados, y si Yahoo
+    cambia el filtrado por ticker no rompe.
+
+    Limitación conocida: Yahoo cubre el mercado US, así que los papeles del
+    Merval (.BA) probablemente no aparezcan. Es esperable, no un fallo.
     """
-    from yfinance.calendars import CalendarQuery
-
     previo = previo or {}
-    pendientes = [t for t in tickers_yf if clean(t) not in previo]
-    orden = pendientes + [t for t in tickers_yf if clean(t) in previo]
-    print(f"\n📅 Earnings: {len(pendientes)} sin datos de {len(tickers_yf)}")
-    cal = dict(previo)
-    fallidos, sin_procesar = [], 0
+    print(f"\n📅 Earnings: calendario de mercado para {len(tickers_yf)} tickers")
+
+    # Set de tickers buscados, normalizados (sin .BA)
+    buscados = {clean(t).upper() for t in tickers_yf}
     hoy = pd.Timestamp.now().normalize()
-    ini_rango = (hoy - pd.Timedelta(days=200)).strftime("%Y-%m-%d")
-    fin_rango = (hoy + pd.Timedelta(days=200)).strftime("%Y-%m-%d")
 
-    cal_api = yf.Calendars()
-    BATCH = 15  # lotes chicos: la API cap a 100 resultados por consulta y
-                # queremos margen si varios tickers del lote reportan el mismo día
+    try:
+        cal_api = yf.Calendars()
+    except Exception as e:
+        print(f"    no se pudo inicializar yf.Calendars: {e}")
+        return previo
 
-    def consultar_lote(lote):
-        """Devuelve {ticker_yf: [fechas 'YYYY-MM-DD', ...]} para earnings del lote
-        dentro de [ini_rango, fin_rango]."""
-        resultados = {t: [] for t in lote}
-        query = CalendarQuery("and", [
-            CalendarQuery("or", [
-                CalendarQuery("eq", ["eventtype", "EAD"]),
-                CalendarQuery("eq", ["eventtype", "ERA"]),
-            ]),
-            CalendarQuery("gte", ["startdatetime", ini_rango]),
-            CalendarQuery("lte", ["startdatetime", fin_rango]),
-            CalendarQuery("or", [CalendarQuery("eq", ["ticker", t]) for t in lote]),
-        ])
-        try:
-            df = cal_api._get_data("EARNINGS", query, limit=100, force=True)
-        except Exception:
-            return None  # distinto de {} — señala fallo de consulta, no "sin earnings"
-        if df is None or df.empty:
-            return resultados
-        col_ticker = next((c for c in df.columns if "ticker" in c.lower() or "symbol" in c.lower()), None)
-        col_fecha  = next((c for c in df.columns if "date" in c.lower() or "time" in c.lower()), None)
-        if col_ticker is None or col_fecha is None:
-            return None
-        for _, row in df.iterrows():
-            tkr = str(row[col_ticker]).upper()
-            if tkr not in resultados:
-                continue
-            try:
-                f = pd.Timestamp(row[col_fecha]).tz_localize(None).normalize()
-                resultados[tkr].append(f.strftime("%Y-%m-%d"))
-            except Exception:
-                continue
-        return resultados
-
-    for i in range(0, len(orden), BATCH):
+    encontrados = {}   # ticker -> set de fechas
+    ventanas = 0
+    # Ventanas de 7 días: Yahoo cabe 100 resultados por consulta y en
+    # temporada de balances hay cientos por semana. Se recorre de -60 a +120
+    # días para tener el último reportado y los próximos.
+    dia = hoy - pd.Timedelta(days=60)
+    fin_total = hoy + pd.Timedelta(days=120)
+    while dia < fin_total:
         if not hay_tiempo(45):
-            sin_procesar += len(orden) - i
+            print(f"    ⏭  corte por presupuesto de tiempo tras {ventanas} ventanas")
             break
-        lote = orden[i:i + BATCH]
-        res = consultar_lote(lote)
-        if res is None:
-            fallidos.extend(lote)
-            continue
-        for yf_ticker, fechas in res.items():
-            if not fechas:
-                fallidos.append(yf_ticker); continue
-            tk = clean(yf_ticker)
-            fechas = sorted(set(fechas))
-            futuras = [f for f in fechas if f >= hoy.strftime("%Y-%m-%d")]
-            pasadas = [f for f in fechas if f <  hoy.strftime("%Y-%m-%d")]
-            cal[tk] = {
-                "prox":   futuras[0] if futuras else None,
-                "ultimo": pasadas[-1] if pasadas else None,
-                "todas":  fechas[-8:],
-            }
-        print(f"    {min(i + BATCH, len(orden))}/{len(orden)}...")
+        desde = dia.strftime("%Y-%m-%d")
+        hasta = (dia + pd.Timedelta(days=6)).strftime("%Y-%m-%d")
+        for offset in (0, 100, 200):
+            try:
+                df = cal_api.get_earnings_calendar(
+                    start=desde, end=hasta, limit=100, offset=offset,
+                    filter_most_active=False, force=True)
+            except Exception:
+                break
+            if df is None or getattr(df, "empty", True):
+                break
+            cols = {c.lower(): c for c in df.columns}
+            col_tk = next((cols[c] for c in cols if "ticker" in c or "symbol" in c), None)
+            col_f  = next((cols[c] for c in cols if "startdatetime" in c or "date" in c), None)
+            if not col_tk or not col_f:
+                break
+            for _, row in df.iterrows():
+                tk = str(row[col_tk]).upper().strip()
+                if tk not in buscados:
+                    continue
+                try:
+                    f = pd.Timestamp(row[col_f]).tz_localize(None).normalize()
+                except Exception:
+                    continue
+                encontrados.setdefault(tk, set()).add(f.strftime("%Y-%m-%d"))
+            if len(df) < 100:
+                break
+        ventanas += 1
+        dia += pd.Timedelta(days=7)
 
-    print(f"    OK: {len(cal)} tickers con calendario")
-    if fallidos:
-        print(f"    sin datos: {len(fallidos)} ({fallidos[:8]})")
-    if sin_procesar:
-        print(f"    ⏭  {sin_procesar} para la próxima corrida")
+    if not encontrados:
+        print("    ⚠ el calendario no devolvió ninguna coincidencia — se conserva lo previo")
+        log_tiempo("earnings")
+        return previo
+
+    cal = dict(previo)
+    hoy_str = hoy.strftime("%Y-%m-%d")
+    for tk, fechas in encontrados.items():
+        fechas = sorted(fechas)
+        futuras = [f for f in fechas if f >= hoy_str]
+        pasadas = [f for f in fechas if f <  hoy_str]
+        cal[tk] = {
+            "prox":   futuras[0] if futuras else None,
+            "ultimo": pasadas[-1] if pasadas else None,
+            "todas":  fechas[-8:],
+        }
+
+    con_prox = sum(1 for v in cal.values() if v.get("prox"))
+    print(f"    OK: {len(encontrados)} tickers encontrados en {ventanas} ventanas · {con_prox} con fecha futura")
+    faltan = sorted(buscados - set(encontrados))
+    if faltan:
+        print(f"    sin fecha: {len(faltan)} (esperable en papeles del Merval) {faltan[:6]}")
     log_tiempo("earnings")
     return cal
 
-
-# ══════════════════════════════════════════════════════════════
-# FUNDAMENTALES — CALIDAD COMO FILTRO DE RIESGO
-#
-# Uso deliberadamente acotado: NO se usa para predecir retornos.
-# Se usa para EXCLUIR empresas frágiles del universo operable.
-#
-# Por qué esta distinción importa: Yahoo entrega la foto ACTUAL,
-# no datos point-in-time. Usar el P/E de hoy para backtestear 2024
-# es sesgo de anticipación. Pero preguntar "¿esta empresa pierde
-# plata hoy?" para decidir si la incluyo hoy es legítimo: no hay
-# ninguna afirmación histórica involucrada.
-#
-# Basado en los factores de calidad de Novy-Marx y Asness (QMJ):
-# rentabilidad, solidez financiera y generación de caja.
-# ══════════════════════════════════════════════════════════════
 def descargar_fundamentales(tickers_yf, previo=None):
     previo = previo or {}
     pendientes = [t for t in tickers_yf if clean(t) not in previo]
