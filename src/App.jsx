@@ -4485,7 +4485,12 @@ export default function App() {
         setRpCalc({
           fecha: dia.date, px, sig,
           prev5: prev(5), prev10: prev(10), prev20: prev(20),
-          fwd5: fwd(5), fwd10: fwd(10), fwd20: fwd(20),
+          fwd1: fwd(1), fwd3: fwd(3), fwd5: fwd(5), fwd10: fwd(10), fwd20: fwd(20),
+          // máximo y mínimo alcanzados en los 20 días siguientes: dice si
+          // el trade habría tocado el TP o el stop antes de cerrar
+          maxFwd: (()=>{const h=rpDias.slice(iDia+1,iDia+21); return h.length?Math.max(...h.map(d=>d.high))/px*100-100:null;})(),
+          minFwd: (()=>{const h=rpDias.slice(iDia+1,iDia+21); return h.length?Math.min(...h.map(d=>d.low))/px*100-100:null;})(),
+          diasDisp: Math.max(0, rpDias.length-1-iDia),
           barrasUsadas: hasta.length,
         });
       } catch (e) {
@@ -6728,7 +6733,7 @@ export default function App() {
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"9px"}}>
                         <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>VARIACIÓN DIARIA</span>
                         <div style={{display:"flex",gap:"4px"}}>
-                          {[5,15,30].map(v=>(
+                          {[5,15,30,60,90].map(v=>(
                             <button key={v} className={`btn ${rpVent===v?"on":"off"}`} style={{padding:"3px 9px",fontSize:"8px"}}
                               onClick={()=>setRpVent(v)}>{v}D</button>
                           ))}
@@ -6775,8 +6780,14 @@ export default function App() {
                       const col = SC[sg?.sig]||"#5a8fa8";
                       const compra = (sg?.sig||"").includes("COMPRA");
                       const venta  = (sg?.sig||"").includes("VENTA");
-                      const acerto = f20 => f20==null?null : compra ? f20>0 : venta ? f20<0 : null;
-                      const ok20 = acerto(rpCalc.fwd20);
+                      // Horizonte más largo con datos disponibles
+                      const hz = [[20,rpCalc.fwd20],[10,rpCalc.fwd10],[5,rpCalc.fwd5],[3,rpCalc.fwd3],[1,rpCalc.fwd1]].find(([,v])=>v!=null);
+                      const ok = hz ? (compra ? hz[1]>0 : venta ? hz[1]<0 : null) : null;
+                      // ¿habría tocado stop o TP antes de cerrar?
+                      const tocoTP  = compra && sg?.tp1!=null && rpCalc.maxFwd!=null && (sg.tp1/rpCalc.px-1)*100 <= rpCalc.maxFwd;
+                      const tocoSL  = compra && sg?.sl!=null  && rpCalc.minFwd!=null && (sg.sl /rpCalc.px-1)*100 >= rpCalc.minFwd;
+                      const cand = (()=>{ try { return detectCandlePattern(rpBarras.slice(0, rpDias.find(d=>d.date===rpCalc.fecha).idx+1)); } catch(_) { return null; } })();
+                      const banda = bandaRSI(sg?.rsi);
                       return (
                         <div className="card" style={{padding:"12px",borderLeft:`3px solid ${col}`}}>
                           <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"3px"}}>
@@ -6786,13 +6797,70 @@ export default function App() {
                             Calculado con {rpCalc.barrasUsadas.toLocaleString()} barras hasta esa fecha — sin ver nada posterior
                           </div>
 
-                          <div style={{display:"flex",alignItems:"center",gap:"9px",marginBottom:"9px",flexWrap:"wrap"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:"9px",marginBottom:"10px",flexWrap:"wrap"}}>
                             <span style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:col}}>{sg?.sig||"—"}</span>
-                            <span style={{fontSize:"9px",color:"#8fb4cc"}}>conf {sg?.conf??"—"}% · RSI {sg?.rsi??"—"} · precio {rpCalc.px?.toFixed(2)}</span>
+                            <span style={{fontSize:"9px",color:"#8fb4cc"}}>conf {sg?.conf??"—"}% · precio {rpCalc.px?.toFixed(2)}</span>
                           </div>
 
-                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>YA HABÍA SUBIDO / BAJADO ANTES</div>
-                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"9px"}}>
+                          {/* SCORES DE ESE DIA */}
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>SCORES ESE DÍA</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(64px,1fr))",gap:"4px",marginBottom:"10px"}}>
+                            {[["FX-Técnico",sg?.fx_sc],["EVO",sg?.evo_sc],["Momentum",sg?.mom_sc],["Reversión",sg?.rev_sc],["Final",sg?.final_sc]]
+                              .filter(([,v])=>v!=null).map(([l,v])=>(
+                              <div key={l} style={{padding:"5px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{l}</div>
+                                <div style={{fontSize:"12px",fontFamily:"'Bebas Neue'",color:v>=60?"#00ff88":v>=45?"#ffd700":"#ff9040"}}>{typeof v==="number"?v.toFixed(0):v}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* INDICADORES DE ESE DIA */}
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>INDICADORES ESE DÍA</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(78px,1fr))",gap:"4px",marginBottom:"4px"}}>
+                            {[["RSI",sg?.rsi,sg?.rsi>70?"#ff3355":sg?.rsi<30?"#00ff88":"#8fb4cc"],
+                              ["MACD",sg?.macd,sg?.macd>0?"#00ff88":"#ff3355"],
+                              ["ROC 10h",sg?.roc10!=null?sg.roc10+"%":null,sg?.roc10>0?"#00ff88":"#ff3355"],
+                              ["Mom 5h",sg?.mom5!=null?sg.mom5+"%":null,sg?.mom5>0?"#00ff88":"#ff3355"],
+                              ["ATR",sg?.atr,"#a0cce0"],
+                              ["Régimen",sg?.regime,"#ffd700"],
+                              ["Vol 24h",sg?.vol_24h!=null?sg.vol_24h+"x":null,"#a0cce0"],
+                              ["Tendencia",sg?.trend,"#8fb4cc"],
+                            ].filter(([,v])=>v!=null&&v!=="").map(([l,v,c])=>(
+                              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 6px",background:"#050c15",borderRadius:"3px",fontSize:"8px"}}>
+                                <span style={{color:"#5a8fa8"}}>{l}</span><span style={{color:c,fontWeight:700}}>{v}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {banda&&(
+                            <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
+                              RSI {sg.rsi} → banda {banda.lo}-{banda.hi===101?"100":banda.hi}: históricamente {banda.pUp}% de salto +4% en 1-4d
+                              (promedio general {RSI_BASE_PROM_UP}%) y {banda.pDn}% de caída -4%.
+                            </div>
+                          )}
+                          {cand?.patterns?.length>0&&(
+                            <div style={{fontSize:"7px",color:"#8fb4cc",marginBottom:"10px"}}>
+                              🕯️ Vela ese día: <strong>{cand.patterns[0].name}</strong>
+                              {(()=>{const v=VELAS_TASAS_BASE.find(x=>x.clave===cand.patterns[0].name);
+                                return v?<span style={{color:"#5a8fa8"}}> — medido: {v.fwd4>=0?"+":""}{v.fwd4}% a 4d (baseline {VELAS_BASELINE.fwd4}%), {v.veredicto}</span>:null;})()}
+                            </div>
+                          )}
+
+                          {/* NIVELES QUE PROPONIA */}
+                          {sg?.entry!=null&&(<>
+                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>NIVELES QUE PROPONÍA</div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(60px,1fr))",gap:"4px",marginBottom:"10px"}}>
+                              {[["Entrada",sg.entry,"#00d4ff"],["Stop",sg.sl,"#ff3355"],["TP1",sg.tp1,"#00ff88"],["TP2",sg.tp2,"#00ff88"],["R/R",sg.rr!=null?sg.rr+"x":null,sg.rr>=2?"#00ff88":"#ffd700"]]
+                                .filter(([,v])=>v!=null).map(([l,v,c])=>(
+                                <div key={l} style={{padding:"5px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
+                                  <div style={{fontSize:"6px",color:"#5a8fa8"}}>{l}</div>
+                                  <div style={{fontSize:"10px",color:c,fontWeight:700}}>{typeof v==="number"?v.toFixed(2):v}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </>)}
+
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>YA SE HABÍA MOVIDO ANTES</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"10px"}}>
                             {[["5d",rpCalc.prev5],["10d",rpCalc.prev10],["20d",rpCalc.prev20]].map(([l,v])=>(
                               <div key={l} style={{padding:"6px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
                                 <div style={{fontSize:"6px",color:"#5a8fa8"}}>{l} previos</div>
@@ -6801,33 +6869,58 @@ export default function App() {
                             ))}
                           </div>
 
-                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>QUÉ PASÓ DESPUÉS</div>
-                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"9px"}}>
-                            {[["5d",rpCalc.fwd5],["10d",rpCalc.fwd10],["20d",rpCalc.fwd20]].map(([l,v])=>(
-                              <div key={l} style={{padding:"6px",textAlign:"center",...semBox(cc(v),"14")}}>
-                                <div style={{fontSize:"6px",color:"#8fb4cc"}}>+{l}</div>
-                                <div style={{fontSize:"12px",fontFamily:"'Bebas Neue'",color:cc(v)}}>{pc(v)}</div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"4px"}}>
+                            <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".08em"}}>QUÉ PASÓ DESPUÉS</span>
+                            <span style={{fontSize:"6px",color:"#5a8fa8"}}>{rpCalc.diasDisp} días transcurridos desde esa fecha</span>
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"3px",marginBottom:"6px"}}>
+                            {[["+1d",rpCalc.fwd1],["+3d",rpCalc.fwd3],["+5d",rpCalc.fwd5],["+10d",rpCalc.fwd10],["+20d",rpCalc.fwd20]].map(([l,v])=>(
+                              <div key={l} style={{padding:"6px 2px",textAlign:"center",...(v!=null?semBox(cc(v),"14"):{background:"#07121c",borderRadius:"4px",border:"1px dashed #1e3a50"})}}>
+                                <div style={{fontSize:"6px",color:"#8fb4cc"}}>{l}</div>
+                                <div style={{fontSize:"11px",fontFamily:"'Bebas Neue'",color:v!=null?cc(v):"#3a5a70"}}>{v!=null?pc(v):"·"}</div>
                               </div>
                             ))}
                           </div>
+                          {(rpCalc.maxFwd!=null)&&(
+                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px",marginBottom:"9px"}}>
+                              <div style={{padding:"5px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>máximo alcanzado (20d)</div>
+                                <div style={{fontSize:"11px",color:"#00ff88"}}>{pc(rpCalc.maxFwd)}</div>
+                              </div>
+                              <div style={{padding:"5px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>mínimo alcanzado (20d)</div>
+                                <div style={{fontSize:"11px",color:"#ff3355"}}>{pc(rpCalc.minFwd)}</div>
+                              </div>
+                            </div>
+                          )}
 
-                          {ok20!==null&&(
-                            <div style={{...semBox(ok20?"#00ff88":"#ff3355","14"),padding:"8px"}}>
-                              <div style={{fontSize:"9px",color:ok20?"#00ff88":"#ff3355",fontWeight:700,marginBottom:"3px"}}>
-                                {ok20?"✓ La señal acertó la dirección a 20 días":"✕ La señal erró la dirección a 20 días"}
+                          {compra&&sg?.tp1!=null&&rpCalc.maxFwd!=null&&(
+                            <div style={{...semBox(tocoTP&&!tocoSL?"#00ff88":tocoSL?"#ff3355":"#ffd700","12"),padding:"7px",marginBottom:"6px",fontSize:"7px",lineHeight:1.6,color:"#b0d4e8"}}>
+                              {tocoSL&&tocoTP && <>Tocó <strong style={{color:"#00ff88"}}>TP1</strong> y también el <strong style={{color:"#ff3355"}}>stop</strong> dentro de los 20 días — cuál primero depende del orden intradiario, que no se puede reconstruir con datos diarios.</>}
+                              {tocoSL&&!tocoTP && <>Habría tocado el <strong style={{color:"#ff3355"}}>stop</strong> ({sg.sl.toFixed(2)}) antes de llegar al TP1.</>}
+                              {!tocoSL&&tocoTP && <>Habría alcanzado <strong style={{color:"#00ff88"}}>TP1</strong> ({sg.tp1.toFixed(2)}) sin tocar el stop.</>}
+                              {!tocoSL&&!tocoTP && <>No llegó ni al TP1 ({sg.tp1.toFixed(2)}) ni al stop ({sg.sl.toFixed(2)}) en 20 días.</>}
+                            </div>
+                          )}
+
+                          {ok!==null&&hz&&(
+                            <div style={{...semBox(ok?"#00ff88":"#ff3355","14"),padding:"8px"}}>
+                              <div style={{fontSize:"9px",color:ok?"#00ff88":"#ff3355",fontWeight:700,marginBottom:"3px"}}>
+                                {ok?`✓ Acertó la dirección a ${hz[0]} días`:`✕ Erró la dirección a ${hz[0]} días`}
+                                {hz[0]<20&&<span style={{color:"#8fb4cc",fontWeight:400}}> (parcial — faltan días para 20d)</span>}
                               </div>
                               <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.6}}>
                                 Un caso aislado no dice nada del sistema — tocá varias barras para ver el patrón.
-                                {rpCalc.prev20!=null&&Math.abs(rpCalc.prev20)>5&&rpCalc.fwd20!=null&&(
-                                  <> Notá que acá ya se había movido {pc(rpCalc.prev20)} <em>antes</em> de la señal,
-                                  y después quedó {pc(rpCalc.fwd20)}.</>
+                                {rpCalc.prev20!=null&&Math.abs(rpCalc.prev20)>5&&(
+                                  <> Acá ya se había movido <strong>{pc(rpCalc.prev20)}</strong> antes de la señal.</>
                                 )}
                               </div>
                             </div>
                           )}
-                          {rpCalc.fwd20==null&&(
-                            <div style={{fontSize:"7px",color:"#5a8fa8",padding:"6px 0"}}>
-                              Fecha demasiado reciente: todavía no pasaron 20 días para evaluar el resultado.
+                          {!hz&&(
+                            <div style={{fontSize:"7px",color:"#5a8fa8",padding:"6px 0",lineHeight:1.6}}>
+                              Fecha demasiado reciente para evaluar. Probá con la ventana <strong>60D</strong> o <strong>90D</strong> y
+                              tocá una barra más antigua — ahí sí hay días posteriores para medir.
                             </div>
                           )}
                         </div>
