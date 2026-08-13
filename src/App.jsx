@@ -3291,6 +3291,13 @@ export default function App() {
   const [verBacktest, setVerBacktest] = useState(false);
   const [verTablaRsi, setVerTablaRsi] = useState(false);
   const [verTablaVelas, setVerTablaVelas] = useState(false);
+  // ── REPLAY: reconstruye qué decía el sistema en una fecha pasada ──
+  const [rpTicker, setRpTicker]   = useState("");
+  const [rpInput,  setRpInput]    = useState("");
+  const [rpVent,   setRpVent]     = useState(30);
+  const [rpSel,    setRpSel]      = useState(null);
+  const [rpCalc,   setRpCalc]     = useState(null);
+  const [rpCargando, setRpCargando] = useState(false);
   // Tick cada minuto: mantiene vivo el estado de mercado (abierto/cerrado)
   // y la antigüedad del dato sin necesidad de recargar la página.
   const [nowTick, setNowTick] = useState(0);
@@ -4419,6 +4426,75 @@ export default function App() {
     // El usuario puede activarlo manualmente con el botón "↺ + Live"
   },[W, lg, buildRows, TICKERS, mkt]);
 
+  // ── REPLAY: reconstruir qué decía el sistema en una fecha pasada ──
+  //
+  // Clave metodológica: se corta la serie EN esa fecha y se recalcula.
+  // El motor nunca ve datos posteriores, así que la señal es exactamente
+  // la que habría mostrado ese día. Después se compara contra lo que
+  // efectivamente pasó — que sí conocemos, pero el motor no vio.
+  const rpBarras = useMemo(() => {
+    if (!rpTicker) return null;
+    const b = rowDataRef.current[rpTicker];
+    if (b?.length >= 80) return b;
+    const emb = CSV_DATA_EMBEDDED?.[rpTicker];
+    return emb?.length >= 80 ? emb : null;
+  }, [rpTicker, rows]);
+
+  // Serie diaria para el gráfico (una barra por día, no por hora)
+  const rpDias = useMemo(() => {
+    if (!rpBarras) return [];
+    const porDia = {};
+    for (const b of rpBarras) {
+      const d = b.date;
+      if (!porDia[d]) porDia[d] = { date: d, open: b.open, high: b.high, low: b.low, close: b.close, volume: 0, idx: 0 };
+      porDia[d].high = Math.max(porDia[d].high, b.high);
+      porDia[d].low = Math.min(porDia[d].low, b.low);
+      porDia[d].close = b.close;
+      porDia[d].volume += b.volume || 0;
+    }
+    const dias = Object.values(porDia).sort((a, b) => a.date < b.date ? -1 : 1);
+    // índice de la última barra intradiaria de cada día — el corte del replay
+    for (const d of dias) {
+      let ult = -1;
+      for (let i = 0; i < rpBarras.length; i++) if (rpBarras[i].date === d.date) ult = i;
+      d.idx = ult;
+    }
+    return dias.map((d, i) => ({
+      ...d,
+      ret: i > 0 ? (d.close / dias[i - 1].close - 1) * 100 : 0,
+    }));
+  }, [rpBarras]);
+
+  const rpVisibles = useMemo(() => rpDias.slice(-rpVent), [rpDias, rpVent]);
+
+  // Al tocar una barra: recalcular la señal con la serie cortada ahí
+  const rpAnalizar = useCallback((dia) => {
+    if (!rpBarras || dia.idx < 60) return;
+    setRpSel(dia.date);
+    setRpCargando(true);
+    setRpCalc(null);
+    setTimeout(() => {
+      try {
+        const hasta = rpBarras.slice(0, dia.idx + 1);
+        const sig = combinedSignal(hasta, W);
+        const cierres = rpDias.map(d => d.close);
+        const iDia = rpDias.findIndex(d => d.date === dia.date);
+        const px = dia.close;
+        const fwd = n => (iDia + n < rpDias.length) ? (cierres[iDia + n] / px - 1) * 100 : null;
+        const prev = n => (iDia - n >= 0) ? (px / cierres[iDia - n] - 1) * 100 : null;
+        setRpCalc({
+          fecha: dia.date, px, sig,
+          prev5: prev(5), prev10: prev(10), prev20: prev(20),
+          fwd5: fwd(5), fwd10: fwd(10), fwd20: fwd(20),
+          barrasUsadas: hasta.length,
+        });
+      } catch (e) {
+        setRpCalc({ error: e?.message || "no se pudo calcular" });
+      }
+      setRpCargando(false);
+    }, 10);
+  }, [rpBarras, rpDias, W]);
+
   const opps=useMemo(()=>rows.filter(r=>r.sig&&r.sig.sig!=="NEUTRAL"&&r.sig.above_p80).sort((a,b)=>b.sig.conf-a.sig.conf),[rows]);
   const srtd=useMemo(()=>[...rows].sort((a,b)=>{
     if(sort==="conf")return(b.sig?.conf||0)-(a.sig?.conf||0);
@@ -4764,7 +4840,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["quant","🔬 Validación"]].map(([k,l])=>
+              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["replay","⏪ Replay"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["quant","🔬 Validación"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
@@ -6580,6 +6656,202 @@ export default function App() {
 
 
             {/* ══ TAB: CATEGORÍAS ══ */}
+            {/* ══ TAB: REPLAY ══ */}
+            {tab==="replay"&&(()=>{
+              const r0 = rows.find(x=>x.ticker===rpTicker);
+              const q  = rpBarras ? calidadSerie(rpBarras) : null;
+              const f  = calidadDe(rpTicker);
+              const ns = DATA_MOD?.FXCA16_NOTICIAS?.porTicker?.[(rpTicker||"").replace(".BA","")] || [];
+              const maxAbs = Math.max(...rpVisibles.map(d=>Math.abs(d.ret)), 1);
+              const pc = v => v==null ? "—" : (v>=0?"+":"")+v.toFixed(1)+"%";
+              const cc = v => v==null ? "#5a8fa8" : v>0 ? "#00ff88" : v<0 ? "#ff3355" : "#8fb4cc";
+              return (
+                <div>
+                  {/* buscador */}
+                  <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"7px"}}>⏪ REPLAY — ¿QUÉ DECÍA EL SISTEMA ESE DÍA?</div>
+                    <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                      <input value={rpInput} onChange={e=>setRpInput(e.target.value.toUpperCase())}
+                        onKeyDown={e=>{if(e.key==="Enter"){setRpTicker(rpInput.trim());setRpSel(null);setRpCalc(null);}}}
+                        placeholder="Ticker: AAPL, GGAL, PBR..."
+                        style={{flex:1,minWidth:"120px",background:"#050c15",border:"1px solid #1e3a50",borderRadius:"5px",padding:"7px 10px",color:"#e8f4ff",fontSize:"11px",fontFamily:"inherit"}}/>
+                      <button className="btn on" onClick={()=>{setRpTicker(rpInput.trim());setRpSel(null);setRpCalc(null);}}>Analizar</button>
+                    </div>
+                    {!rpTicker&&(
+                      <div style={{fontSize:"7px",color:"#5a8fa8",marginTop:"7px",lineHeight:1.7}}>
+                        Escribí un ticker y tocá cualquier barra del gráfico. El sistema recalcula la señal
+                        <strong> cortando la serie en esa fecha</strong> — sin ver nada posterior — y la compara contra
+                        lo que efectivamente pasó después.
+                      </div>
+                    )}
+                  </div>
+
+                  {rpTicker && !rpBarras && (
+                    <div className="card" style={{padding:"14px",textAlign:"center",color:"#ff9040",fontSize:"9px"}}>
+                      No hay datos suficientes para <strong>{rpTicker}</strong> (se necesitan 80 barras).
+                      Probá con un ticker del universo.
+                    </div>
+                  )}
+
+                  {rpBarras && (<>
+                    {/* mini dashboard */}
+                    <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                      <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
+                        <span style={{fontFamily:"'Bebas Neue'",fontSize:"26px",color:"#e8f4ff"}}>{rpTicker}</span>
+                        <span style={{fontSize:"9px",color:"#5a8fa8"}}>{r0?.name||""}</span>
+                        <span style={{marginLeft:"auto",fontFamily:"'Bebas Neue'",fontSize:"22px",color:"#00d4ff"}}>
+                          {rpDias.length?rpDias[rpDias.length-1].close.toFixed(2):"—"}
+                        </span>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(72px,1fr))",gap:"5px",marginBottom:"8px"}}>
+                        {[["Señal hoy",r0?.sig?.sig||"—",SC[r0?.sig?.sig]||"#5a8fa8"],
+                          ["RSI",r0?.sig?.rsi??"—",r0?.sig?.rsi>70?"#ff3355":r0?.sig?.rsi<30?"#00ff88":"#8fb4cc"],
+                          ["Calidad fund.",f?.calidad??"—",f?.fragil?"#ff3355":f?.calidad>=70?"#00ff88":"#ffd700"],
+                          ["Serie",q?.nivel||"—",q?.nivel==="ok"?"#00ff88":q?.nivel==="dudosa"?"#ffd700":"#ff3355"],
+                        ].map(([l,v,c])=>(
+                          <div key={l} style={{padding:"6px",textAlign:"center",...semBox(c,"12")}}>
+                            <div style={{fontSize:"6px",color:"#8fb4cc",marginBottom:"2px"}}>{l}</div>
+                            <div style={{fontSize:"10px",color:c,fontWeight:700}}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {(f?.fragil||q?.nivel!=="ok")&&(
+                        <div style={{...semBox("#ff3355","12"),padding:"7px",fontSize:"7px",color:"#ffb3c0",lineHeight:1.6}}>
+                          {f?.fragil&&<div>⚠ Empresa marcada frágil{f.banderas?.length?": "+f.banderas.join(" · "):""}</div>}
+                          {q&&q.nivel!=="ok"&&<div>⚠ Serie de precios {q.nivel}{q.motivo?": "+q.motivo:""} — los indicadores acá miden ruido</div>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* grafico de barras */}
+                    <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"9px"}}>
+                        <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>VARIACIÓN DIARIA</span>
+                        <div style={{display:"flex",gap:"4px"}}>
+                          {[5,15,30].map(v=>(
+                            <button key={v} className={`btn ${rpVent===v?"on":"off"}`} style={{padding:"3px 9px",fontSize:"8px"}}
+                              onClick={()=>setRpVent(v)}>{v}D</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"stretch",gap:"2px",height:"120px",marginBottom:"4px"}}>
+                        {rpVisibles.map(d=>{
+                          const h = Math.max(3, Math.abs(d.ret)/maxAbs*46);
+                          const act = rpSel===d.date;
+                          return (
+                            <div key={d.date} onClick={()=>rpAnalizar(d)}
+                              title={d.date+"  "+pc(d.ret)}
+                              style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",cursor:"pointer",
+                                background:act?"#00d4ff18":"transparent",borderRadius:"3px",padding:"0 1px",
+                                border:act?"1px solid #00d4ff60":"1px solid transparent"}}>
+                              <div style={{height:"50%",display:"flex",alignItems:"flex-end"}}>
+                                {d.ret>=0&&<div style={{width:"100%",height:`${h}%`,background:act?"#00ff88":"#00ff8899",borderRadius:"2px 2px 0 0"}}/>}
+                              </div>
+                              <div style={{height:"1px",background:"#1e3a50"}}/>
+                              <div style={{height:"50%"}}>
+                                {d.ret<0&&<div style={{width:"100%",height:`${h}%`,background:act?"#ff3355":"#ff335599",borderRadius:"0 0 2px 2px"}}/>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:"6px",color:"#5a8fa8"}}>
+                        <span>{rpVisibles[0]?.date}</span>
+                        <span>tocá una barra para ver qué decía el sistema ese día</span>
+                        <span>{rpVisibles[rpVisibles.length-1]?.date}</span>
+                      </div>
+                    </div>
+
+                    {/* resultado del replay */}
+                    {rpCargando&&(
+                      <div className="card" style={{padding:"16px",textAlign:"center",color:"#00d4ff",fontSize:"9px"}}>
+                        ⏳ Recalculando la señal al {rpSel}...
+                      </div>
+                    )}
+                    {rpCalc&&!rpCargando&&(rpCalc.error?(
+                      <div className="card" style={{padding:"14px",color:"#ff3355",fontSize:"9px"}}>Error: {rpCalc.error}</div>
+                    ):(()=>{
+                      const sg = rpCalc.sig;
+                      const col = SC[sg?.sig]||"#5a8fa8";
+                      const compra = (sg?.sig||"").includes("COMPRA");
+                      const venta  = (sg?.sig||"").includes("VENTA");
+                      const acerto = f20 => f20==null?null : compra ? f20>0 : venta ? f20<0 : null;
+                      const ok20 = acerto(rpCalc.fwd20);
+                      return (
+                        <div className="card" style={{padding:"12px",borderLeft:`3px solid ${col}`}}>
+                          <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"3px"}}>
+                            ⏪ EL SISTEMA, EL {rpCalc.fecha}
+                          </div>
+                          <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"9px"}}>
+                            Calculado con {rpCalc.barrasUsadas.toLocaleString()} barras hasta esa fecha — sin ver nada posterior
+                          </div>
+
+                          <div style={{display:"flex",alignItems:"center",gap:"9px",marginBottom:"9px",flexWrap:"wrap"}}>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:col}}>{sg?.sig||"—"}</span>
+                            <span style={{fontSize:"9px",color:"#8fb4cc"}}>conf {sg?.conf??"—"}% · RSI {sg?.rsi??"—"} · precio {rpCalc.px?.toFixed(2)}</span>
+                          </div>
+
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>YA HABÍA SUBIDO / BAJADO ANTES</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"9px"}}>
+                            {[["5d",rpCalc.prev5],["10d",rpCalc.prev10],["20d",rpCalc.prev20]].map(([l,v])=>(
+                              <div key={l} style={{padding:"6px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{l} previos</div>
+                                <div style={{fontSize:"12px",fontFamily:"'Bebas Neue'",color:cc(v)}}>{pc(v)}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px",letterSpacing:".08em"}}>QUÉ PASÓ DESPUÉS</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"5px",marginBottom:"9px"}}>
+                            {[["5d",rpCalc.fwd5],["10d",rpCalc.fwd10],["20d",rpCalc.fwd20]].map(([l,v])=>(
+                              <div key={l} style={{padding:"6px",textAlign:"center",...semBox(cc(v),"14")}}>
+                                <div style={{fontSize:"6px",color:"#8fb4cc"}}>+{l}</div>
+                                <div style={{fontSize:"12px",fontFamily:"'Bebas Neue'",color:cc(v)}}>{pc(v)}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {ok20!==null&&(
+                            <div style={{...semBox(ok20?"#00ff88":"#ff3355","14"),padding:"8px"}}>
+                              <div style={{fontSize:"9px",color:ok20?"#00ff88":"#ff3355",fontWeight:700,marginBottom:"3px"}}>
+                                {ok20?"✓ La señal acertó la dirección a 20 días":"✕ La señal erró la dirección a 20 días"}
+                              </div>
+                              <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.6}}>
+                                Un caso aislado no dice nada del sistema — tocá varias barras para ver el patrón.
+                                {rpCalc.prev20!=null&&Math.abs(rpCalc.prev20)>5&&rpCalc.fwd20!=null&&(
+                                  <> Notá que acá ya se había movido {pc(rpCalc.prev20)} <em>antes</em> de la señal,
+                                  y después quedó {pc(rpCalc.fwd20)}.</>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {rpCalc.fwd20==null&&(
+                            <div style={{fontSize:"7px",color:"#5a8fa8",padding:"6px 0"}}>
+                              Fecha demasiado reciente: todavía no pasaron 20 días para evaluar el resultado.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })())}
+
+                    {ns.length>0&&(
+                      <div className="card" style={{padding:"12px",marginTop:"10px"}}>
+                        <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"6px"}}>📰 NOTICIAS DE {rpTicker}</div>
+                        {ns.map((n,i)=>(
+                          <a key={i} href={n.url||"#"} target="_blank" rel="noopener noreferrer"
+                             onClick={e=>{if(!n.url)e.preventDefault();}}
+                             style={{display:"block",textDecoration:"none",padding:"6px 8px",marginBottom:"3px",background:"#050c15",borderRadius:"4px"}}>
+                            <div style={{fontSize:"9px",color:"#b0d4e8",lineHeight:1.5}}>{n.titulo} {n.url&&<span style={{color:"#00d4ff"}}>↗</span>}</div>
+                            <div style={{fontSize:"6px",color:"#5a8fa8",marginTop:"2px"}}>{n.fuente}</div>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </>)}
+                </div>
+              );
+            })()}
+
             {tab==="cmp"&&(()=>{
               const tickerList = rows.map(r=>r.ticker).sort();
               const rA = rows.find(r=>r.ticker===cmpA);
