@@ -3299,6 +3299,10 @@ export default function App() {
   const [rpCalc,   setRpCalc]     = useState(null);
   const [rpCargando, setRpCargando] = useState(false);
   const [rpRankTab, setRpRankTab] = useState("suben");
+  const [rpAjustVol, setRpAjustVol] = useState(false);
+  const [rpCruce, setRpCruce] = useState(null);
+  const [rpCruceCargando, setRpCruceCargando] = useState(false);
+  const [rpCruceProg, setRpCruceProg] = useState({ hecho: 0, total: 0 });
   // Tick cada minuto: mantiene vivo el estado de mercado (abierto/cerrado)
   // y la antigüedad del dato sin necesidad de recargar la página.
   const [nowTick, setNowTick] = useState(0);
@@ -4468,6 +4472,8 @@ export default function App() {
 
   const rpVisibles = useMemo(() => rpDias.slice(-rpVent), [rpDias, rpVent]);
 
+  useEffect(() => { setRpCruce(null); }, [rpRankTab, rpVent]);
+
   // ── RANKING: quiénes subieron, cayeron y se mantuvieron en el período ──
   //
   // Se calcula sobre la serie diaria de todo el universo. "Se mantuvieron"
@@ -4475,8 +4481,17 @@ export default function App() {
   // que serían simplemente los menos malos. Excluye series degradadas:
   // un papel que no opera figura como "estable" cuando en realidad no
   // tiene precio real (el caso GAMI/POLL).
+  //
+  // Además de la variación cruda, se calcula un EXCESO AJUSTADO POR
+  // VOLATILIDAD: comparado contra la mediana de retorno de activos con
+  // volatilidad similar en el mismo período. Es la misma corrección que
+  // en hallazgos.md tumbó la hipótesis de reversión — un ticker que
+  // "sube 15%" con vol diaria de 6% no es comparable a uno que sube 15%
+  // con vol de 1%. Sin este ajuste, el ranking crudo sobre-representa
+  // simplemente a los más volátiles.
   const rpRanking = useMemo(() => {
     const fuente = DATA_MOD?.CSV_DATA_DAILY_RAW || {};
+    const sectorDe = {}; for (const t of TICKERS_TODOS) sectorDe[t.ticker] = t.sector;
     const out = [];
     for (const [tk, bars] of Object.entries(fuente)) {
       if (!bars || bars.length < rpVent + 5) continue;
@@ -4484,31 +4499,64 @@ export default function App() {
       const px = c[c.length - 1];
       const ini = c[c.length - 1 - rpVent];
       if (!ini || !px || !isFinite(ini) || !isFinite(px)) continue;
-      // descartar series sin operaciones reales en el período
       const tramo = bars.slice(-rpVent);
       const sinVol = tramo.filter(b => !b.v).length / tramo.length;
       let congelado = 0;
       for (let i = 1; i < tramo.length; i++) if (tramo[i].c === tramo[i-1].c) congelado++;
       if (sinVol > 0.3 || congelado / (tramo.length - 1) > 0.5) continue;
       const ret = (px / ini - 1) * 100;
-      if (!isFinite(ret) || Math.abs(ret) > 300) continue;  // artefactos tipo split
-      // Salto de un solo día mayor a 50%: casi siempre es un split no
-      // ajustado, no un movimiento real. Se marca en vez de ocultarlo,
-      // porque ocultar datos raros esconde problemas del pipeline.
+      if (!isFinite(ret) || Math.abs(ret) > 300) continue;
       let sospechoso = false;
       for (let i = 1; i < tramo.length; i++) {
         if (tramo[i-1].c > 0 && Math.abs(tramo[i].c / tramo[i-1].c - 1) > 0.5) { sospechoso = true; break; }
       }
+      // volatilidad diaria del período (desvío de retornos)
+      const rets = []; for (let i = 1; i < tramo.length; i++) rets.push(tramo[i].c / tramo[i-1].c - 1);
+      const m = rets.reduce((a,b)=>a+b,0) / (rets.length||1);
+      const vol = Math.sqrt(rets.reduce((s,x)=>s+(x-m)**2,0) / (rets.length-1||1)) * 100;
       const r0 = rows.find(x => x.ticker === tk);
-      out.push({ tk, ret, px, sospechoso, moneda: bars[bars.length-1].m,
+      out.push({ tk, ret, px, vol, sospechoso, moneda: bars[bars.length-1].m,
+                 sector: sectorDe[tk] || "—",
                  sig: r0?.sig?.sig || null, name: r0?.name || "" });
     }
+    // exceso ajustado: mediana de retorno por quintil de volatilidad
+    const conVol = out.filter(x=>isFinite(x.vol));
+    const ordVol = [...conVol].sort((a,b)=>a.vol-b.vol);
+    const nb = 5, tam = Math.floor(ordVol.length/nb) || 1;
+    for (let q = 0; q < nb; q++) {
+      const bucket = ordVol.slice(q*tam, q===nb-1 ? ordVol.length : (q+1)*tam);
+      if (!bucket.length) continue;
+      const rets = bucket.map(x=>x.ret).sort((a,b)=>a-b);
+      const mediana = rets[Math.floor(rets.length/2)];
+      for (const x of bucket) x.exceso = x.ret - mediana;
+    }
     const porRet = [...out].sort((a, b) => b.ret - a.ret);
+    const porExc = [...out].filter(x=>x.exceso!=null).sort((a,b)=>b.exceso-a.exceso);
+    const suben    = porRet.slice(0, 20);
+    const caen     = porRet.slice(-20).reverse();
+    const estables = [...out].sort((a,b) => Math.abs(a.ret) - Math.abs(b.ret)).slice(0, 20);
+
+    // concentración sectorial de los que más se movieron — la misma
+    // lectura que en el caso BA/GLOB/ORCL/AAL/BABA: si el movimiento
+    // abarca muchos sectores sin relación, es más probable que sea un
+    // catalizador de mercado amplio que una señal sectorial específica.
+    const concentracion = (lista) => {
+      const conteo = {};
+      for (const x of lista) conteo[x.sector] = (conteo[x.sector]||0) + 1;
+      const sectores = Object.entries(conteo).sort((a,b)=>b[1]-a[1]);
+      const top = sectores[0];
+      const distintos = sectores.length;
+      const dominante = top ? top[1] / lista.length : 0;
+      return { distintos, dominante, sectorTop: top?.[0], nTop: top?.[1], sectores };
+    };
+
     return {
-      suben:   porRet.slice(0, 20),
-      caen:    porRet.slice(-20).reverse(),
-      estables:[...out].sort((a,b) => Math.abs(a.ret) - Math.abs(b.ret)).slice(0, 20),
+      suben, caen, estables,
+      subenExc: porExc.slice(0, 20),
+      caenExc: [...porExc].reverse().slice(0, 20),
       total: out.length,
+      concSuben: concentracion(suben),
+      concCaen: concentracion(caen),
     };
   }, [rpVent, rows]);
 
@@ -4544,6 +4592,88 @@ export default function App() {
       setRpCargando(false);
     }, 10);
   }, [rpBarras, rpDias, W]);
+
+  // ── CRUCE AUTOMÁTICO: para el top 10 de suben/caen, ¿qué decía la
+  // señal ANTES de que arrancara el movimiento? ──
+  //
+  // Es el mismo mecanismo del replay (cortar la serie, sin lookahead)
+  // corrido en batch. Por costo — cada corte recalcula todo el motor de
+  // señales, ~190ms — se muestrea la ventana en vez de recorrer cada día,
+  // y se acota a 10 activos con feedback de progreso para no trabar la UI.
+  const construirDiasDe = useCallback((barras) => {
+    const porDia = {};
+    for (const b of barras) {
+      const d = b.date;
+      if (!porDia[d]) porDia[d] = { date: d, close: b.close, idx: 0 };
+      porDia[d].close = b.close;
+    }
+    const dias = Object.values(porDia).sort((a, b) => a.date < b.date ? -1 : 1);
+    for (const d of dias) {
+      let ult = -1;
+      for (let i = 0; i < barras.length; i++) if (barras[i].date === d.date) ult = i;
+      d.idx = ult;
+    }
+    return dias;
+  }, []);
+
+  const rpCorrerCruce = useCallback(() => {
+    const tab = rpRankTab;
+    if (tab !== "suben" && tab !== "caen") return;
+    const top10 = (tab === "suben" ? rpRanking.suben : rpRanking.caen).slice(0, 10);
+    if (!top10.length) return;
+    setRpCruceCargando(true);
+    setRpCruce(null);
+    setRpCruceProg({ hecho: 0, total: top10.length });
+
+    const buscar = tab === "suben" ? "COMPRA" : "VENTA";
+    const items = [];
+    let idx = 0;
+
+    const procesarUno = () => {
+      const t = top10[idx];
+      try {
+        const barras = rowDataRef.current[t.tk]?.length >= 80 ? rowDataRef.current[t.tk] : CSV_DATA_EMBEDDED?.[t.tk];
+        const dias = barras?.length >= 80 ? construirDiasDe(barras) : null;
+        const ventana = dias ? dias.slice(-rpVent) : [];
+        if (!ventana.length || ventana.length < 5) {
+          items.push({ tk: t.tk, ret: t.ret, diaSenal: null, fechaSenal: null, pctConsumido: 0 });
+        } else {
+          const pxIni = ventana[0].close, pxFin = ventana[ventana.length - 1].close;
+          const retTotal = pxFin / pxIni - 1;
+          const paso = Math.max(1, Math.ceil(ventana.length / 12));
+          let hallado = null;
+          for (let i = paso; i < ventana.length; i += paso) {
+            const dia = ventana[i];
+            if (dia.idx < 60) continue;
+            let sig;
+            try { sig = combinedSignal(barras.slice(0, dia.idx + 1), W); } catch (_) { continue; }
+            if (sig?.sig?.includes(buscar)) {
+              const consumido = retTotal !== 0 ? ((dia.close / pxIni - 1) / retTotal) * 100 : 0;
+              hallado = { dia: i, fecha: dia.date, consumido: Math.max(0, Math.min(100, consumido)) };
+              break;
+            }
+          }
+          items.push({
+            tk: t.tk, ret: t.ret,
+            diaSenal: hallado ? hallado.dia : null,
+            fechaSenal: hallado ? hallado.fecha : null,
+            pctConsumido: hallado ? hallado.consumido : 0,
+          });
+        }
+      } catch (_) {
+        items.push({ tk: t.tk, ret: t.ret, diaSenal: null, fechaSenal: null, pctConsumido: 0 });
+      }
+      idx++;
+      setRpCruceProg({ hecho: idx, total: top10.length });
+      if (idx < top10.length) {
+        setTimeout(procesarUno, 15);
+      } else {
+        setRpCruce({ tab, items });
+        setRpCruceCargando(false);
+      }
+    };
+    setTimeout(procesarUno, 15);
+  }, [rpRankTab, rpRanking, rpVent, W, construirDiasDe]);
 
   const opps=useMemo(()=>rows.filter(r=>r.sig&&r.sig.sig!=="NEUTRAL"&&r.sig.above_p80).sort((a,b)=>b.sig.conf-a.sig.conf),[rows]);
   const srtd=useMemo(()=>[...rows].sort((a,b)=>{
@@ -6747,7 +6877,7 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                    <div style={{display:"flex",gap:"4px",marginBottom:"8px"}}>
+                    <div style={{display:"flex",gap:"4px",marginBottom:"6px"}}>
                       {[["suben",`▲ Suben`,"#00ff88"],["caen",`▼ Caen`,"#ff3355"],["estables",`■ Estables`,"#ffd700"]].map(([k,l,c])=>(
                         <button key={k} onClick={()=>setRpRankTab(k)}
                           style={{flex:1,padding:"5px",fontSize:"8px",fontFamily:"inherit",cursor:"pointer",borderRadius:"4px",
@@ -6755,12 +6885,51 @@ export default function App() {
                             border:`1px solid ${rpRankTab===k?c+"60":"#1e3a50"}`,fontWeight:rpRankTab===k?700:400}}>{l}</button>
                       ))}
                     </div>
+                    {rpRankTab!=="estables"&&(
+                      <label style={{display:"flex",alignItems:"center",gap:"5px",marginBottom:"8px",cursor:"pointer",fontSize:"7px",color:"#8fb4cc"}}>
+                        <input type="checkbox" checked={rpAjustVol} onChange={e=>setRpAjustVol(e.target.checked)} style={{accentColor:"#00d4ff"}}/>
+                        Ajustar por volatilidad
+                      </label>
+                    )}
+                    {rpAjustVol&&rpRankTab!=="estables"&&(
+                      <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
+                        Retorno menos la mediana de activos con volatilidad similar en el mismo período — la misma
+                        corrección que en <code>docs/hallazgos.md</code> descartó la hipótesis de reversión. Sin esto,
+                        el ranking crudo sobre-representa a los más volátiles, no a los que realmente rindieron distinto.
+                      </div>
+                    )}
                     {(()=>{
-                      const lista = rpRanking[rpRankTab]||[];
+                      const conc = rpRankTab==="suben" ? rpRanking.concSuben : rpRankTab==="caen" ? rpRanking.concCaen : null;
+                      if (!conc || conc.distintos < 5) return null;
+                      const amplio = conc.dominante < 0.35 && conc.distintos >= 12;
+                      return (
+                        <div style={{...semBox(amplio?"#ffd700":"#5a8fa8","10"),padding:"7px 8px",marginBottom:"8px",fontSize:"7px",lineHeight:1.6}}>
+                          {amplio ? (
+                            <span style={{color:"#ffd700"}}>
+                              ⚠ {conc.distintos} sectores distintos entre los 20, ninguno domina — patrón típico de un
+                              <strong> catalizador de mercado amplio</strong> (como la Fed en julio), no de señal sectorial específica.
+                            </span>
+                          ) : (
+                            <span style={{color:"#8fb4cc"}}>
+                              {conc.nTop} de 20 son del sector <strong>{conc.sectorTop}</strong> — posible catalizador
+                              específico del sector, vale revisar noticias del rubro.
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {(()=>{
+                      const base = rpRankTab==="suben" ? (rpAjustVol?rpRanking.subenExc:rpRanking.suben)
+                                 : rpRankTab==="caen"  ? (rpAjustVol?rpRanking.caenExc:rpRanking.caen)
+                                 : rpRanking.estables;
+                      const lista = base||[];
                       if(!lista.length) return <div style={{fontSize:"8px",color:"#5a8fa8",padding:"8px"}}>Sin datos suficientes para este período.</div>;
-                      const maxAbs = Math.max(...lista.map(x=>Math.abs(x.ret)),0.1);
+                      const campo = rpAjustVol&&rpRankTab!=="estables" ? "exceso" : "ret";
+                      const maxAbs = Math.max(...lista.map(x=>Math.abs(x[campo]??x.ret)),0.1);
                       return (<>
-                        {lista.map((x,i)=>(
+                        {lista.map((x,i)=>{
+                          const v = x[campo] ?? x.ret;
+                          return (
                           <div key={x.tk} onClick={()=>{setRpInput(x.tk);setRpTicker(x.tk);setRpSel(null);setRpCalc(null);}}
                             style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 6px",marginBottom:"2px",cursor:"pointer",
                               borderRadius:"3px",background:rpTicker===x.tk?"#00d4ff14":"#050c15",
@@ -6770,20 +6939,22 @@ export default function App() {
                             {x.sospechoso&&<span title="Salto de más de 50% en un día: probable split no ajustado, no un movimiento real"
                               style={{fontSize:"8px",color:"#ff9040",flexShrink:0}}>⚠</span>}
                             <span style={{fontSize:"6px",color:x.moneda==="ARS"?"#00d4ff":"#5a9bff",width:"18px",flexShrink:0}}>{x.moneda==="ARS"?"AR":"US"}</span>
-                            <div style={{flex:1,height:"5px",background:"#07121c",borderRadius:"2px",position:"relative",overflow:"hidden",minWidth:"30px"}}>
+                            <span style={{fontSize:"6px",color:"#5a8fa8",width:"56px",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={x.sector}>{x.sector}</span>
+                            <div style={{flex:1,height:"5px",background:"#07121c",borderRadius:"2px",position:"relative",overflow:"hidden",minWidth:"24px"}}>
                               <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:"1px",background:"#1e3a50"}}/>
-                              <div style={{position:"absolute",top:0,bottom:0,background:x.ret>=0?"#00ff88":"#ff3355",
-                                left:x.ret>=0?"50%":`${50-Math.abs(x.ret)/maxAbs*48}%`,
-                                width:`${Math.min(48,Math.abs(x.ret)/maxAbs*48)}%`}}/>
+                              <div style={{position:"absolute",top:0,bottom:0,background:v>=0?"#00ff88":"#ff3355",
+                                left:v>=0?"50%":`${50-Math.abs(v)/maxAbs*48}%`,
+                                width:`${Math.min(48,Math.abs(v)/maxAbs*48)}%`}}/>
                             </div>
-                            <span style={{fontSize:"9px",color:x.ret>0?"#00ff88":x.ret<0?"#ff3355":"#8fb4cc",width:"52px",textAlign:"right",flexShrink:0,fontWeight:700}}>
-                              {x.ret>=0?"+":""}{x.ret.toFixed(1)}%
+                            <span style={{fontSize:"9px",color:v>0?"#00ff88":v<0?"#ff3355":"#8fb4cc",width:"52px",textAlign:"right",flexShrink:0,fontWeight:700}}>
+                              {v>=0?"+":""}{v.toFixed(1)}%
                             </span>
+                            {campo==="exceso"&&<span style={{fontSize:"6px",color:"#5a8fa8",width:"38px",textAlign:"right",flexShrink:0}}>(crudo {x.ret>=0?"+":""}{x.ret.toFixed(1)}%)</span>}
                             {x.sig&&<span style={{fontSize:"6px",color:SC[x.sig]||"#5a8fa8",width:"30px",textAlign:"right",flexShrink:0}}>
                               {x.sig.includes("COMPRA FUERTE")?"C++":x.sig.includes("COMPRA")?"C":x.sig.includes("VENTA FUERTE")?"V--":x.sig.includes("VENTA")?"V":"—"}
                             </span>}
                           </div>
-                        ))}
+                        );})}
                         <div style={{fontSize:"6px",color:"#4a7a9b",marginTop:"6px",lineHeight:1.6}}>
                           {rpRanking.total} activos con datos válidos · tocá cualquiera para analizarlo.
                           {rpRankTab==="estables"&&" \"Estables\" = menor variación absoluta, no los del medio de la tabla."}
@@ -6791,6 +6962,61 @@ export default function App() {
                         </div>
                       </>);
                     })()}
+
+                    {/* ── CRUCE AUTOMÁTICO: qué decía la señal antes del movimiento ── */}
+                    {(rpRankTab==="suben"||rpRankTab==="caen")&&(
+                      <div style={{marginTop:"10px",paddingTop:"9px",borderTop:"1px dashed #1e3a50"}}>
+                        <button onClick={rpCorrerCruce} disabled={rpCruceCargando}
+                          className="btn on" style={{width:"100%",padding:"7px",fontSize:"8px",opacity:rpCruceCargando?0.6:1}}>
+                          {rpCruceCargando ? `⏳ Analizando ${rpCruceProg.hecho}/${rpCruceProg.total}...`
+                            : `🔍 ¿Qué decía la señal ANTES de moverse? — analizar los ${Math.min(10,(rpRankTab==="suben"?rpRanking.suben:rpRanking.caen).length)}`}
+                        </button>
+                        <div style={{fontSize:"6px",color:"#5a8fa8",marginTop:"4px",lineHeight:1.6}}>
+                          Para cada uno, recalcula la señal muestreando la ventana —cortando la serie, sin lookahead,
+                          igual que el replay— y busca el primer punto en que marcó {rpRankTab==="suben"?"COMPRA":"VENTA"}.
+                          Puede tardar hasta medio minuto: son ~10 activos con varios cálculos completos cada uno.
+                        </div>
+                        {rpCruce&&rpCruce.tab===rpRankTab&&(
+                          <div style={{marginTop:"8px"}}>
+                            {rpCruce.items.map(it=>(
+                              <div key={it.tk} style={{padding:"6px 7px",marginBottom:"3px",...semBox(
+                                it.diaSenal==null?"#5a8fa8":it.pctConsumido>=60?"#ff3355":it.pctConsumido>=30?"#ffd700":"#00ff88","12")}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                                  <span style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:"#e8f4ff"}}>{it.tk}</span>
+                                  <span style={{fontSize:"8px",color:it.ret>=0?"#00ff88":"#ff3355",fontWeight:700}}>{it.ret>=0?"+":""}{it.ret.toFixed(1)}% total</span>
+                                </div>
+                                <div style={{fontSize:"7px",color:"#b0d4e8",marginTop:"2px",lineHeight:1.5}}>
+                                  {it.diaSenal==null ? (
+                                    <span style={{color:"#5a8fa8"}}>Nunca marcó {rpRankTab==="suben"?"COMPRA":"VENTA"} en estos {rpVent} días</span>
+                                  ) : (
+                                    <>Marcó {rpRankTab==="suben"?"COMPRA":"VENTA"} el día <strong>{it.diaSenal}</strong> de {rpVent}
+                                    {" "}({it.fechaSenal}) — para entonces ya llevaba <strong>{it.pctConsumido.toFixed(0)}%</strong> del
+                                    movimiento total consumido.</>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                            {rpCruce.items.length>0&&(()=>{
+                              const conSenal = rpCruce.items.filter(x=>x.diaSenal!=null);
+                              if(!conSenal.length) return (
+                                <div style={{fontSize:"7px",color:"#5a8fa8",marginTop:"6px"}}>
+                                  Ninguno de los {rpCruce.items.length} marcó la señal esperada durante el período.
+                                </div>
+                              );
+                              const media = conSenal.reduce((a,x)=>a+x.pctConsumido,0)/conSenal.length;
+                              return (
+                                <div style={{...semBox(media>=50?"#ff3355":"#ffd700","14"),padding:"8px",marginTop:"6px"}}>
+                                  <div style={{fontSize:"8px",color:media>=50?"#ff3355":"#ffd700",fontWeight:700}}>
+                                    En promedio, {media.toFixed(0)}% del movimiento ya estaba consumido cuando la señal disparó
+                                    ({conSenal.length} de {rpCruce.items.length} llegaron a marcarla).
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {rpTicker && !rpBarras && (
