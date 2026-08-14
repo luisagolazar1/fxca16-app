@@ -3298,6 +3298,7 @@ export default function App() {
   const [rpSel,    setRpSel]      = useState(null);
   const [rpCalc,   setRpCalc]     = useState(null);
   const [rpCargando, setRpCargando] = useState(false);
+  const [rpRankTab, setRpRankTab] = useState("suben");
   // Tick cada minuto: mantiene vivo el estado de mercado (abierto/cerrado)
   // y la antigüedad del dato sin necesidad de recargar la página.
   const [nowTick, setNowTick] = useState(0);
@@ -4466,6 +4467,50 @@ export default function App() {
   }, [rpBarras]);
 
   const rpVisibles = useMemo(() => rpDias.slice(-rpVent), [rpDias, rpVent]);
+
+  // ── RANKING: quiénes subieron, cayeron y se mantuvieron en el período ──
+  //
+  // Se calcula sobre la serie diaria de todo el universo. "Se mantuvieron"
+  // son los de menor variación ABSOLUTA — no los del medio de la tabla,
+  // que serían simplemente los menos malos. Excluye series degradadas:
+  // un papel que no opera figura como "estable" cuando en realidad no
+  // tiene precio real (el caso GAMI/POLL).
+  const rpRanking = useMemo(() => {
+    const fuente = DATA_MOD?.CSV_DATA_DAILY_RAW || {};
+    const out = [];
+    for (const [tk, bars] of Object.entries(fuente)) {
+      if (!bars || bars.length < rpVent + 5) continue;
+      const c = bars.map(b => b.c);
+      const px = c[c.length - 1];
+      const ini = c[c.length - 1 - rpVent];
+      if (!ini || !px || !isFinite(ini) || !isFinite(px)) continue;
+      // descartar series sin operaciones reales en el período
+      const tramo = bars.slice(-rpVent);
+      const sinVol = tramo.filter(b => !b.v).length / tramo.length;
+      let congelado = 0;
+      for (let i = 1; i < tramo.length; i++) if (tramo[i].c === tramo[i-1].c) congelado++;
+      if (sinVol > 0.3 || congelado / (tramo.length - 1) > 0.5) continue;
+      const ret = (px / ini - 1) * 100;
+      if (!isFinite(ret) || Math.abs(ret) > 300) continue;  // artefactos tipo split
+      // Salto de un solo día mayor a 50%: casi siempre es un split no
+      // ajustado, no un movimiento real. Se marca en vez de ocultarlo,
+      // porque ocultar datos raros esconde problemas del pipeline.
+      let sospechoso = false;
+      for (let i = 1; i < tramo.length; i++) {
+        if (tramo[i-1].c > 0 && Math.abs(tramo[i].c / tramo[i-1].c - 1) > 0.5) { sospechoso = true; break; }
+      }
+      const r0 = rows.find(x => x.ticker === tk);
+      out.push({ tk, ret, px, sospechoso, moneda: bars[bars.length-1].m,
+                 sig: r0?.sig?.sig || null, name: r0?.name || "" });
+    }
+    const porRet = [...out].sort((a, b) => b.ret - a.ret);
+    return {
+      suben:   porRet.slice(0, 20),
+      caen:    porRet.slice(-20).reverse(),
+      estables:[...out].sort((a,b) => Math.abs(a.ret) - Math.abs(b.ret)).slice(0, 20),
+      total: out.length,
+    };
+  }, [rpVent, rows]);
 
   // Al tocar una barra: recalcular la señal con la serie cortada ahí
   const rpAnalizar = useCallback((dia) => {
@@ -6689,6 +6734,63 @@ export default function App() {
                         lo que efectivamente pasó después.
                       </div>
                     )}
+                  </div>
+
+                  {/* ── RANKING DEL PERÍODO ── */}
+                  <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px",flexWrap:"wrap",gap:"6px"}}>
+                      <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>🏆 RANKING · ÚLTIMOS {rpVent} DÍAS</span>
+                      <div style={{display:"flex",gap:"3px"}}>
+                        {[5,15,30,60,90].map(v=>(
+                          <button key={v} className={`btn ${rpVent===v?"on":"off"}`} style={{padding:"3px 7px",fontSize:"7px"}}
+                            onClick={()=>setRpVent(v)}>{v}D</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:"4px",marginBottom:"8px"}}>
+                      {[["suben",`▲ Suben`,"#00ff88"],["caen",`▼ Caen`,"#ff3355"],["estables",`■ Estables`,"#ffd700"]].map(([k,l,c])=>(
+                        <button key={k} onClick={()=>setRpRankTab(k)}
+                          style={{flex:1,padding:"5px",fontSize:"8px",fontFamily:"inherit",cursor:"pointer",borderRadius:"4px",
+                            background:rpRankTab===k?`${c}20`:"#0c1926",color:rpRankTab===k?c:"#5a8fa8",
+                            border:`1px solid ${rpRankTab===k?c+"60":"#1e3a50"}`,fontWeight:rpRankTab===k?700:400}}>{l}</button>
+                      ))}
+                    </div>
+                    {(()=>{
+                      const lista = rpRanking[rpRankTab]||[];
+                      if(!lista.length) return <div style={{fontSize:"8px",color:"#5a8fa8",padding:"8px"}}>Sin datos suficientes para este período.</div>;
+                      const maxAbs = Math.max(...lista.map(x=>Math.abs(x.ret)),0.1);
+                      return (<>
+                        {lista.map((x,i)=>(
+                          <div key={x.tk} onClick={()=>{setRpInput(x.tk);setRpTicker(x.tk);setRpSel(null);setRpCalc(null);}}
+                            style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 6px",marginBottom:"2px",cursor:"pointer",
+                              borderRadius:"3px",background:rpTicker===x.tk?"#00d4ff14":"#050c15",
+                              border:rpTicker===x.tk?"1px solid #00d4ff40":"1px solid transparent"}}>
+                            <span style={{fontSize:"7px",color:"#3a5a70",width:"14px",flexShrink:0}}>{i+1}</span>
+                            <span style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:"#e8f4ff",width:"46px",flexShrink:0}}>{x.tk}</span>
+                            {x.sospechoso&&<span title="Salto de más de 50% en un día: probable split no ajustado, no un movimiento real"
+                              style={{fontSize:"8px",color:"#ff9040",flexShrink:0}}>⚠</span>}
+                            <span style={{fontSize:"6px",color:x.moneda==="ARS"?"#00d4ff":"#5a9bff",width:"18px",flexShrink:0}}>{x.moneda==="ARS"?"AR":"US"}</span>
+                            <div style={{flex:1,height:"5px",background:"#07121c",borderRadius:"2px",position:"relative",overflow:"hidden",minWidth:"30px"}}>
+                              <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:"1px",background:"#1e3a50"}}/>
+                              <div style={{position:"absolute",top:0,bottom:0,background:x.ret>=0?"#00ff88":"#ff3355",
+                                left:x.ret>=0?"50%":`${50-Math.abs(x.ret)/maxAbs*48}%`,
+                                width:`${Math.min(48,Math.abs(x.ret)/maxAbs*48)}%`}}/>
+                            </div>
+                            <span style={{fontSize:"9px",color:x.ret>0?"#00ff88":x.ret<0?"#ff3355":"#8fb4cc",width:"52px",textAlign:"right",flexShrink:0,fontWeight:700}}>
+                              {x.ret>=0?"+":""}{x.ret.toFixed(1)}%
+                            </span>
+                            {x.sig&&<span style={{fontSize:"6px",color:SC[x.sig]||"#5a8fa8",width:"30px",textAlign:"right",flexShrink:0}}>
+                              {x.sig.includes("COMPRA FUERTE")?"C++":x.sig.includes("COMPRA")?"C":x.sig.includes("VENTA FUERTE")?"V--":x.sig.includes("VENTA")?"V":"—"}
+                            </span>}
+                          </div>
+                        ))}
+                        <div style={{fontSize:"6px",color:"#4a7a9b",marginTop:"6px",lineHeight:1.6}}>
+                          {rpRanking.total} activos con datos válidos · tocá cualquiera para analizarlo.
+                          {rpRankTab==="estables"&&" \"Estables\" = menor variación absoluta, no los del medio de la tabla."}
+                          {" Se excluyen series sin operaciones reales (precio congelado o sin volumen), que aparecerían como estables sin serlo."}
+                        </div>
+                      </>);
+                    })()}
                   </div>
 
                   {rpTicker && !rpBarras && (
