@@ -5780,12 +5780,30 @@ export default function App() {
                           {alphaRank?.[sel.ticker]&&(()=>{
                             const a=alphaRank[sel.ticker];
                             const c=a.quintil>=5?"#00ff88":a.quintil>=4?"#a0cce0":a.quintil<=1?"#ff3355":a.quintil<=2?"#ff9040":"#ffd700";
+                            // Merval usa una fórmula DISTINTA a USA (iliquidez de Amihud +
+                            // asimetría, en vez de shock de volumen + momentum) — ver
+                            // ALPHA.ALPHA_AMBITO.ARS. rankearUniversoMerval() no devuelve
+                            // vol_shock/mom_1m en el nivel superior del objeto (solo dentro
+                            // de "raw", que son valores intermedios sin usar en su fórmula),
+                            // así que leerlos ahí rompía el Detalle de los 20 tickers de
+                            // Merval más líquidos con un TypeError silencioso — pantalla
+                            // negra sin mensaje, porque la app no tiene Error Boundary.
+                            const metricas = a.esMerval ? [
+                              {l:"Iliquidez (Amihud)",     v:a.amihud,   bueno:a.amihud<0},
+                              {l:"Asimetría de retornos",  v:a.skew_ret, bueno:a.skew_ret<0},
+                            ] : [
+                              {l:"Shock de volumen", v:a.vol_shock, bueno:a.vol_shock>0.3},
+                              {l:"Momentum 1 mes",   v:a.mom_1m,    bueno:a.mom_1m<-0.3},
+                            ];
+                            const amb = a.esMerval ? ALPHA.ALPHA_AMBITO?.ARS : ALPHA.ALPHA_AMBITO?.USD;
                             return (
                               <div style={{marginBottom:"12px",padding:"10px",background:`${c}0d`,border:`1px solid ${c}35`,borderRadius:"6px"}}>
                                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
                                   <div>
                                     <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em"}}>α ALFA CROSS-SECTIONAL</div>
-                                    <div style={{fontSize:"7px",color:"#5a8fa8"}}>{ALPHA.ALPHA_VALIDADA.nombre}</div>
+                                    <div style={{fontSize:"7px",color:"#5a8fa8"}}>
+                                      {a.esMerval ? "Iliquidez + asimetría (Merval)" : ALPHA.ALPHA_VALIDADA.nombre}
+                                    </div>
                                   </div>
                                   <div style={{textAlign:"right"}}>
                                     <div style={{fontFamily:"'Bebas Neue'",fontSize:"24px",color:c,lineHeight:1}}>P{a.percentil}</div>
@@ -5797,33 +5815,47 @@ export default function App() {
                                   <div style={{position:"absolute",left:`${a.percentil}%`,top:"-3px",bottom:"-3px",width:"3px",background:c,borderRadius:"2px",transform:"translateX(-50%)",boxShadow:`0 0 6px ${c}80`}}/>
                                 </div>
                                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px",marginBottom:"6px"}}>
-                                  {[
-                                    {l:"Shock de volumen", v:a.vol_shock, bueno:a.vol_shock>0.3},
-                                    {l:"Momentum 1 mes",   v:a.mom_1m,    bueno:a.mom_1m<-0.3},
-                                  ].map(x=>(
+                                  {metricas.map(x=>(
                                     <div key={x.l} style={{padding:"5px 7px",background:"#050c15",borderRadius:"3px"}}>
                                       <div style={{fontSize:"6px",color:"#4a7a9b"}}>{x.l}</div>
                                       <div style={{fontSize:"11px",color:x.bueno?"#00ff88":"#a0cce0",fontFamily:"'Bebas Neue'"}}>
-                                        {x.v>=0?"+":""}{x.v.toFixed(2)}
+                                        {(x.v==null||!isFinite(x.v)) ? "—" : (x.v>=0?"+":"")+x.v.toFixed(2)}
                                       </div>
                                     </div>
                                   ))}
                                 </div>
                                 <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
-                                  {a.quintil>=5
+                                  {a.esMerval ? (
+                                    a.quintil>=5
+                                    ? "En el quintil superior por iliquidez relativa y asimetría de retornos — la señal preliminar de Merval, distinta a la de USA."
+                                    : a.quintil>=4
+                                    ? "Por encima de la media del universo Merval en esta métrica preliminar."
+                                    : a.quintil<=1
+                                    ? "En el quintil inferior de la señal preliminar de Merval."
+                                    : "En la zona media del universo Merval: sin ventaja relativa clara."
+                                  ) : (
+                                    a.quintil>=5
                                     ? "En el quintil superior del universo. La combinación de volumen entrando sobre precio castigado es el patrón con mejor evidencia del sistema."
                                     : a.quintil>=4
                                     ? "Por encima de la media del universo en atractivo relativo."
                                     : a.quintil<=1
                                     ? "En el quintil inferior. Históricamente este grupo rinde por debajo del universo."
-                                    : "En la zona media del universo: sin ventaja relativa clara."}
+                                    : "En la zona media del universo: sin ventaja relativa clara."
+                                  )}
                                 </div>
                                 <div style={{marginTop:"5px",paddingTop:"5px",borderTop:"1px solid #0f2235",fontSize:"6px",color:"#4a7a9b",lineHeight:1.6}}>
-                                  Promedio de los últimos {ALPHA.ALPHA_VALIDADA.metricas.suavizado} días — suavizar cancela el ruido de un solo día
-                                  {a.diasPromediados ? ` (${a.diasPromediados} días con datos)` : ""}.<br/>
-                                  Validado: IC {ALPHA.ALPHA_VALIDADA.metricas.ic} · IR {ALPHA.ALPHA_VALIDADA.metricas.ir} ·
-                                  t={ALPHA.ALPHA_VALIDADA.metricas.t} · positivo en {ALPHA.ALPHA_VALIDADA.metricas.pctFechas}% de las fechas
+                                  {a.esMerval ? (<>
+                                    Fórmula distinta a la de USA: iliquidez de Amihud + asimetría de retornos, sobre los 20 papeles más líquidos.<br/>
+                                    <strong style={{color:"#ffd700"}}>Preliminar</strong> — muestra chica ({amb?.nUniverso ?? 20} tickers × pocas fechas):
+                                    IC {amb?.ic ?? "—"} · t={amb?.t ?? "—"}. {amb?.nota || "Pendiente de confirmar con más historia."}
+                                  </>) : (<>
+                                    Promedio de los últimos {ALPHA.ALPHA_VALIDADA.metricas.suavizado} días — suavizar cancela el ruido de un solo día
+                                    {a.diasPromediados ? ` (${a.diasPromediados} días con datos)` : ""}.<br/>
+                                    Validado: IC {ALPHA.ALPHA_VALIDADA.metricas.ic} · IR {ALPHA.ALPHA_VALIDADA.metricas.ir} ·
+                                    t={ALPHA.ALPHA_VALIDADA.metricas.t} · positivo en {ALPHA.ALPHA_VALIDADA.metricas.pctFechas}% de las fechas
+                                  </>)}
                                 </div>
+                                {!a.esMerval&&(
                                 <div style={{marginTop:"7px",padding:"7px 8px",background:"#ff335512",border:"1px solid #ff335540",borderRadius:"4px"}}>
                                   <div style={{fontSize:"7px",color:"#ff6680",fontWeight:700,marginBottom:"3px"}}>⚠ ESA VALIDACIÓN NO SE SOSTIENE FUERA DE SU VENTANA</div>
                                   <div style={{fontSize:"7px",color:"#ffb3c0",lineHeight:1.7}}>
@@ -5837,6 +5869,7 @@ export default function App() {
                                     el problema es que el ranking no predice. Ver <code>docs/hallazgos.md</code>.
                                   </div>
                                 </div>
+                                )}
                               </div>
                             );
                           })()}
