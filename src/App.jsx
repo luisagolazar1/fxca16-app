@@ -7022,9 +7022,16 @@ export default function App() {
                               const media = conSenal.reduce((a,x)=>a+x.pctConsumido,0)/conSenal.length;
                               return (
                                 <div style={{...semBox(media>=50?"#ff3355":"#ffd700","14"),padding:"8px",marginTop:"6px"}}>
-                                  <div style={{fontSize:"8px",color:media>=50?"#ff3355":"#ffd700",fontWeight:700}}>
+                                  <div style={{fontSize:"8px",color:media>=50?"#ff3355":"#ffd700",fontWeight:700,marginBottom:"5px"}}>
                                     En promedio, {media.toFixed(0)}% del movimiento ya estaba consumido cuando la señal disparó
                                     ({conSenal.length} de {rpCruce.items.length} llegaron a marcarla).
+                                  </div>
+                                  <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                                    <span style={{fontSize:"6px",color:"#8fb4cc",flex:1}}>
+                                      Esto es {rpCruce.items.length} casos de una muestra — no es una prueba estadística.
+                                      Para la versión rigurosa (10 años, corrección por comparaciones múltiples) mirá Validación.
+                                    </span>
+                                    <button onClick={()=>setTab("quant")} className="btn off" style={{padding:"4px 8px",fontSize:"7px",flexShrink:0}}>🔬 Validación</button>
                                   </div>
                                 </div>
                               );
@@ -7833,6 +7840,21 @@ export default function App() {
                       )}
                     </div>
 
+                    {qlModels?.length>0&&(()=>{
+                      const top = [...qlModels].sort((a,b)=>b.auc-a.auc)[0];
+                      return (
+                        <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"6px 8px",marginBottom:"10px",...semBox("#5a8fa8","0c")}}>
+                          <span style={{fontSize:"7px",color:"#8fb4cc",flex:1}}>
+                            Esto es de la <strong>cartera completa</strong>, no de un ticker — para ver cómo se ve
+                            un caso individual, mirá el de mejor AUC ({top.ticker}) en Replay.
+                          </span>
+                          <button
+                            onClick={()=>{ setRpInput(top.ticker); setRpTicker(top.ticker); setRpSel(null); setRpCalc(null); setTab("replay"); }}
+                            className="btn off" style={{padding:"4px 8px",fontSize:"7px",flexShrink:0}}>⏪ {top.ticker}</button>
+                        </div>
+                      );
+                    })()}
+
                     {/* Bootstrap */}
                     {qlValid.boot&&(
                       <div style={{padding:"9px",background:"#050c15",borderRadius:"5px",marginBottom:"8px"}}>
@@ -7968,6 +7990,10 @@ export default function App() {
                               </div>
                             ))}
                           </div>
+                          <button
+                            onClick={e=>{ e.stopPropagation(); setRpInput(m.ticker); setRpTicker(m.ticker); setRpSel(null); setRpCalc(null); setTab("replay"); }}
+                            title="Ver casos concretos en Replay"
+                            style={{flexShrink:0,background:"transparent",border:"1px solid #1e3a50",borderRadius:"3px",padding:"3px 5px",fontSize:"9px",color:"#00d4ff",cursor:"pointer"}}>⏪</button>
                         </div>
                       ))}
                     </div>
@@ -8039,6 +8065,10 @@ export default function App() {
                                 </div>
                               ))}
                             </div>
+                            <button
+                              onClick={e=>{ e.stopPropagation(); setRpInput(m.ticker); setRpTicker(m.ticker); setRpSel(null); setRpCalc(null); setTab("replay"); }}
+                              title="Ver casos concretos en Replay"
+                              style={{flexShrink:0,background:"transparent",border:"1px solid #1e3a50",borderRadius:"3px",padding:"3px 5px",fontSize:"9px",color:"#00d4ff",cursor:"pointer"}}>⏪</button>
                           </div>
                         );
                       })}
