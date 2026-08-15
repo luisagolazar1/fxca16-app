@@ -5263,9 +5263,8 @@ export default function App() {
                   if (!parciales) return null;
                   return (
                     <div style={{padding:"7px 10px",background:"#ff904012",border:"1px solid #ff904035",borderRadius:"5px",marginBottom:"10px",fontSize:"8px",color:"#ffb380",lineHeight:1.6}}>
-                      ⏱ <strong>{parciales} activos con la rueda todavía abierta.</strong> Los datos se descargaron durante el horario de mercado,
-                      así que el último día está incompleto. Los movimientos que ves pueden revertir antes del cierre —
-                      el histórico ya los excluye del cálculo, pero el precio mostrado es intradiario.
+                      ⏱ <strong>{parciales} activos con la rueda todavía abierta.</strong> El último día es intradiario —
+                      puede revertir antes del cierre.
                     </div>
                   );
                 })()}
@@ -5716,9 +5715,8 @@ export default function App() {
                               <div style={{marginBottom:"12px",padding:"9px 10px",background:"#0c182640",border:"1px dashed #1e3a50",borderRadius:"6px"}}>
                                 <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em",marginBottom:"3px"}}>📅 CALENDARIO DE BALANCE</div>
                                 <div style={{fontSize:"8px",color:"#ffd700",lineHeight:1.7}}>
-                                  Sin dato de calendario para {e.tk}. <strong>Esto no significa que no reporte pronto</strong> —
-                                  significa que el sistema no tiene la fecha. Verificala en el sitio de la empresa o en tu bróker
-                                  antes de tomar posición: un balance a pocos días puede mover el precio mucho más que la señal técnica.
+                                  Sin dato de calendario para {e.tk}. <strong>No significa que no reporte pronto</strong> —
+                                  verificalo aparte antes de tomar posición.
                                 </div>
                               </div>
                             );
@@ -5856,19 +5854,16 @@ export default function App() {
                                   </>)}
                                 </div>
                                 {!a.esMerval&&(
-                                <div style={{marginTop:"7px",padding:"7px 8px",background:"#ff335512",border:"1px solid #ff335540",borderRadius:"4px"}}>
-                                  <div style={{fontSize:"7px",color:"#ff6680",fontWeight:700,marginBottom:"3px"}}>⚠ ESA VALIDACIÓN NO SE SOSTIENE FUERA DE SU VENTANA</div>
-                                  <div style={{fontSize:"7px",color:"#ffb3c0",lineHeight:1.7}}>
-                                    El IC/IR de arriba se midió sobre la serie horaria (~1 año), que es donde se construyó la fórmula.
-                                    Reproducida sobre los <strong>10 años de serie diaria</strong> — datos que el modelo nunca vio — el
-                                    ranking <strong>no discrimina</strong>: la monotonía entre quintil y exceso da <strong>-0.66</strong> (invertida)
-                                    y el t de Q5 da <strong>0.00</strong>. Solo funciona en 2026, el período sobre el que se desarrolló.
-                                    <br/><br/>
-                                    Lo que sí es cierto: el alfa dispara <em>antes</em> que el score técnico (Q5 compra papeles que vienen -6.9%
-                                    en 20 días, contra el score que marca COMPRA FUERTE después de +13.7%). El mecanismo es el correcto;
-                                    el problema es que el ranking no predice. Ver <code>docs/hallazgos.md</code>.
-                                  </div>
-                                </div>
+                                <Nota titulo="⚠ esa validación no se sostiene fuera de su ventana" color="#ff6680">
+                                  El IC/IR de arriba se midió sobre la serie horaria (~1 año), que es donde se construyó la fórmula.
+                                  Reproducida sobre los <strong>10 años de serie diaria</strong> — datos que el modelo nunca vio — el
+                                  ranking <strong>no discrimina</strong>: la monotonía entre quintil y exceso da <strong>-0.66</strong> (invertida)
+                                  y el t de Q5 da <strong>0.00</strong>. Solo funciona en 2026, el período sobre el que se desarrolló.
+                                  <br/><br/>
+                                  Lo que sí es cierto: el alfa dispara <em>antes</em> que el score técnico (Q5 compra papeles que vienen -6.9%
+                                  en 20 días, contra el score que marca COMPRA FUERTE después de +13.7%). El mecanismo es el correcto;
+                                  el problema es que el ranking no predice. Ver <code>docs/hallazgos.md</code>.
+                                </Nota>
                                 )}
                               </div>
                             );
@@ -5878,15 +5873,13 @@ export default function App() {
                             <div style={{marginBottom:"12px",padding:"8px 10px",background:"#ff904010",border:"1px solid #ff904030",borderRadius:"5px"}}>
                               <div style={{fontSize:"7px",color:"#ff9040",fontWeight:700,marginBottom:"3px"}}>α SIN RANKING PARA {sel.ticker}</div>
                               <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
-                                El ranking del Merval solo cubre los 20 papeles más líquidos — con volumen tan
-                                dispar entre YPFD/GGAL y el resto del panel, incluir a todos metía más ruido que señal.
+                                Solo cubre los 20 papeles más líquidos del Merval — el resto mete más ruido que señal.
                               </div>
                             </div>
                           )}
                           {sel.moneda==="ARS"&&alphaRank?.[sel.ticker]&&(
                             <div style={{marginBottom:"12px",padding:"7px 10px",background:"#ffd70008",border:"1px solid #ffd70025",borderRadius:"5px",fontSize:"7px",color:"#ffd700",lineHeight:1.6}}>
-                              ⚗️ Señal PRELIMINAR para el Merval — distinta a la de USA (iliquidez + asimetría, no volumen/momentum).
-                              Validada sobre poca historia todavía (20 tickers × 50 fechas). Tratala con más cautela que el ranking USA.
+                              ⚗️ Señal PRELIMINAR de Merval — fórmula distinta a USA, validada sobre poca historia (20×50 fechas).
                             </div>
                           )}
 
@@ -5940,8 +5933,7 @@ export default function App() {
                                     : "Situación financiera aceptable, sin alertas relevantes."}
                                 </div>
                                 <div style={{marginTop:"5px",paddingTop:"5px",borderTop:"1px solid #0f2235",fontSize:"6px",color:"#4a7a9b",lineHeight:1.6}}>
-                                  Uso deliberadamente acotado: son datos de HOY, no series point-in-time.
-                                  Por eso no alimentan el score ni el alfa — solo advierten sobre fragilidad antes de tomar posición.
+                                  Datos de HOY, no series point-in-time — no alimentan el score, solo advierten sobre fragilidad.
                                 </div>
                               </div>
                             );
@@ -6359,9 +6351,8 @@ export default function App() {
                               <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:b.pUp>=RSI_BASE_PROM_UP?"#00ff88":"#ffd700"}}>{b.pUp}%</span>
                             </div>
                             <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
-                              Históricamente, estando en esta banda hubo un salto de <strong>+4% en los próximos 1-4 días</strong> el {b.pUp}% de las veces
-                              (promedio general: {RSI_BASE_PROM_UP}%). Pero también una caída de -4% el {b.pDn}% de las veces.
-                              Retorno medio a 4 días: {b.fwd4>=0?"+":""}{b.fwd4}%.
+                              En esta banda: <strong>+4% en 1-4d</strong> el {b.pUp}% de las veces (prom. {RSI_BASE_PROM_UP}%) ·
+                              -4% el {b.pDn}% · retorno medio a 4d: {b.fwd4>=0?"+":""}{b.fwd4}%.
                             </div>
                           </div>
                         ) : (
@@ -6372,6 +6363,7 @@ export default function App() {
                           style={{background:"transparent",border:"none",padding:"3px 0",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
                           {verTablaRsi ? "▾ ocultar tabla por banda" : "▸ ver las 8 bandas"}
                         </button>
+                        {verTablaRsi && <div style={{fontSize:"6px",color:"#5a8fa8",margin:"3px 0 4px"}}>Barra = probabilidad histórica de salto +4% en 1-4 días, por banda de RSI.</div>}
                         {verTablaRsi && RSI_TASAS_BASE.map(x=>{
                           const activa = b && x.lo===b.lo;
                           const w = Math.round(x.pUp/35*100);
@@ -6425,10 +6417,8 @@ export default function App() {
                                   <span style={{color:"#5a8fa8"}}> (el manual lo llama {fila.etiqueta})</span>
                                 </div>
                                 <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
-                                  Medido sobre {fila.n.toLocaleString()} casos: retorno medio a 4 días <strong>{fila.fwd4>=0?"+":""}{fila.fwd4}%</strong> (baseline {VELAS_BASELINE.fwd4}%),
-                                  salto de +4% el {fila.pUp}% de las veces (baseline {VELAS_BASELINE.pUp}%), caída de -4% el {fila.pDn}%.
-                                  <br/>Controlando volatilidad y fecha: exceso {fila.exc>=0?"+":""}{fila.exc} pp, t={fila.t} —
-                                  <strong style={{color:colVer(fila.veredicto)}}> {fila.veredicto==="pasa"?"pasa los tests":fila.veredicto==="parcial"?"pasa volatilidad pero falla consistencia mensual (60%)":"sin efecto medible"}</strong>.
+                                  Medido sobre {fila.n.toLocaleString()} casos: <strong>{fila.fwd4>=0?"+":""}{fila.fwd4}%</strong> a 4d (baseline {VELAS_BASELINE.fwd4}%) —
+                                  <strong style={{color:colVer(fila.veredicto)}}> {fila.veredicto==="pasa"?"pasa los tests":fila.veredicto==="parcial"?"falla consistencia mensual":"sin efecto medible"}</strong>.
                                 </div>
                               </div>
                             ) : (
@@ -6439,6 +6429,7 @@ export default function App() {
                               style={{background:"transparent",border:"none",padding:"3px 0",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
                               {verTablaVelas ? "▾ ocultar todos los patrones" : "▸ ver los 8 patrones medidos"}
                             </button>
+                            {verTablaVelas && <div style={{fontSize:"6px",color:"#5a8fa8",margin:"3px 0 4px"}}>Barra = exceso de retorno a 4 días vs. baseline, controlado por volatilidad.</div>}
                             {verTablaVelas && VELAS_TASAS_BASE.map(v=>{
                               const act = actual===v.clave;
                               const c = colVer(v.veredicto);
@@ -6498,10 +6489,7 @@ export default function App() {
                               </a>
                             )) : (
                               <div style={{fontSize:"8px",color:"#5a8fa8",lineHeight:1.6}}>
-                                Sin noticias cargadas para este activo todavía. Se descargan en el workflow y
-                                pueden faltar si la corrida se quedó sin tiempo — la próxima completa los que faltan.
-                                <strong>La ausencia acá no significa que no haya noticias</strong>: conviene verificar
-                                igual antes de operar.
+                                Sin noticias cargadas todavía — <strong>no significa que no haya</strong>, verificá igual antes de operar.
                               </div>
                             )}
                           </div>
@@ -6624,9 +6612,8 @@ export default function App() {
                   <div style={{padding:"9px 12px",background:"#07101a",border:"1px solid #1e3a50",borderRadius:"6px",marginBottom:"12px"}}>
                     <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>📌 TRACKER — EVIDENCIA HACIA ADELANTE</div>
                     <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
-                      Cada marca congela la predicción del sistema en ese momento exacto: precio, señal, score, α, calidad.
-                      Nada de esto se puede editar después. Es la única evidencia que ninguna validación con datos
-                      históricos puede reemplazar — porque todavía no existía cuando la marcaste.
+                      Congela la predicción en ese momento (precio, señal, score) y no se puede editar después —
+                      es evidencia que ninguna validación retrospectiva reemplaza.
                     </div>
                   </div>
 
@@ -6926,11 +6913,10 @@ export default function App() {
                     )}
                     {rpAjustVol&&rpRankTab!=="estables"&&(
                       <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
-                        Retorno menos la mediana de activos con volatilidad similar en el mismo período — la misma
-                        corrección que en <code>docs/hallazgos.md</code> descartó la hipótesis de reversión. Sin esto,
-                        el ranking crudo sobre-representa a los más volátiles, no a los que realmente rindieron distinto.
+                        Retorno menos la mediana de activos de volatilidad similar — evita que domine el ranking el más volátil.
                       </div>
                     )}
+                    <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"6px"}}>Barra = variación % en el período elegido, por activo.</div>
                     {(()=>{
                       const conc = rpRankTab==="suben" ? rpRanking.concSuben : rpRankTab==="caen" ? rpRanking.concCaen : null;
                       if (!conc || conc.distintos < 5) return null;
@@ -6939,13 +6925,11 @@ export default function App() {
                         <div style={{...semBox(amplio?"#ffd700":"#5a8fa8","10"),padding:"7px 8px",marginBottom:"8px",fontSize:"7px",lineHeight:1.6}}>
                           {amplio ? (
                             <span style={{color:"#ffd700"}}>
-                              ⚠ {conc.distintos} sectores distintos entre los 20, ninguno domina — patrón típico de un
-                              <strong> catalizador de mercado amplio</strong> (como la Fed en julio), no de señal sectorial específica.
+                              ⚠ {conc.distintos} sectores sin uno dominante — patrón de <strong>catalizador de mercado amplio</strong>, no señal sectorial.
                             </span>
                           ) : (
                             <span style={{color:"#8fb4cc"}}>
-                              {conc.nTop} de 20 son del sector <strong>{conc.sectorTop}</strong> — posible catalizador
-                              específico del sector, vale revisar noticias del rubro.
+                              {conc.nTop} de 20 son del sector <strong>{conc.sectorTop}</strong> — posible catalizador del rubro.
                             </span>
                           )}
                         </div>
@@ -7005,9 +6989,8 @@ export default function App() {
                             : `🔍 ¿Qué decía la señal ANTES de moverse? — analizar los ${Math.min(10,(rpRankTab==="suben"?rpRanking.suben:rpRanking.caen).length)}`}
                         </button>
                         <div style={{fontSize:"6px",color:"#5a8fa8",marginTop:"4px",lineHeight:1.6}}>
-                          Para cada uno, recalcula la señal muestreando la ventana —cortando la serie, sin lookahead,
-                          igual que el replay— y busca el primer punto en que marcó {rpRankTab==="suben"?"COMPRA":"VENTA"}.
-                          Puede tardar hasta medio minuto: son ~10 activos con varios cálculos completos cada uno.
+                          Corta la serie en cada punto, sin lookahead, y busca cuándo marcó {rpRankTab==="suben"?"COMPRA":"VENTA"}.
+                          Puede tardar hasta medio minuto (~10 activos).
                         </div>
                         {rpCruce&&rpCruce.tab===rpRankTab&&(
                           <div style={{marginTop:"8px"}}>
@@ -7100,6 +7083,7 @@ export default function App() {
                           ))}
                         </div>
                       </div>
+                      <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"6px"}}>Barra = variación % de cierre a cierre, cada día.</div>
                       <div style={{display:"flex",alignItems:"stretch",gap:"2px",height:"120px",marginBottom:"4px"}}>
                         {rpVisibles.map(d=>{
                           const h = Math.max(3, Math.abs(d.ret)/maxAbs*46);
@@ -7257,7 +7241,7 @@ export default function App() {
 
                           {compra&&sg?.tp1!=null&&rpCalc.maxFwd!=null&&(
                             <div style={{...semBox(tocoTP&&!tocoSL?"#00ff88":tocoSL?"#ff3355":"#ffd700","12"),padding:"7px",marginBottom:"6px",fontSize:"7px",lineHeight:1.6,color:"#b0d4e8"}}>
-                              {tocoSL&&tocoTP && <>Tocó <strong style={{color:"#00ff88"}}>TP1</strong> y también el <strong style={{color:"#ff3355"}}>stop</strong> dentro de los 20 días — cuál primero depende del orden intradiario, que no se puede reconstruir con datos diarios.</>}
+                              {tocoSL&&tocoTP && <>Tocó <strong style={{color:"#00ff88"}}>TP1</strong> y el <strong style={{color:"#ff3355"}}>stop</strong> en 20 días — el orden no se puede saber con datos diarios.</>}
                               {tocoSL&&!tocoTP && <>Habría tocado el <strong style={{color:"#ff3355"}}>stop</strong> ({sg.sl.toFixed(2)}) antes de llegar al TP1.</>}
                               {!tocoSL&&tocoTP && <>Habría alcanzado <strong style={{color:"#00ff88"}}>TP1</strong> ({sg.tp1.toFixed(2)}) sin tocar el stop.</>}
                               {!tocoSL&&!tocoTP && <>No llegó ni al TP1 ({sg.tp1.toFixed(2)}) ni al stop ({sg.sl.toFixed(2)}) en 20 días.</>}
@@ -7596,10 +7580,8 @@ export default function App() {
                     🔬 VALIDACIÓN CUANTITATIVA — modelo aprendido + backtest de cartera
                   </div>
                   <div style={{fontSize:"8px",color:"#b0d4e8",lineHeight:1.7,marginBottom:"10px"}}>
-                    A diferencia del resto de la app (que usa pesos escritos a mano), acá el sistema
-                    <strong style={{color:"#00ff88"}}> aprende los pesos desde los datos</strong> con regresión logística,
-                    etiqueta con triple-barrera, valida con K-fold purgado (sin fuga temporal),
-                    calibra las probabilidades y simula una <strong style={{color:"#00ff88"}}>cartera completa</strong> con costos reales.
+                    A diferencia del resto de la app, acá el sistema <strong style={{color:"#00ff88"}}>aprende los pesos desde los datos</strong>
+                    (regresión logística, K-fold purgado) y simula una <strong style={{color:"#00ff88"}}>cartera completa</strong> con costos reales.
                   </div>
                   <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"flex-end",marginBottom:"8px"}}>
                     {[
@@ -7644,9 +7626,7 @@ export default function App() {
                     <div style={{marginTop:"8px",padding:"8px 10px",background:"#ffd70010",border:"1px solid #ffd70030",borderRadius:"4px"}}>
                       <div style={{fontSize:"9px",color:"#ffd700",fontWeight:700,marginBottom:"3px"}}>{qlProgress||"Preparando..."}</div>
                       <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.6}}>
-                        El cálculo corre en el mismo hilo que la interfaz, así que la app va a responder con lentitud.
-                        Podés cambiar de pestaña —tarda unos segundos en reaccionar— y el proceso sigue en segundo plano.
-                        Si preferís, cancelalo y volvé más tarde.
+                        Corre en el mismo hilo que la interfaz — va a responder con lentitud. Podés cambiar de pestaña, sigue en segundo plano.
                       </div>
                     </div>
                   )}
@@ -7695,7 +7675,8 @@ export default function App() {
                         const up=eq[eq.length-1]>=eq[0];
                         return (
                           <div style={{marginBottom:"10px"}}>
-                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"4px"}}>CURVA DE CAPITAL (neta de comisiones)</div>
+                            <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>CURVA DE CAPITAL (neta de comisiones)</div>
+                            <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"4px"}}>Evolución de $1.000 invertidos siguiendo cada señal del backtest, ya con comisiones descontadas.</div>
                             <div style={{overflowX:"auto"}}>
                               <svg width={W_} height={H_} style={{display:"block"}}>
                                 <line x1="0" y1={H_-((eq[0]-mn)/(mx-mn||1))*H_} x2={W_} y2={H_-((eq[0]-mn)/(mx-mn||1))*H_} stroke="#1e3a50" strokeDasharray="3 3"/>
@@ -7742,9 +7723,8 @@ export default function App() {
                       📅 CONSISTENCIA MES A MES — ¿el edge se repite o vino de un solo período?
                     </div>
                     <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
-                      Un t-stat alto sobre toda la muestra puede venir de un único mes excepcional.
-                      Este test parte el historial y cuenta en cuántos períodos el filtro superó al mercado.
-                      <strong style={{color:"#a0cce0"}}> Señal real: &gt;65% de meses. Azar: ~50%.</strong>
+                      Un t-stat alto puede venir de un solo mes excepcional. Cuenta en cuántos meses el filtro superó al mercado —
+                      <strong style={{color:"#a0cce0"}}> señal real: &gt;65%, azar: ~50%.</strong>
                     </div>
 
                     <div style={{textAlign:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #0f2235"}}>
@@ -7856,9 +7836,10 @@ export default function App() {
                     {/* Bootstrap */}
                     {qlValid.boot&&(
                       <div style={{padding:"9px",background:"#050c15",borderRadius:"5px",marginBottom:"8px"}}>
-                        <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"6px"}}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>
                           BOOTSTRAP · {qlValid.boot.nBoot} remuestreos — ¿cuán frágil es el resultado?
                         </div>
+                        <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"6px"}}>Rango probable de Sharpe/CAGR/MaxDD si el backtest se repitiera con distinta muestra.</div>
                         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"6px"}}>
                           {[
                             {l:"SHARPE",  o:qlValid.boot.sharpe, s:"", c:semaforo(qlValid.boot.sharpe.p50, 0, 1)},
@@ -7883,19 +7864,18 @@ export default function App() {
                     {qlValid.uniq&&(
                       <div style={{padding:"8px 10px",background:qlValid.uniq.avgUniqueness<0.2?"#ff335510":"#ffd70010",
                         border:`1px solid ${qlValid.uniq.avgUniqueness<0.2?"#ff335530":"#ffd70030"}`,borderRadius:"4px",fontSize:"7px",color:"#b0d4e8",lineHeight:1.7}}>
-                        ⚠️ <strong>Unicidad de muestras: {qlValid.uniq.avgUniqueness}</strong> —
-                        las etiquetas se solapan en el tiempo, así que las observaciones no son independientes.
-                        Tu muestra <strong style={{color:"#ff9040"}}>efectiva</strong> es de ~<strong>{qlValid.uniq.effectiveN}</strong> casos,
-                        no del total nominal. Cualquier intervalo de confianza calculado sin esta corrección está inflado.
+                        ⚠️ <strong>Unicidad de muestras: {qlValid.uniq.avgUniqueness}</strong> — las etiquetas se solapan, la muestra
+                        <strong style={{color:"#ff9040"}}> efectiva</strong> es ~<strong>{qlValid.uniq.effectiveN}</strong> casos, no el total nominal.
                       </div>
                     )}
 
                     {/* Regímenes */}
                     {qlValid.regimes?.length>0&&(
                       <div style={{marginTop:"8px"}}>
-                        <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"5px"}}>
+                        <div style={{fontSize:"7px",color:"#4a7a9b",marginBottom:"2px"}}>
                           RENDIMIENTO POR RÉGIMEN DE MERCADO — ¿gana siempre o solo en bull?
                         </div>
+                        <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"5px"}}>Retorno de la señal separado por contexto de mercado (n operaciones, win rate, retorno medio, Sharpe).</div>
                         {qlValid.regimes.map(r=>{
                           const cRow = semaforo(r.avgRet, -0.3, 0.3);
                           return (
@@ -7943,9 +7923,8 @@ export default function App() {
                       🎭 META-LABELING — segundo modelo que decide SI operar
                     </div>
                     <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
-                      El modelo primario dice la dirección. El secundario responde otra pregunta:
-                      <em> "¿vale la pena tomar esta señal en particular?"</em> Filtra falsos positivos
-                      sin cambiar la dirección. Con costos de {COSTO_CEDEAR}% por operación, filtrar es tan valioso como acertar.
+                      Un modelo secundario filtra las señales del primario: <em>"¿vale la pena tomar esta en particular?"</em>
+                      Con {COSTO_CEDEAR}% de costo por operación, filtrar vale tanto como acertar.
                     </div>
 
                     <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"10px",alignItems:"center",marginBottom:"10px"}}>
@@ -8002,9 +7981,8 @@ export default function App() {
                       <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>📊 IMPORTANCIA DE INDICADORES (ablación)</div>
                       <div style={{fontSize:"8px",color:qlAblation.baseAuc>=0.55?"#00ff88":"#ffd700"}}>AUC base {qlAblation.baseAuc.toFixed(3)}</div>
                     </div>
-                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
-                      Se quita cada indicador y se mide cuánto empeora el modelo. Delta alto = aporta información real.
-                      Delta ≈ 0 o negativo = es ruido y podría eliminarse.
+                    <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"8px"}}>
+                      Cuánto empeora el modelo (AUC) al sacar cada indicador — delta alto = aporta información real.
                     </div>
                     {qlAblation.items.map(f=>{
                       const pct = Math.min(100, Math.abs(f.delta)*2000);
@@ -8031,9 +8009,8 @@ export default function App() {
                       🎯 MODELOS POR ACTIVO ({qlModels.length}) — ordenados por poder predictivo
                     </div>
                     <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
-                      <strong>AUC</strong>: 0.50 = azar, &gt;0.55 = señal real, &gt;0.60 = fuerte ·
-                      <strong> Brier Skill</strong>: &gt;0 significa que la probabilidad calibrada supera a predecir la tasa base ·
-                      Todo medido <strong>fuera de muestra</strong> con K-fold purgado.
+                      <strong>AUC</strong> 0.50=azar, &gt;0.55=real, &gt;0.60=fuerte · <strong>Brier Skill</strong> &gt;0 supera predecir la tasa base.
+                      Todo fuera de muestra (K-fold purgado).
                     </div>
                     <div style={{maxHeight:"340px",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
                       {qlModels.map(m=>{
