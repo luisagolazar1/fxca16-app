@@ -3304,6 +3304,17 @@ export default function App() {
   // splitMode: null (normal) | 2 | 4 — cuántos paneles mostrar a la vez.
   // paneTabs: qué tab muestra cada panel, independiente entre sí.
   const [splitMode, setSplitMode] = useState(null);
+  // Ancho real de la ventana — la grilla de paneles usa CSS (media query en
+  // index.css) para apilarse en columna en celular, pero el maxHeight y el
+  // padding de cada panel se ajustan acá porque eso no depende solo del
+  // layout sino de cuánto scroll vertical tiene sentido en cada caso.
+  const [anchoVentana, setAnchoVentana] = useState(typeof window !== "undefined" ? window.innerWidth : 1024);
+  useEffect(() => {
+    const onResize = () => setAnchoVentana(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const esMobile = anchoVentana <= 820;
   const [paneTabs, setPaneTabs] = useState(["opp", "det", "replay", "cmp"]);
   const PANE_TABS_DISPONIBLES = [["opp","Oport."],["det","Detalle"],["replay","Replay"],["cmp","Comparar"],["watch","Listas"],["track","Tracker"]];
   const [rpAjustVol, setRpAjustVol] = useState(false);
@@ -5044,8 +5055,8 @@ export default function App() {
             </div>
             {splitMode&&(
               <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
-                Cada panel elige su propia pestaña con los botones de arriba. Comparten el activo seleccionado
-                (tocá uno en Oportunidades y se actualiza en Detalle/Replay de los demás paneles).
+                Cada panel elige su pestaña con los botones de arriba y comparten el activo seleccionado.
+                {esMobile ? " En celular se apilan uno debajo del otro — deslizá para ver los demás." : " Cada panel scrollea independiente."}
               </div>
             )}
             {!splitMode&&(
@@ -8161,14 +8172,16 @@ export default function App() {
               const cols = splitMode === 4 ? 2 : 2;
               const filas = splitMode === 4 ? 2 : 1;
               return (
-                <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${filas},1fr)`,gap:"8px"}}>
+                <div className="split-grid" style={{gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${filas},1fr)`}}>
                   {paneTabs.slice(0, splitMode).map((pt, i) => (
-                    <div key={i} style={{border:"1px solid #1e3a50",borderRadius:"6px",padding:"8px",background:"#050c1560",minWidth:0,maxHeight:"78vh",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
-                      <div style={{display:"flex",gap:"3px",flexWrap:"wrap",marginBottom:"7px",position:"sticky",top:0,background:"#050c15",paddingBottom:"5px",zIndex:1}}>
+                    <div key={i} style={{border:"1px solid #1e3a50",borderRadius:"6px",padding:esMobile?"10px":"8px",background:"#050c1560",minWidth:0,
+                      maxHeight:esMobile?"none":"78vh",overflowY:esMobile?"visible":"auto",WebkitOverflowScrolling:"touch"}}>
+                      <div style={{display:"flex",gap:"3px",flexWrap:"wrap",marginBottom:"7px",
+                        position:esMobile?"static":"sticky",top:0,background:"#050c15",paddingBottom:"5px",zIndex:1}}>
                         {PANE_TABS_DISPONIBLES.map(([k,l])=>(
                           <button key={k}
                             onClick={()=>setPaneTabs(p=>{const n=[...p]; n[i]=k; return n;})}
-                            style={{padding:"3px 6px",fontSize:"7px",fontFamily:"inherit",cursor:"pointer",borderRadius:"3px",
+                            style={{padding:esMobile?"5px 8px":"3px 6px",fontSize:esMobile?"9px":"7px",fontFamily:"inherit",cursor:"pointer",borderRadius:"3px",
                               background:pt===k?"#1a6eff":"#0c1926",color:pt===k?"#fff":"#5a8fa8",border:`1px solid ${pt===k?"#1a6eff":"#1e3a50"}`}}>
                             {l}
                           </button>
