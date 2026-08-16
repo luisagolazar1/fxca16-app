@@ -4642,21 +4642,34 @@ export default function App() {
   }, []);
 
 
+  // Igual que rpBarras en Replay: si sel.data viene de un fetch en vivo
+  // (badge REAL) puede ser muy corta — unas pocas barras del día, no el
+  // historial completo. Este caso real lo destapó BOLT: sel.data quedaba
+  // por debajo de 20 barras, calidadSerie lo marcaba "serie muy corta"
+  // (motivo correcto, dato equivocado), y el gráfico no tenía con qué
+  // dibujarse. Se cae al historial embebido completo cuando pasa esto,
+  // mismo criterio que ya usa Replay.
+  const dtBarras = useMemo(() => {
+    if (sel?.data?.length >= 80) return sel.data;
+    const emb = sel?.ticker ? CSV_DATA_EMBEDDED?.[sel.ticker] : null;
+    return emb?.length >= 80 ? emb : (sel?.data || null);
+  }, [sel?.ticker, sel?.data]);
+
   const dtDias = useMemo(() => {
-    if (!sel?.data?.length) return [];
-    const dias = construirDiasDe(sel.data);
+    if (!dtBarras?.length) return [];
+    const dias = construirDiasDe(dtBarras);
     return dias.map((d, i) => ({ ...d, ret: i > 0 ? (d.close / dias[i-1].close - 1) * 100 : 0 }));
-  }, [sel?.ticker, sel?.data, construirDiasDe]);
+  }, [sel?.ticker, dtBarras, construirDiasDe]);
   const dtVisibles = useMemo(() => dtDias.slice(-dtVent), [dtDias, dtVent]);
 
   const dtAnalizar = useCallback((dia) => {
-    if (!sel?.data?.length || dia.idx < 60) return;
+    if (!dtBarras?.length || dia.idx < 60) return;
     setDtSel(dia.date);
     setDtCargando(true);
     setDtCalc(null);
     setTimeout(() => {
       try {
-        const hasta = sel.data.slice(0, dia.idx + 1);
+        const hasta = dtBarras.slice(0, dia.idx + 1);
         const sig = combinedSignal(hasta, W);
         const cierres = dtDias.map(d => d.close);
         const iDia = dtDias.findIndex(d => d.date === dia.date);
@@ -4676,7 +4689,7 @@ export default function App() {
       }
       setDtCargando(false);
     }, 10);
-  }, [sel, dtDias, W]);
+  }, [dtBarras, dtDias, W]);
 
   // ── CRUCE AUTOMÁTICO: para el top 10 de suben/caen, ¿qué decía la
   // señal ANTES de que arrancara el movimiento? ──
@@ -5526,135 +5539,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* ── YA SE HABÍA MOVIDO ANTES ──
-                        Misma lógica que en Replay, con datos de hoy: contextualiza
-                        la señal actual con cuánto ya se movió el precio antes de
-                        que se encendiera. Conecta directo con lo medido en
-                        hallazgos.md — el score se enciende, en mediana, con el
-                        54% de la suba ya consumida. Se calcula sobre la serie
-                        DIARIA (no horaria) para que sea comparable con Replay. */}
-                    {sel?.data?.length>0&&(()=>{
-                      const dias = construirDiasDe(sel.data);
-                      if (dias.length < 21) return null;
-                      const px = dias[dias.length-1].close;
-                      const prev = n => dias.length>n ? (px/dias[dias.length-1-n].close-1)*100 : null;
-                      const p5=prev(5), p10=prev(10), p20=prev(20);
-                      const pc = v => v==null?"—":(v>=0?"+":"")+v.toFixed(1)+"%";
-                      const cc = v => v==null?"#5a8fa8":v>0?"#00ff88":v<0?"#ff3355":"#8fb4cc";
-                      const grande = p20!=null && Math.abs(p20)>8;
-                      return (
-                        <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
-                          <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"7px"}}>YA SE HABÍA MOVIDO ANTES</div>
-                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:grande?"8px":"0"}}>
-                            {[["5d",p5],["10d",p10],["20d",p20]].map(([l,v])=>(
-                              <div key={l} style={{padding:"7px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
-                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{l} previos</div>
-                                <div style={{fontSize:"14px",fontFamily:"'Bebas Neue'",color:cc(v)}}>{pc(v)}</div>
-                              </div>
-                            ))}
-                          </div>
-                          {grande&&(
-                            <div style={{fontSize:"7px",color:"#8fb4cc",lineHeight:1.6}}>
-                              Ya se movió {pc(p20)} en 20 días. La señal técnica se calcula <em>a partir</em> del precio, no lo
-                              anticipa — en mediana se enciende con más de la mitad del movimiento ya ocurrido.{" "}
-                              <button onClick={()=>{ setRpInput(sel.ticker); setRpTicker(sel.ticker); setRpSel(null); setRpCalc(null); setTab("replay"); }}
-                                style={{background:"none",border:"none",color:"#00d4ff",textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:"7px",padding:0}}>
-                                Ver en Replay
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* ── VARIACIÓN DIARIA (gráfico interactivo) ──
-                        Misma pieza que en Replay, embebida acá para no
-                        tener que ir a otra pestaña: tocando una barra se
-                        recalcula la señal cortando la serie en esa fecha
-                        (sin ver nada posterior) y se compara contra lo
-                        que pasó después. */}
-                    {dtDias.length>=20&&(
-                      <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px",flexWrap:"wrap",gap:"6px"}}>
-                          <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>VARIACIÓN DIARIA</span>
-                          <div style={{display:"flex",gap:"3px"}}>
-                            {[5,10,15,30,60,90].map(v=>(
-                              <button key={v} className={`btn ${dtVent===v?"on":"off"}`} style={{padding:"3px 7px",fontSize:"7px"}}
-                                onClick={()=>setDtVent(v)}>{v}D</button>
-                            ))}
-                          </div>
-                        </div>
-                        <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"8px"}}>Barra = variación % de cierre a cierre, cada día.</div>
-                        {(()=>{
-                          const maxAbs = Math.max(...dtVisibles.map(d=>Math.abs(d.ret)), 1);
-                          return (
-                            <div style={{display:"flex",alignItems:"stretch",gap:"2px",height:"110px",marginBottom:"4px"}}>
-                              {dtVisibles.map(d=>{
-                                const h = Math.max(3, Math.abs(d.ret)/maxAbs*46);
-                                const act = dtSel===d.date;
-                                return (
-                                  <div key={d.date} onClick={()=>dtAnalizar(d)}
-                                    title={d.date+"  "+(d.ret>=0?"+":"")+d.ret.toFixed(1)+"%"}
-                                    style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",cursor:"pointer",
-                                      background:act?"#00d4ff18":"transparent",borderRadius:"3px",padding:"0 1px",
-                                      border:act?"1px solid #00d4ff60":"1px solid transparent"}}>
-                                    <div style={{height:"50%",display:"flex",alignItems:"flex-end"}}>
-                                      {d.ret>=0&&<div style={{width:"100%",height:`${h}%`,background:act?"#00ff88":"#00ff8899",borderRadius:"2px 2px 0 0"}}/>}
-                                    </div>
-                                    <div style={{height:"1px",background:"#1e3a50"}}/>
-                                    <div style={{height:"50%"}}>
-                                      {d.ret<0&&<div style={{width:"100%",height:`${h}%`,background:act?"#ff3355":"#ff335599",borderRadius:"0 0 2px 2px"}}/>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
-                        <div style={{display:"flex",justifyContent:"space-between",fontSize:"6px",color:"#5a8fa8",marginBottom:dtCalc||dtCargando?"9px":"0"}}>
-                          <span>{dtVisibles[0]?.date}</span>
-                          <span>tocá una barra para ver qué decía el sistema ese día</span>
-                          <span>{dtVisibles[dtVisibles.length-1]?.date}</span>
-                        </div>
-
-                        {dtCargando&&(
-                          <div style={{textAlign:"center",padding:"10px",color:"#00d4ff",fontSize:"8px"}}>⏳ Recalculando la señal al {dtSel}...</div>
-                        )}
-                        {dtCalc&&!dtCargando&&(dtCalc.error?(
-                          <div style={{color:"#ff3355",fontSize:"8px"}}>Error: {dtCalc.error}</div>
-                        ):(()=>{
-                          const sg=dtCalc.sig, col=SC[sg?.sig]||"#5a8fa8";
-                          const compra=(sg?.sig||"").includes("COMPRA"), venta=(sg?.sig||"").includes("VENTA");
-                          const hz=[[20,dtCalc.fwd20],[10,dtCalc.fwd10],[5,dtCalc.fwd5],[3,dtCalc.fwd3],[1,dtCalc.fwd1]].find(([,v])=>v!=null);
-                          const ok = hz ? (compra?hz[1]>0:venta?hz[1]<0:null) : null;
-                          const pc=v=>v==null?"—":(v>=0?"+":"")+v.toFixed(1)+"%";
-                          const cc=v=>v==null?"#5a8fa8":v>0?"#00ff88":v<0?"#ff3355":"#8fb4cc";
-                          return (
-                            <div style={{borderTop:"1px solid #1e3a50",paddingTop:"9px"}}>
-                              <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
-                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:col}}>{sg?.sig||"—"}</span>
-                                <span style={{fontSize:"8px",color:"#8fb4cc"}}>{dtCalc.fecha} · conf {sg?.conf??"—"}% · RSI {sg?.rsi??"—"} · precio {dtCalc.px?.toFixed(2)}</span>
-                              </div>
-                              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"3px",marginBottom:"6px"}}>
-                                {[["+1d",dtCalc.fwd1],["+3d",dtCalc.fwd3],["+5d",dtCalc.fwd5],["+10d",dtCalc.fwd10],["+20d",dtCalc.fwd20]].map(([l,v])=>(
-                                  <div key={l} style={{padding:"6px 2px",textAlign:"center",...(v!=null?semBox(cc(v),"14"):{background:"#07121c",borderRadius:"4px",border:"1px dashed #1e3a50"})}}>
-                                    <div style={{fontSize:"6px",color:"#8fb4cc"}}>{l}</div>
-                                    <div style={{fontSize:"11px",fontFamily:"'Bebas Neue'",color:v!=null?cc(v):"#3a5a70"}}>{v!=null?pc(v):"·"}</div>
-                                  </div>
-                                ))}
-                              </div>
-                              {ok!==null&&hz&&(
-                                <div style={{...semBox(ok?"#00ff88":"#ff3355","14"),padding:"7px",fontSize:"7px",color:ok?"#00ff88":"#ff3355",fontWeight:700}}>
-                                  {ok?`✓ Acertó la dirección a ${hz[0]} días`:`✕ Erró la dirección a ${hz[0]} días`}
-                                  {hz[0]<20&&<span style={{color:"#8fb4cc",fontWeight:400}}> (parcial)</span>}
-                                </div>
-                              )}
-                              {!hz&&<div style={{fontSize:"7px",color:"#5a8fa8"}}>Fecha muy reciente, todavía no hay días posteriores para medir. Probá con 60D/90D.</div>}
-                            </div>
-                          );
-                        })())}
-                      </div>
-                    )}
                     {s&&<div className="card" style={{padding:"12px",marginBottom:"10px"}}>
                       <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"10px"}}>SCORE COMBINADO FXCA16</div>
                       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"10px"}}>
@@ -5890,7 +5774,11 @@ export default function App() {
                             <div style={{display:"flex",gap:"4px",justifyContent:"center",flexWrap:"wrap",marginBottom:"6px"}}>
                               {s?.synthetic&&<span style={{fontSize:"7px",padding:"2px 7px",background:"#ff335520",border:"1px solid #ff335550",borderRadius:"3px",color:"#ff3355",fontWeight:700}}>⚠ DATOS SINTÉTICOS — no operar con esta señal</span>}
                               {(()=>{
-                                const q = calidadSerie(sel.data||[]);
+                                // Con fallback a historial embebido (dtBarras) — sin esto,
+                                // cualquier ticker con badge REAL (datos en vivo, pocas
+                                // barras) se marcaba falsamente como "serie ilíquida" aunque
+                                // tuviera historial completo. Caso real: BOLT.
+                                const q = calidadSerie(dtBarras||[]);
                                 if (q.nivel==="ok") return null;
                                 const esDeg = q.nivel==="degradada";
                                 const c = esDeg ? "#ff3355" : "#ff9040";
@@ -6546,6 +6434,136 @@ export default function App() {
                       <div style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".2em",marginBottom:"10px"}}>
                         ⊕ AGREGADOS RECIENTES
                       </div>
+
+                    {/* ── YA SE HABÍA MOVIDO ANTES ──
+                        Misma lógica que en Replay, con datos de hoy: contextualiza
+                        la señal actual con cuánto ya se movió el precio antes de
+                        que se encendiera. Conecta directo con lo medido en
+                        hallazgos.md — el score se enciende, en mediana, con el
+                        54% de la suba ya consumida. Se calcula sobre la serie
+                        DIARIA (no horaria) para que sea comparable con Replay. */}
+                    {sel?.data?.length>0&&(()=>{
+                      const dias = construirDiasDe(sel.data);
+                      if (dias.length < 21) return null;
+                      const px = dias[dias.length-1].close;
+                      const prev = n => dias.length>n ? (px/dias[dias.length-1-n].close-1)*100 : null;
+                      const p5=prev(5), p10=prev(10), p20=prev(20);
+                      const pc = v => v==null?"—":(v>=0?"+":"")+v.toFixed(1)+"%";
+                      const cc = v => v==null?"#5a8fa8":v>0?"#00ff88":v<0?"#ff3355":"#8fb4cc";
+                      const grande = p20!=null && Math.abs(p20)>8;
+                      return (
+                        <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                          <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"7px"}}>YA SE HABÍA MOVIDO ANTES</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:grande?"8px":"0"}}>
+                            {[["5d",p5],["10d",p10],["20d",p20]].map(([l,v])=>(
+                              <div key={l} style={{padding:"7px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{l} previos</div>
+                                <div style={{fontSize:"14px",fontFamily:"'Bebas Neue'",color:cc(v)}}>{pc(v)}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {grande&&(
+                            <div style={{fontSize:"7px",color:"#8fb4cc",lineHeight:1.6}}>
+                              Ya se movió {pc(p20)} en 20 días. La señal técnica se calcula <em>a partir</em> del precio, no lo
+                              anticipa — en mediana se enciende con más de la mitad del movimiento ya ocurrido.{" "}
+                              <button onClick={()=>{ setRpInput(sel.ticker); setRpTicker(sel.ticker); setRpSel(null); setRpCalc(null); setTab("replay"); }}
+                                style={{background:"none",border:"none",color:"#00d4ff",textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:"7px",padding:0}}>
+                                Ver en Replay
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ── VARIACIÓN DIARIA (gráfico interactivo) ──
+                        Misma pieza que en Replay, embebida acá para no
+                        tener que ir a otra pestaña: tocando una barra se
+                        recalcula la señal cortando la serie en esa fecha
+                        (sin ver nada posterior) y se compara contra lo
+                        que pasó después. */}
+                    {dtDias.length>=20&&(
+                      <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px",flexWrap:"wrap",gap:"6px"}}>
+                          <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>VARIACIÓN DIARIA</span>
+                          <div style={{display:"flex",gap:"3px"}}>
+                            {[5,10,15,30,60,90].map(v=>(
+                              <button key={v} className={`btn ${dtVent===v?"on":"off"}`} style={{padding:"3px 7px",fontSize:"7px"}}
+                                onClick={()=>setDtVent(v)}>{v}D</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{fontSize:"6px",color:"#5a8fa8",marginBottom:"8px"}}>Barra = variación % de cierre a cierre, cada día.</div>
+                        {(()=>{
+                          const maxAbs = Math.max(...dtVisibles.map(d=>Math.abs(d.ret)), 1);
+                          return (
+                            <div style={{display:"flex",alignItems:"stretch",gap:"2px",height:"110px",marginBottom:"4px"}}>
+                              {dtVisibles.map(d=>{
+                                const h = Math.max(3, Math.abs(d.ret)/maxAbs*46);
+                                const act = dtSel===d.date;
+                                return (
+                                  <div key={d.date} onClick={()=>dtAnalizar(d)}
+                                    title={d.date+"  "+(d.ret>=0?"+":"")+d.ret.toFixed(1)+"%"}
+                                    style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",cursor:"pointer",
+                                      background:act?"#00d4ff18":"transparent",borderRadius:"3px",padding:"0 1px",
+                                      border:act?"1px solid #00d4ff60":"1px solid transparent"}}>
+                                    <div style={{height:"50%",display:"flex",alignItems:"flex-end"}}>
+                                      {d.ret>=0&&<div style={{width:"100%",height:`${h}%`,background:act?"#00ff88":"#00ff8899",borderRadius:"2px 2px 0 0"}}/>}
+                                    </div>
+                                    <div style={{height:"1px",background:"#1e3a50"}}/>
+                                    <div style={{height:"50%"}}>
+                                      {d.ret<0&&<div style={{width:"100%",height:`${h}%`,background:act?"#ff3355":"#ff335599",borderRadius:"0 0 2px 2px"}}/>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                        <div style={{display:"flex",justifyContent:"space-between",fontSize:"6px",color:"#5a8fa8",marginBottom:dtCalc||dtCargando?"9px":"0"}}>
+                          <span>{dtVisibles[0]?.date}</span>
+                          <span>tocá una barra para ver qué decía el sistema ese día</span>
+                          <span>{dtVisibles[dtVisibles.length-1]?.date}</span>
+                        </div>
+
+                        {dtCargando&&(
+                          <div style={{textAlign:"center",padding:"10px",color:"#00d4ff",fontSize:"8px"}}>⏳ Recalculando la señal al {dtSel}...</div>
+                        )}
+                        {dtCalc&&!dtCargando&&(dtCalc.error?(
+                          <div style={{color:"#ff3355",fontSize:"8px"}}>Error: {dtCalc.error}</div>
+                        ):(()=>{
+                          const sg=dtCalc.sig, col=SC[sg?.sig]||"#5a8fa8";
+                          const compra=(sg?.sig||"").includes("COMPRA"), venta=(sg?.sig||"").includes("VENTA");
+                          const hz=[[20,dtCalc.fwd20],[10,dtCalc.fwd10],[5,dtCalc.fwd5],[3,dtCalc.fwd3],[1,dtCalc.fwd1]].find(([,v])=>v!=null);
+                          const ok = hz ? (compra?hz[1]>0:venta?hz[1]<0:null) : null;
+                          const pc=v=>v==null?"—":(v>=0?"+":"")+v.toFixed(1)+"%";
+                          const cc=v=>v==null?"#5a8fa8":v>0?"#00ff88":v<0?"#ff3355":"#8fb4cc";
+                          return (
+                            <div style={{borderTop:"1px solid #1e3a50",paddingTop:"9px"}}>
+                              <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
+                                <span style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color:col}}>{sg?.sig||"—"}</span>
+                                <span style={{fontSize:"8px",color:"#8fb4cc"}}>{dtCalc.fecha} · conf {sg?.conf??"—"}% · RSI {sg?.rsi??"—"} · precio {dtCalc.px?.toFixed(2)}</span>
+                              </div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"3px",marginBottom:"6px"}}>
+                                {[["+1d",dtCalc.fwd1],["+3d",dtCalc.fwd3],["+5d",dtCalc.fwd5],["+10d",dtCalc.fwd10],["+20d",dtCalc.fwd20]].map(([l,v])=>(
+                                  <div key={l} style={{padding:"6px 2px",textAlign:"center",...(v!=null?semBox(cc(v),"14"):{background:"#07121c",borderRadius:"4px",border:"1px dashed #1e3a50"})}}>
+                                    <div style={{fontSize:"6px",color:"#8fb4cc"}}>{l}</div>
+                                    <div style={{fontSize:"11px",fontFamily:"'Bebas Neue'",color:v!=null?cc(v):"#3a5a70"}}>{v!=null?pc(v):"·"}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              {ok!==null&&hz&&(
+                                <div style={{...semBox(ok?"#00ff88":"#ff3355","14"),padding:"7px",fontSize:"7px",color:ok?"#00ff88":"#ff3355",fontWeight:700}}>
+                                  {ok?`✓ Acertó la dirección a ${hz[0]} días`:`✕ Erró la dirección a ${hz[0]} días`}
+                                  {hz[0]<20&&<span style={{color:"#8fb4cc",fontWeight:400}}> (parcial)</span>}
+                                </div>
+                              )}
+                              {!hz&&<div style={{fontSize:"7px",color:"#5a8fa8"}}>Fecha muy reciente, todavía no hay días posteriores para medir. Probá con 60D/90D.</div>}
+                            </div>
+                          );
+                        })())}
+                      </div>
+                    )}
 
                       <div className="card" style={{padding:"12px"}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"3px"}}>
