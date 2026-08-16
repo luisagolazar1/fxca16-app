@@ -8175,9 +8175,9 @@ export default function App() {
                 <div className="split-grid" style={{gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${filas},1fr)`}}>
                   {paneTabs.slice(0, splitMode).map((pt, i) => (
                     <div key={i} style={{border:"1px solid #1e3a50",borderRadius:"6px",padding:esMobile?"10px":"8px",background:"#050c1560",minWidth:0,
-                      maxHeight:esMobile?"none":"78vh",overflowY:esMobile?"visible":"auto",WebkitOverflowScrolling:"touch"}}>
+                      maxHeight:esMobile?"52vh":"78vh",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
                       <div style={{display:"flex",gap:"3px",flexWrap:"wrap",marginBottom:"7px",
-                        position:esMobile?"static":"sticky",top:0,background:"#050c15",paddingBottom:"5px",zIndex:1}}>
+                        position:"sticky",top:0,background:"#050c15",paddingBottom:"5px",zIndex:1}}>
                         {PANE_TABS_DISPONIBLES.map(([k,l])=>(
                           <button key={k}
                             onClick={()=>setPaneTabs(p=>{const n=[...p]; n[i]=k; return n;})}
