@@ -4625,6 +4625,23 @@ export default function App() {
   // ── Gráfico embebido en Detalle: misma mecánica que Replay, pero con
   // estado propio (dtVent/dtSel/dtCalc) y usando el ticker que ya está
   // abierto en Detalle, sin pedir que se vuelva a escribir. ──
+  const construirDiasDe = useCallback((barras) => {
+    const porDia = {};
+    for (const b of barras) {
+      const d = b.date;
+      if (!porDia[d]) porDia[d] = { date: d, close: b.close, idx: 0 };
+      porDia[d].close = b.close;
+    }
+    const dias = Object.values(porDia).sort((a, b) => a.date < b.date ? -1 : 1);
+    for (const d of dias) {
+      let ult = -1;
+      for (let i = 0; i < barras.length; i++) if (barras[i].date === d.date) ult = i;
+      d.idx = ult;
+    }
+    return dias;
+  }, []);
+
+
   const dtDias = useMemo(() => {
     if (!sel?.data?.length) return [];
     const dias = construirDiasDe(sel.data);
@@ -4668,22 +4685,6 @@ export default function App() {
   // corrido en batch. Por costo — cada corte recalcula todo el motor de
   // señales, ~190ms — se muestrea la ventana en vez de recorrer cada día,
   // y se acota a 10 activos con feedback de progreso para no trabar la UI.
-  const construirDiasDe = useCallback((barras) => {
-    const porDia = {};
-    for (const b of barras) {
-      const d = b.date;
-      if (!porDia[d]) porDia[d] = { date: d, close: b.close, idx: 0 };
-      porDia[d].close = b.close;
-    }
-    const dias = Object.values(porDia).sort((a, b) => a.date < b.date ? -1 : 1);
-    for (const d of dias) {
-      let ult = -1;
-      for (let i = 0; i < barras.length; i++) if (barras[i].date === d.date) ult = i;
-      d.idx = ult;
-    }
-    return dias;
-  }, []);
-
   const rpCorrerCruce = useCallback(() => {
     const tab = rpRankTab;
     if (tab !== "suben" && tab !== "caen") return;
