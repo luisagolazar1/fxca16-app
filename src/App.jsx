@@ -5475,7 +5475,46 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Score breakdown */}
+                    {/* ── YA SE HABÍA MOVIDO ANTES ──
+                        Misma lógica que en Replay, con datos de hoy: contextualiza
+                        la señal actual con cuánto ya se movió el precio antes de
+                        que se encendiera. Conecta directo con lo medido en
+                        hallazgos.md — el score se enciende, en mediana, con el
+                        54% de la suba ya consumida. Se calcula sobre la serie
+                        DIARIA (no horaria) para que sea comparable con Replay. */}
+                    {sel?.data?.length>0&&(()=>{
+                      const dias = construirDiasDe(sel.data);
+                      if (dias.length < 21) return null;
+                      const px = dias[dias.length-1].close;
+                      const prev = n => dias.length>n ? (px/dias[dias.length-1-n].close-1)*100 : null;
+                      const p5=prev(5), p10=prev(10), p20=prev(20);
+                      const pc = v => v==null?"—":(v>=0?"+":"")+v.toFixed(1)+"%";
+                      const cc = v => v==null?"#5a8fa8":v>0?"#00ff88":v<0?"#ff3355":"#8fb4cc";
+                      const grande = p20!=null && Math.abs(p20)>8;
+                      return (
+                        <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                          <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"7px"}}>YA SE HABÍA MOVIDO ANTES</div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:grande?"8px":"0"}}>
+                            {[["5d",p5],["10d",p10],["20d",p20]].map(([l,v])=>(
+                              <div key={l} style={{padding:"7px",textAlign:"center",background:"#050c15",borderRadius:"4px"}}>
+                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{l} previos</div>
+                                <div style={{fontSize:"14px",fontFamily:"'Bebas Neue'",color:cc(v)}}>{pc(v)}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {grande&&(
+                            <div style={{fontSize:"7px",color:"#8fb4cc",lineHeight:1.6}}>
+                              Ya se movió {pc(p20)} en 20 días. La señal técnica se calcula <em>a partir</em> del precio, no lo
+                              anticipa — en mediana se enciende con más de la mitad del movimiento ya ocurrido.{" "}
+                              <button onClick={()=>{ setRpInput(sel.ticker); setRpTicker(sel.ticker); setRpSel(null); setRpCalc(null); setTab("replay"); }}
+                                style={{background:"none",border:"none",color:"#00d4ff",textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:"7px",padding:0}}>
+                                Ver en Replay
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {s&&<div className="card" style={{padding:"12px",marginBottom:"10px"}}>
                       <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"10px"}}>SCORE COMBINADO FXCA16</div>
                       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"10px"}}>
