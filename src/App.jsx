@@ -5041,24 +5041,12 @@ export default function App() {
               {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["replay","⏪ Replay"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["quant","🔬 Validación"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
-              <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center"}}>
-                <span style={{fontSize:"7px",color:"#5a8fa8"}}>pantalla:</span>
-                {[[null,"1"],[2,"2"],[4,"4"]].map(([v,l])=>(
-                  <button key={l} onClick={()=>setSplitMode(v)}
-                    title={v?`Dividir en ${v}`:"Vista normal"}
-                    style={{padding:"3px 8px",fontSize:"9px",fontFamily:"inherit",cursor:"pointer",borderRadius:"4px",
-                      background:splitMode===v?"#1a6eff":"#0c1926",color:splitMode===v?"#fff":"#5a8fa8",border:`1px solid ${splitMode===v?"#1a6eff":"#1e3a50"}`}}>
-                    {l}
-                  </button>
-                ))}
-              </div>
+              {/* Selector de pantalla dividida (2/4 paneles) — se probó y se
+                  decidió volver a vista única por simplicidad. El mecanismo
+                  completo (renderTabContent, .split-grid, etc.) queda intacto
+                  en el código por si se retoma más adelante; solo se oculta
+                  el control para que no aparezca en la interfaz. */}
             </div>
-            {splitMode&&(
-              <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
-                Cada panel elige su pestaña con los botones de arriba y comparten el activo seleccionado.
-                {esMobile ? " En celular se apilan uno debajo del otro — deslizá para ver los demás." : " Cada panel scrollea independiente."}
-              </div>
-            )}
             {!splitMode&&(
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
                 {[["USA","🇺🇸"],["MERVAL","🇦🇷"],["TODOS","🌎"]].map(([k,l])=>
