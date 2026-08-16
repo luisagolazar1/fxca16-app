@@ -3299,6 +3299,13 @@ export default function App() {
   const [rpCalc,   setRpCalc]     = useState(null);
   const [rpCargando, setRpCargando] = useState(false);
   const [rpRankTab, setRpRankTab] = useState("suben");
+
+  // ── PANTALLA DIVIDIDA ──
+  // splitMode: null (normal) | 2 | 4 — cuántos paneles mostrar a la vez.
+  // paneTabs: qué tab muestra cada panel, independiente entre sí.
+  const [splitMode, setSplitMode] = useState(null);
+  const [paneTabs, setPaneTabs] = useState(["opp", "det", "replay", "cmp"]);
+  const PANE_TABS_DISPONIBLES = [["opp","Oport."],["det","Detalle"],["replay","Replay"],["cmp","Comparar"],["watch","Listas"],["track","Tracker"]];
   const [rpAjustVol, setRpAjustVol] = useState(false);
   const [rpCruce, setRpCruce] = useState(null);
   const [rpCruceCargando, setRpCruceCargando] = useState(false);
@@ -5023,6 +5030,25 @@ export default function App() {
               {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["replay","⏪ Replay"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["quant","🔬 Validación"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
+              <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center"}}>
+                <span style={{fontSize:"7px",color:"#5a8fa8"}}>pantalla:</span>
+                {[[null,"1"],[2,"2"],[4,"4"]].map(([v,l])=>(
+                  <button key={l} onClick={()=>setSplitMode(v)}
+                    title={v?`Dividir en ${v}`:"Vista normal"}
+                    style={{padding:"3px 8px",fontSize:"9px",fontFamily:"inherit",cursor:"pointer",borderRadius:"4px",
+                      background:splitMode===v?"#1a6eff":"#0c1926",color:splitMode===v?"#fff":"#5a8fa8",border:`1px solid ${splitMode===v?"#1a6eff":"#1e3a50"}`}}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {splitMode&&(
+              <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"8px",lineHeight:1.6}}>
+                Cada panel elige su propia pestaña con los botones de arriba. Comparten el activo seleccionado
+                (tocá uno en Oportunidades y se actualiza en Detalle/Replay de los demás paneles).
+              </div>
+            )}
+            {!splitMode&&(
               <div style={{marginLeft:"auto",display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
                 {[["USA","🇺🇸"],["MERVAL","🇦🇷"],["TODOS","🌎"]].map(([k,l])=>
                   <button key={k} className={`btn ${mkt===k?"on":"off"}`} onClick={()=>{setMkt(k);}} style={{padding:"2px 8px",fontSize:"10px"}}>{l}</button>
@@ -5034,7 +5060,7 @@ export default function App() {
                   <button className="btn off" onClick={()=>setTab("sim")} style={{marginLeft:"4px",color:"#ffd700",fontSize:"9px"}}>💡 SIM</button>
                 }
               </div>
-            </div>
+            )}
             <div style={{display:"flex",gap:"12px",padding:"7px 12px",background:"#07101a",borderRadius:"5px",border:"1px solid #0f2235",fontSize:"9px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
               {csvStatus && <span style={{color:"#00ff9d",fontWeight:700,fontSize:"9px"}}>📊 CSV {csvStatus.n}t</span>}
               <span style={{color:nReal>=15?"#00ff9d":nReal>=8?"#ffd700":"#ff9040",fontWeight:700}}>📡 {nReal}/{TICKERS.length} · <span style={{color:"#00d4ff"}}>{priceSrc}</span></span>
@@ -5152,8 +5178,17 @@ export default function App() {
               )}
             </div>
 
+            {/* ── CONTENIDO DE UNA PESTAÑA, parametrizado por paneTab ──
+                Extraido para poder reusarlo en modo pantalla dividida:
+                cada panel llama a esta misma funcion con su propio tab,
+                sin duplicar el codigo de cada vista. En modo normal (1
+                panel) se llama una sola vez con paneTab=tab, asi que el
+                comportamiento por defecto es identico al de antes. ── */}
+            {(() => {
+              const renderTabContent = (paneTab) => (
+                <>
             {/* OPORTUNIDADES TOP P80 */}
-            {tab==="opp"&&(()=>{
+            {paneTab==="opp"&&(()=>{
               // Filtros: sector + alcance (solo señales P80 vs universo completo)
               const seen = new Set();
               const uniq = rows.filter(r => { if(seen.has(r.ticker)) return false; seen.add(r.ticker); return true; });
@@ -5396,7 +5431,7 @@ export default function App() {
               );
             })()}
 
-            {tab==="det"&&(
+            {paneTab==="det"&&(
               <div className="fade">
                 <div style={{display:"flex",gap:"3px",flexWrap:"wrap",marginBottom:"10px"}}>
                   {rows.map(r=>{const g=GR(r.bt.hr);return <button key={r.ticker} className={`btn ${sel?.ticker===r.ticker?"on":"off"}`} onClick={()=>{
@@ -6504,7 +6539,7 @@ export default function App() {
 
             {/* ══ TAB: SEGUIMIENTO ══ */}
             {/* ══ TAB: TRACKER — seguimiento con evidencia hacia adelante ══ */}
-            {tab==="track"&&(()=>{
+            {paneTab==="track"&&(()=>{
               const activos  = tracker.filter(t=>!t.cerrado);
               const cerrados = tracker.filter(t=>t.cerrado);
 
@@ -6704,7 +6739,7 @@ export default function App() {
               );
             })()}
 
-            {tab==="watch"&&(
+            {paneTab==="watch"&&(
               <div className="fade">
                 {/* Barra de listas */}
                 <div style={{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
@@ -6857,7 +6892,7 @@ export default function App() {
 
             {/* ══ TAB: CATEGORÍAS ══ */}
             {/* ══ TAB: REPLAY ══ */}
-            {tab==="replay"&&(()=>{
+            {paneTab==="replay"&&(()=>{
               const r0 = rows.find(x=>x.ticker===rpTicker);
               const q  = rpBarras ? calidadSerie(rpBarras) : null;
               const f  = calidadDe(rpTicker);
@@ -7297,7 +7332,7 @@ export default function App() {
               );
             })()}
 
-            {tab==="cmp"&&(()=>{
+            {paneTab==="cmp"&&(()=>{
               const tickerList = rows.map(r=>r.ticker).sort();
               const rA = rows.find(r=>r.ticker===cmpA);
               const rB = rows.find(r=>r.ticker===cmpB);
@@ -7579,7 +7614,7 @@ export default function App() {
 
 
             {/* ══ TAB: QUANT LAB ══ */}
-            {tab==="quant"&&(
+            {paneTab==="quant"&&(
               <div className="fade">
                 {/* Controles */}
                 <div style={{padding:"10px 12px",background:"#07101a",border:"1px solid #1e3a50",borderRadius:"6px",marginBottom:"10px"}}>
@@ -8120,6 +8155,32 @@ export default function App() {
                 )}
               </div>
             )}
+                </>
+              );
+              if (!splitMode) return renderTabContent(tab);
+              const cols = splitMode === 4 ? 2 : 2;
+              const filas = splitMode === 4 ? 2 : 1;
+              return (
+                <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${filas},1fr)`,gap:"8px"}}>
+                  {paneTabs.slice(0, splitMode).map((pt, i) => (
+                    <div key={i} style={{border:"1px solid #1e3a50",borderRadius:"6px",padding:"8px",background:"#050c1560",minWidth:0,maxHeight:"78vh",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+                      <div style={{display:"flex",gap:"3px",flexWrap:"wrap",marginBottom:"7px",position:"sticky",top:0,background:"#050c15",paddingBottom:"5px",zIndex:1}}>
+                        {PANE_TABS_DISPONIBLES.map(([k,l])=>(
+                          <button key={k}
+                            onClick={()=>setPaneTabs(p=>{const n=[...p]; n[i]=k; return n;})}
+                            style={{padding:"3px 6px",fontSize:"7px",fontFamily:"inherit",cursor:"pointer",borderRadius:"3px",
+                              background:pt===k?"#1a6eff":"#0c1926",color:pt===k?"#fff":"#5a8fa8",border:`1px solid ${pt===k?"#1a6eff":"#1e3a50"}`}}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                      {renderTabContent(pt)}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
 
             {/* OPTIMIZADOR */}
 
