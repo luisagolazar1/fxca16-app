@@ -3334,6 +3334,7 @@ export default function App() {
   // splitMode: null (normal) | 2 | 4 — cuántos paneles mostrar a la vez.
   // paneTabs: qué tab muestra cada panel, independiente entre sí.
   const [splitMode, setSplitMode] = useState(null);
+  const [calFiltro, setCalFiltro] = useState("todos");
   // Ancho real de la ventana — la grilla de paneles usa CSS (media query en
   // index.css) para apilarse en columna en celular, pero el maxHeight y el
   // padding de cada panel se ajustan acá porque eso no depende solo del
@@ -5132,7 +5133,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["replay","⏪ Replay"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["quant","🔬 Validación"]].map(([k,l])=>
+              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["replay","⏪ Replay"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["cal","📅 Calendario"],["quant","🔬 Validación"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               {/* Selector de pantalla dividida (2/4 paneles) — se probó y se
@@ -7838,6 +7839,92 @@ export default function App() {
               );
             })()}
 
+
+            {/* ══ TAB: CALENDARIO ══ */}
+            {paneTab==="cal"&&(()=>{
+              const hoy = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
+              const hoyStr = hoy.toISOString().slice(0,10);
+              const diasHasta = f => Math.round((new Date(f) - new Date(hoyStr)) / 86400000);
+
+              // Reuniones de la Fed — futuras, con la ultima pasada como referencia
+              const fedEventos = FOMC_2026.filter(f=>f>=hoyStr).map(f=>({
+                tipo:"fed", fecha:f, dias:diasHasta(f),
+                titulo:"Reunión FOMC", sub:"Decisión de tasas + comunicado 14:00 ET",
+              }));
+
+              // Balances — todos los activos con fecha "prox" futura conocida
+              const earn = DATA_MOD?.FXCA16_EARNINGS || {};
+              const earnEventos = [];
+              for (const [tk, info] of Object.entries(earn)) {
+                if (!info?.prox || info.prox < hoyStr) continue;
+                const meta = TICKERS_TODOS.find(t=>t.ticker===tk);
+                earnEventos.push({
+                  tipo:"earn", fecha:info.prox, dias:diasHasta(info.prox),
+                  titulo:tk, sub:meta?.name||tk, sector:meta?.sector||"—",
+                  moneda:meta ? (TICKERS_MERVAL.some(m=>m.ticker===tk)?"ARS":"USD") : "USD",
+                });
+              }
+
+              const filtroCal = calFiltro;
+              const todosEventos = [...fedEventos, ...earnEventos].sort((a,b)=>a.dias-b.dias);
+              const visibles = filtroCal==="fed" ? fedEventos
+                : filtroCal==="earn" ? earnEventos
+                : todosEventos;
+
+              return (
+                <div className="fade">
+                  <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"3px"}}>📅 CALENDARIO — QUÉ VIENE</div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.6,marginBottom:"9px"}}>
+                      Fechas conocidas de antemano — el único tipo de catalizador que se puede anticipar de verdad.
+                      No dice qué va a pasar, solo cuándo puede haber un movimiento que no tenga que ver con la técnica.
+                    </div>
+                    <div style={{display:"flex",gap:"4px"}}>
+                      {[["todos",`Todos (${todosEventos.length})`],["fed",`🏛️ Fed (${fedEventos.length})`],["earn",`📊 Balances (${earnEventos.length})`]].map(([k,l])=>(
+                        <button key={k} onClick={()=>setCalFiltro(k)}
+                          style={{flex:1,padding:"6px",fontSize:"8px",fontFamily:"inherit",cursor:"pointer",borderRadius:"4px",
+                            background:filtroCal===k?"#1a6eff":"#0c1926",color:filtroCal===k?"#fff":"#5a8fa8",
+                            border:`1px solid ${filtroCal===k?"#1a6eff":"#1e3a50"}`,fontWeight:filtroCal===k?700:400}}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {earnEventos.length===0&&(filtroCal==="todos"||filtroCal==="earn")&&(
+                    <div style={{...semBox("#ffd700","10"),padding:"9px 10px",marginBottom:"10px"}}>
+                      <div style={{fontSize:"7px",color:"#ffd700",lineHeight:1.6}}>
+                        ⚠ Sin fechas de balance cargadas todavía. El calendario de earnings del sistema está vacío —
+                        no significa que ningún activo reporte pronto, significa que esa fuente de datos no trajo
+                        resultados. Verificá manualmente antes de operar cerca de un balance.
+                      </div>
+                    </div>
+                  )}
+
+                  {visibles.length===0 ? (
+                    <div style={{textAlign:"center",padding:"20px",color:"#5a8fa8",fontSize:"9px"}}>Sin eventos en este filtro.</div>
+                  ) : visibles.map((ev,i)=>{
+                    const urgente = ev.dias<=3;
+                    const color = ev.tipo==="fed" ? (urgente?"#ff3355":"#ffd700") : (urgente?"#ff9040":"#00d4ff");
+                    return (
+                      <div key={i}
+                        onClick={ev.tipo==="earn" ? ()=>{ const r=rows.find(x=>x.ticker===ev.titulo); setSel(r||{ticker:ev.titulo,moneda:ev.moneda,name:ev.sub,sector:ev.sector}); setTab("det"); } : undefined}
+                        style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 10px",marginBottom:"5px",
+                          borderRadius:"5px",cursor:ev.tipo==="earn"?"pointer":"default",...semBox(color,"10")}}>
+                        <div style={{width:"38px",textAlign:"center",flexShrink:0}}>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:"18px",color,lineHeight:1}}>{ev.dias===0?"HOY":ev.dias}</div>
+                          {ev.dias!==0&&<div style={{fontSize:"6px",color:"#5a8fa8"}}>días</div>}
+                        </div>
+                        <span style={{fontSize:"14px"}}>{ev.tipo==="fed"?"🏛️":"📊"}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:ev.tipo==="fed"?"9px":"12px",fontFamily:ev.tipo==="fed"?"inherit":"'Bebas Neue'",color:"#e8f4ff",fontWeight:ev.tipo==="fed"?700:400}}>{ev.titulo}</div>
+                          <div style={{fontSize:"7px",color:"#8fb4cc"}}>{ev.sub}{ev.sector&&ev.sector!=="—"?" · "+ev.sector:""}</div>
+                        </div>
+                        <span style={{fontSize:"7px",color:"#5a8fa8",flexShrink:0}}>{ev.fecha}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* ══ TAB: QUANT LAB ══ */}
             {paneTab==="quant"&&(
