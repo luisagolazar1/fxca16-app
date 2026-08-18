@@ -415,3 +415,144 @@ reglas precursoras: la que se encendía más temprano ("RSI 50-65") rendía
 precio.** Todo indicador calculado a partir del precio va a llegar, por
 construcción, después de que el precio se movió. Ver la sección de
 disparadores no-precio en `docs/disparadores.md`.
+
+---
+
+## 2026-08-17 — Patrón EVO+reversión+RSI+MACD: tres corridas, mismo veredicto
+
+Continuación del hallazgo del 2026-08-03 (mismo patrón, primera vez).
+Se probó en tres muestras de tamaño y método crecientes; las tres
+descartan la hipótesis, lo que la deja mucho más firme que un solo test.
+
+### Corrida 1 — top 20 ganadores de 30 días
+
+Encontró 27 casos con la condición (EVO>50, reversión>50, RSI<50,
+MACD<0) dentro del top 20 de mejor rendimiento a 30 días: WR 91-100% a
+10-20 días. **Con control de sesgo de selección** (misma condición en
+el resto del universo, no solo en los ganadores ya conocidos): WR
+51-60%, indistinguible de azar.
+
+### Corrida 2 — reconstrucción diaria sobre 10 años
+
+Como `combinedSignal()` (de donde salen EVO y reversión) está calibrada
+para la serie horaria (~1 año de historia), se reconstruyó una versión
+compatible con series diarias para poder testear 10 años. **Validación
+de fidelidad: solo 34% de coincidencia de señal** contra la función
+real, con diferencias de 13-18 puntos en EVO/reversión — los períodos
+de la fórmula (24 barras, 6 barras) fueron calibrados para horas, no
+para días, y no trasladan su significado. Aun así, usando solo los
+componentes que sí traducen limpio a diario (RSI-14, MACD, Bollinger-20
+estándar, sin el componente EVO): **sin edge en ningún test** — 79.019
+casos sobre 10 años, retorno CON la condición prácticamente idéntico a
+SIN ella en los 5 horizontes (máx t=1.67), consistencia anual 55%
+(debajo del umbral 65%), exceso ajustado por volatilidad 0.12% (t=0.77).
+
+### Corrida 3 — año completo con la función REAL (sin aproximación)
+
+Como el año calza con la cobertura horaria, se pudo usar
+`combinedSignal()` real (no la reconstrucción). 1.337 casos encontrados
+sobre 153 tickers. **Confirma la corrida 1**: dentro del top 20 (sesgado)
+WR 66% a 20d; en el resto del universo (control real), WR 50% — moneda
+al aire.
+
+### Extensión: quintil de alfa + Fibonacci
+
+Se cruzó el patrón con el quintil de alfa cross-sectional (calculado
+punto-en-el-tiempo para cada fecha) y el nivel de Fibonacci más cercano
+(swing de 60 días). De 35 combinaciones posibles (5 quintiles × 7
+niveles), la mejor (Q5 + retroceso profundo 78.6%/100%) daba +4.83% a
+20d, WR 60% — pero:
+- t corregido por solapamiento = 0.57 (con Bonferroni por 35
+  comparaciones, haría falta |t|>2.9)
+- muestra efectiva real: **8**, no 164
+- dentro del top20 (sesgado): +15.32%, WR 80% — fuera (control real):
+  +3.37%, WR 57%, ya sin significancia
+
+Se amplió además la ventana a día-por-día (1 a 15 días) para esa misma
+combinación: **el día 7 específicamente es el punto de la curva donde
+el combo MENOS se distingue del control** (combo +0.63% vs. control
++0.66%, t=-0.02). Ningún día de los 15 alcanza significancia (máx
+t=0.46). Sin sesgo, el día 7 da +0.07% con 46% de aciertos.
+
+**Veredicto: descartada en las tres escalas probadas.** No es un
+patrón chico que necesite más ajuste — es sistemáticamente ausente,
+independientemente de cómo se lo mida.
+
+---
+
+## 2026-08-17 — Discrepancia entre los 20 alcistas y los 20 bajistas del último año: solo un indicador se distingue, y no sobrevive validación
+
+**Origen:** comparar los 9 indicadores técnicos y fundamentales, medidos
+**al inicio** del período (sin lookahead), entre el top 20 de mejor y
+peor rendimiento del último año.
+
+**Primer resultado:** de RSI, MACD, distancia a SMA50/200, volatilidad,
+calidad fundamental, margen, deuda y **distancia al máximo de 52
+semanas** — solo el último cruzó significancia (t=2.57). Los activos
+que estaban cerca de sus máximos al arrancar el período rindieron mejor
+(+29.0%, WR 84%) que los muy castigados (-5.2%, WR 30%), efecto
+contrario a la intuición de "está barato, tiene que rebotar" y más
+cercano al momentum académico (Jegadeesh-Titman).
+
+**Validación con ventanas móviles sobre 10 años (13.739 observaciones,
+cada 21 días, forward 252d):** el efecto **desaparece por completo**.
+Los quintiles quedan planos (+36.7% a +42.5%, sin orden), t corregido
+por solapamiento = 0.10. Consistencia anual 5/9 (56%, debajo del umbral
+65%), con variación enorme entre años (2020: -35pp de diferencia; 2022:
++82pp). Lo único donde aparece significancia es en los quintiles de
+volatilidad más alta (44-71% anual) — ahí es exposición a riesgo en un
+mercado que subió, no señal predictiva; en volatilidad normal (la
+mayoría del universo) el efecto es nulo (t entre -0.20 y 0.47).
+
+**Por qué el primer test se veía tan bien:** comparar dos grupos
+definidos por su resultado ya conocido (top 20 ganadores vs. top 20
+perdedores) es la misma trampa de sesgo de selección de siempre, en otra
+forma. Con ventanas móviles sobre todo el universo se disuelve.
+
+**Veredicto: descartado como indicador.** No se agregó a la app.
+
+---
+
+## 2026-08-17 — Reacción del mercado a los anuncios FOMC: 78 eventos, 2017-2026
+
+**Método:** calendario histórico completo de anuncios FOMC (fuente:
+federalreserve.gov), trayectoria del universo día -5 a +20 alrededor de
+cada anuncio, clasificando por si la reacción del día 0 fue positiva o
+negativa. A diferencia del test de agosto (solo 4 reuniones de 2026,
+"sin conclusión" por falta de muestra), acá la muestra es de 76 eventos
+con datos suficientes — mucho más sólida.
+
+**Resultado:**
+- **Antes del anuncio no hay nada:** días -5 a -1 planos, sin diferencia
+  entre lo que después resultó positivo o negativo. El mercado no
+  anticipa la decisión.
+- **El salto ocurre en el día 0**, de golpe: +1.27% tras reacción
+  positiva vs. -0.94% tras negativa (t=11.34).
+- **Después, la brecha se mantiene y crece** hasta +4.47% vs +0.01% al
+  día 20 (t significativo todos los días) — PERO al descontar el salto
+  del día 0 y medir solo el recorrido posterior (día 0→20): +3.15% vs
+  +0.95%, t=1.29, **no significativo**. La mayor parte de la brecha es
+  el salto inicial que nunca se revierte, no una tendencia posterior
+  capturable.
+- Consistencia anual: 5/7 años con muestra suficiente (71%), pero con
+  dispersión grande entre años (2019/2020 con +15pp de diferencia,
+  2018 con -3pp).
+
+**Impacto sectorial:** se probó si algún sector concentra el impacto
+(18 sectores, comparando volatilidad y retorno medio en días FOMC vs.
+días normales). Ningún sector muestra volatilidad desproporcionada
+(ratios 0.56x-1.37x, todos cerca de 1). Solo "Consumo" cruza
+significancia en retorno medio (t=-2.02), pero con 18 comparaciones
+es exactamente el tipo de falso positivo esperable por azar — no
+sobrevive sin corrección. El movimiento post-Fed parece ser de mercado
+amplio, no de rotación sectorial.
+
+**Salvedad metodológica:** la clasificación positiva/negativa se hizo
+por la reacción del mercado ese día, no por el contenido del
+comunicado — es circular por diseño. No se puede afirmar "un anuncio
+dovish produce X", solo "cuando el mercado ya reaccionó bien, después
+pasó Y" (y ese "después" no es significativo).
+
+**No se implementó nada en la app**: el hallazgo es informativo
+(contexto de por qué se mueve el mercado en ventanas FOMC — ver el
+panel `estadoFOMC()` ya existente), no una señal operable.
