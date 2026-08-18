@@ -791,8 +791,28 @@ def main():
         print(f"✅ Diario: {len(daily_result)} tickers | mediana {n_dias} ruedas | {total:,} barras")
 
     # ── PASO 2c: Calendario de earnings real ──
+    #
+    # El fetch automatico (descargar_earnings) lleva 3 intentos fallidos
+    # en produccion — sin acceso al log del Action no se pudo diagnosticar
+    # mas. Se carga data/balances_manual.json (calendario cargado a mano,
+    # ver data/README.md) como PISO: se fusiona con lo que ya esta en
+    # data.js sin pisar nada, asi que aunque el fetch siga sin traer nada,
+    # el calendario manual queda disponible igual. Si el fetch algun dia
+    # empieza a funcionar, sus resultados quedan por encima (mas frescos).
     todos_tk = USA_TICKERS + MERVAL_TICKERS_YF
     earnings_prev = leer_bloque_existente("FXCA16_EARNINGS")
+    try:
+        with open("data/balances_manual.json") as fh:
+            manual = json.load(fh)
+        antes = len(earnings_prev)
+        for tk, info in manual.items():
+            if tk not in earnings_prev:
+                earnings_prev[tk] = info
+        agregados = len(earnings_prev) - antes
+        if agregados:
+            print(f"📋 Calendario manual: +{agregados} tickers (data/balances_manual.json)")
+    except FileNotFoundError:
+        pass
     refrescar, motivo = necesita_refresco_semanal(earnings_prev, todos_tk)
     if len(earnings_prev) < len(todos_tk) * 0.9:
         refrescar, motivo = True, f"faltan {len(todos_tk)-len(earnings_prev)} tickers"
