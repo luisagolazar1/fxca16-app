@@ -5257,13 +5257,18 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                          <button className="btn off" style={{marginTop:"6px",width:"100%",fontSize:"8px",color:"#ffd700",borderColor:"#ffd70040"}}
-                            onClick={async(e)=>{e.stopPropagation();
-                              const res = await saveTickerToGitHub(r.ticker);
-                              if(res?.already) alert(`${r.ticker} ya está en seguimiento`);
-                              else if(res?.ok) alert(`✅ ${r.ticker} agregado al seguimiento permanente`);
-                              else alert(`❌ Error`);
-                            }}>⭐ GUARDAR EN SEGUIMIENTO</button>
+                          <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
+                            <button className="btn off" style={{flex:1,fontSize:"8px",color:"#ffd700",borderColor:"#ffd70040"}}
+                              onClick={async(e)=>{e.stopPropagation();
+                                const res = await saveTickerToGitHub(r.ticker);
+                                if(res?.already) alert(`${r.ticker} ya está en seguimiento`);
+                                else if(res?.ok) alert(`✅ ${r.ticker} agregado al seguimiento permanente`);
+                                else alert(`❌ Error`);
+                              }}>⭐ LISTAS</button>
+                            <button className="btn off" style={{flex:1,fontSize:"8px",color:"#00d4ff",borderColor:"#00d4ff40"}}
+                              onClick={(e)=>{e.stopPropagation(); marcarSeguimiento(r);}}>
+                              📌 TRACKER</button>
+                          </div>
                         </div>
                       );
                     })}
