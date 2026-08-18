@@ -675,6 +675,36 @@ const HALLAZGOS_DESCARTADOS = [
     veredicto: "sobreajustado a su ventana de desarrollo",
     nota: "Lo que sí es cierto y vale rescatar: el alfa dispara ANTES que el score técnico — Q5 compra papeles que vienen -6.9% en 20 días, contra el score que marca COMPRA FUERTE después de +13.7%. El mecanismo es el correcto, el problema es que el ranking no predice. Salvedad: la reproducción usa la fórmula documentada y puede diferir en detalles de la implementación real de alpha.js.",
   },
+  {
+    fecha: "2026-08-17",
+    hipotesis: "Patrón EVO>50 + reversión>50 + RSI<50 + MACD<0 anticipa un giro alcista",
+    origen: "Continuación del hallazgo del 03-08 (mismo patrón, primera vez) — probado en tres escalas de muestra y método crecientes",
+    metodo: "Corrida 1: top 20 ganadores de 30 días. Corrida 2: reconstrucción diaria sobre 10 años (validada al 34% de fidelidad contra la función real). Corrida 3: año completo con combinedSignal() real, sin aproximación. Más una extensión cruzando quintil de alfa y nivel de Fibonacci.",
+    n: "27 casos (corrida 1) · 79.019 casos/10 años (corrida 2) · 1.337 casos/153 tickers (corrida 3)",
+    resultado: "Corrida 1: WR 91-100% dentro del top20 (sesgado) → 51-60% con control (azar). Corrida 2: sin edge en ningún test, consistencia anual 55% (bajo el umbral 65%). Corrida 3: confirma la 1 — WR 66% sesgado vs 50% en control real. La extensión con quintil+Fibonacci encontró una combinación con +4.83% a 20d, pero con muestra efectiva real de 8 (no 164) y t=0.57 tras corrección — y el día 7 específico es el punto donde MENOS se distingue del control (t=-0.02).",
+    veredicto: "descartada en las tres escalas",
+    nota: "No es un patrón chico que necesite más ajuste — está sistemáticamente ausente, independientemente de cómo se lo mida. El patrón de sesgo de selección (verse espectacular dentro de un grupo ya elegido por su resultado, desaparecer en el control) se repitió de forma idéntica en las tres corridas.",
+  },
+  {
+    fecha: "2026-08-17",
+    hipotesis: "Los 20 activos que más subieron y los 20 que más bajaron en el último año se distinguen por sus indicadores técnicos",
+    origen: "Comparar los extremos opuestos para buscar un patrón común, en vez de solo mirar ganadores",
+    metodo: "9 indicadores medidos al inicio del período (sin lookahead): RSI, MACD, distancia a SMA50/200, volatilidad anual, distancia al máximo de 52 semanas, calidad fundamental, margen neto, deuda/patrimonio. El único que cruzó significancia (distancia al máximo, t=2.57) se validó después con ventanas móviles sobre 10 años.",
+    n: "20 vs 20 (comparación inicial) · 13.739 observaciones (validación con ventanas móviles)",
+    resultado: "8 de 9 indicadores sin diferencia significativa. El único con t=2.57 (activos cerca de su máximo rindieron mejor) se desarmó al validar: con ventanas móviles sobre 10 años el t corregido por solapamiento cae a 0.10, consistencia anual 5/9 (56%, bajo umbral), y lo poco que sobrevivía en los quintiles de volatilidad alta resultó ser exposición a volatilidad, no señal (en los quintiles normales, t entre -0.20 y 0.47).",
+    veredicto: "descartada",
+    nota: "El t=2.57 inicial era un artefacto de comparar dos grupos definidos por su propio resultado (top 20 vs bottom 20 ya conocidos) — 151 activos que en realidad compartían el mismo año, mismo ciclo, misma Fed. No eran observaciones independientes. Mismo error de fondo que el hallazgo de MACD del 03-08, en otra forma.",
+  },
+  {
+    fecha: "2026-08-17",
+    hipotesis: "Reacción del mercado a los anuncios FOMC: cuándo se mueve, cuánto, y qué sector impacta más",
+    origen: "Ampliar el hallazgo del 03-08 (4 reuniones de 2026, sin conclusión) con el calendario histórico completo",
+    metodo: "78 anuncios FOMC 2017-2026 (fuente federalreserve.gov), trayectoria del universo día -5 a +20, clasificado por si la reacción del día 0 fue positiva o negativa. Impacto sectorial: 22 sectores, retorno en días FOMC vs. retorno normal del mismo sector (no contra cero).",
+    n: "76 eventos con datos suficientes · 22 sectores, hasta 1.976 observaciones por sector",
+    resultado: "El mercado NO anticipa (días -5 a -1 planos). El salto ocurre entero el día 0 (+1.27% vs -0.94%, t=11.34) y no se revierte, pero tampoco se extiende: descontando el día 0, el recorrido posterior no es significativo (t=1.29). Por sector: ningún sector es desproporcionadamente más volátil en días FOMC (todos los ratios ≤1.06x). En sesgo direccional, 6 de 22 cruzan significancia — Tecnología el más sólido (t=3.73, n=1.790), seguido de Consumo (negativo, t=-3.51), Bonos, Materiales y Salud (negativo). Financiero, el candidato obvio por tasas, no muestra nada (t=0.64).",
+    veredicto: "informativo, no operable",
+    nota: "La clasificación positiva/negativa se hizo por la reacción del mercado ese día, no por el contenido del comunicado — es circular por diseño. La diferencia sectorial es la reacción del día 0 en sí, no una ventaja capturable después de verla. Ya implementado en la app como contexto (estadoFOMC()); no se agregó nada nuevo porque no hay ventaja operable que agregar.",
+  },
 ];
 
 // ── TASAS BASE HISTÓRICAS POR BANDA DE RSI ──

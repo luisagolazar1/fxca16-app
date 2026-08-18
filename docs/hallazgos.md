@@ -538,14 +538,29 @@ con datos suficientes — mucho más sólida.
   dispersión grande entre años (2019/2020 con +15pp de diferencia,
   2018 con -3pp).
 
-**Impacto sectorial:** se probó si algún sector concentra el impacto
-(18 sectores, comparando volatilidad y retorno medio en días FOMC vs.
-días normales). Ningún sector muestra volatilidad desproporcionada
-(ratios 0.56x-1.37x, todos cerca de 1). Solo "Consumo" cruza
-significancia en retorno medio (t=-2.02), pero con 18 comparaciones
-es exactamente el tipo de falso positivo esperable por azar — no
-sobrevive sin corrección. El movimiento post-Fed parece ser de mercado
-amplio, no de rotación sectorial.
+**Impacto sectorial:** se midió de dos formas. Primero, si algún sector
+es *desproporcionadamente más volátil* en días FOMC que en un día
+cualquiera (ratio reacción-Fed / volatilidad normal del sector,
+22 sectores, 76 eventos): **ningún sector supera 1.06x** — ninguno
+reacciona más fuerte a la Fed de lo que ya reacciona a diario. Segundo,
+y más relevante, si hay un *sesgo direccional* — retorno medio en días
+FOMC comparado contra el retorno medio normal de ESE MISMO sector (no
+contra cero, que sería engañoso por el drift propio de cada sector):
+
+| Sector | Retorno FOMC | Retorno normal | Diferencia | t |
+|---|---|---|---|---|
+| Tecnología | +0.390% | +0.122% | +0.267 pp | **3.73** |
+| Consumo | -0.144% | +0.075% | -0.219 pp | **-3.51** |
+| Bonos | +0.289% | -0.016% | +0.304 pp | **3.12** (n=77, chico) |
+| Materiales | +0.643% | +0.196% | +0.447 pp | **2.64** |
+| Salud | -0.055% | +0.076% | -0.131 pp | **-2.23** |
+| Commodities | +0.314% | +0.050% | +0.264 pp | 1.97 |
+
+6 de 22 sectores cruzan significancia — con Bonferroni por 22
+comparaciones (umbral ≈2.8) quedan 4: Tecnología, Consumo, Bonos y
+Materiales. **Financiero, el candidato "obvio" por sensibilidad a
+tasas, no muestra nada** (t=0.64) — contra la intuición típica.
+Tecnología es el más sólido: mayor muestra (n=1.790) y el t más alto.
 
 **Salvedad metodológica:** la clasificación positiva/negativa se hizo
 por la reacción del mercado ese día, no por el contenido del
@@ -554,5 +569,8 @@ dovish produce X", solo "cuando el mercado ya reaccionó bien, después
 pasó Y" (y ese "después" no es significativo).
 
 **No se implementó nada en la app**: el hallazgo es informativo
-(contexto de por qué se mueve el mercado en ventanas FOMC — ver el
-panel `estadoFOMC()` ya existente), no una señal operable.
+(contexto de por qué se mueve el mercado en ventanas FOMC, y qué
+sector mirar primero — ver el panel `estadoFOMC()` ya existente), no
+una señal operable. La diferencia sectorial es la reacción del día 0,
+no una ventaja capturable después de verla (ver el punto anterior:
+el recorrido posterior a la reacción no es significativo).
