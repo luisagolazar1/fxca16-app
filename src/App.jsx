@@ -3324,7 +3324,8 @@ export default function App() {
   // ── REPLAY: reconstruye qué decía el sistema en una fecha pasada ──
   const [rpTicker, setRpTicker]   = useState("");
   const [rpInput,  setRpInput]    = useState("");
-  const [rpVent,   setRpVent]     = useState(30);
+  const [rpVent,   setRpVent]     = useState(30); // periodo del grafico del activo puntual
+  const [rpVentRank, setRpVentRank] = useState(30); // periodo del ranking top20, independiente
   const [rpSel,    setRpSel]      = useState(null);
   const [rpCalc,   setRpCalc]     = useState(null);
   const [rpCargando, setRpCargando] = useState(false);
@@ -4532,7 +4533,7 @@ export default function App() {
 
   const rpVisibles = useMemo(() => rpDias.slice(-rpVent), [rpDias, rpVent]);
 
-  useEffect(() => { setRpCruce(null); }, [rpRankTab, rpVent]);
+  useEffect(() => { setRpCruce(null); }, [rpRankTab, rpVentRank]);
 
   // ── RANKING: quiénes subieron, cayeron y se mantuvieron en el período ──
   //
@@ -4554,12 +4555,12 @@ export default function App() {
     const sectorDe = {}; for (const t of TICKERS_TODOS) sectorDe[t.ticker] = t.sector;
     const out = [];
     for (const [tk, bars] of Object.entries(fuente)) {
-      if (!bars || bars.length < rpVent + 5) continue;
+      if (!bars || bars.length < rpVentRank + 5) continue;
       const c = bars.map(b => b.c);
       const px = c[c.length - 1];
-      const ini = c[c.length - 1 - rpVent];
+      const ini = c[c.length - 1 - rpVentRank];
       if (!ini || !px || !isFinite(ini) || !isFinite(px)) continue;
-      const tramo = bars.slice(-rpVent);
+      const tramo = bars.slice(-rpVentRank);
       const sinVol = tramo.filter(b => !b.v).length / tramo.length;
       let congelado = 0;
       for (let i = 1; i < tramo.length; i++) if (tramo[i].c === tramo[i-1].c) congelado++;
@@ -4618,7 +4619,7 @@ export default function App() {
       concSuben: concentracion(suben),
       concCaen: concentracion(caen),
     };
-  }, [rpVent, rows]);
+  }, [rpVentRank, rows]);
 
   // Al tocar una barra: recalcular la señal con la serie cortada ahí
   const rpAnalizar = useCallback((dia) => {
@@ -4747,7 +4748,7 @@ export default function App() {
       try {
         const barras = rowDataRef.current[t.tk]?.length >= 80 ? rowDataRef.current[t.tk] : CSV_DATA_EMBEDDED?.[t.tk];
         const dias = barras?.length >= 80 ? construirDiasDe(barras) : null;
-        const ventana = dias ? dias.slice(-rpVent) : [];
+        const ventana = dias ? dias.slice(-rpVentRank) : [];
         if (!ventana.length || ventana.length < 5) {
           items.push({ tk: t.tk, ret: t.ret, diaSenal: null, fechaSenal: null, pctConsumido: 0 });
         } else {
@@ -4786,7 +4787,7 @@ export default function App() {
       }
     };
     setTimeout(procesarUno, 15);
-  }, [rpRankTab, rpRanking, rpVent, W, construirDiasDe]);
+  }, [rpRankTab, rpRanking, rpVentRank, W, construirDiasDe]);
 
   const opps=useMemo(()=>rows.filter(r=>r.sig&&r.sig.sig!=="NEUTRAL"&&r.sig.above_p80).sort((a,b)=>b.sig.conf-a.sig.conf),[rows]);
   const srtd=useMemo(()=>[...rows].sort((a,b)=>{
@@ -7156,11 +7157,11 @@ export default function App() {
                   {/* ── RANKING DEL PERÍODO ── */}
                   <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px",flexWrap:"wrap",gap:"6px"}}>
-                      <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>🏆 RANKING · ÚLTIMOS {rpVent} DÍAS</span>
+                      <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>🏆 RANKING · ÚLTIMOS {rpVentRank} DÍAS</span>
                       <div style={{display:"flex",gap:"3px"}}>
                         {[5,15,30,60,90].map(v=>(
-                          <button key={v} className={`btn ${rpVent===v?"on":"off"}`} style={{padding:"3px 7px",fontSize:"7px"}}
-                            onClick={()=>setRpVent(v)}>{v}D</button>
+                          <button key={v} className={`btn ${rpVentRank===v?"on":"off"}`} style={{padding:"3px 7px",fontSize:"7px"}}
+                            onClick={()=>setRpVentRank(v)}>{v}D</button>
                         ))}
                       </div>
                     </div>
@@ -7270,9 +7271,9 @@ export default function App() {
                                 </div>
                                 <div style={{fontSize:"7px",color:"#b0d4e8",marginTop:"2px",lineHeight:1.5}}>
                                   {it.diaSenal==null ? (
-                                    <span style={{color:"#5a8fa8"}}>Nunca marcó {rpRankTab==="suben"?"COMPRA":"VENTA"} en estos {rpVent} días</span>
+                                    <span style={{color:"#5a8fa8"}}>Nunca marcó {rpRankTab==="suben"?"COMPRA":"VENTA"} en estos {rpVentRank} días</span>
                                   ) : (
-                                    <>Marcó {rpRankTab==="suben"?"COMPRA":"VENTA"} el día <strong>{it.diaSenal}</strong> de {rpVent}
+                                    <>Marcó {rpRankTab==="suben"?"COMPRA":"VENTA"} el día <strong>{it.diaSenal}</strong> de {rpVentRank}
                                     {" "}({it.fechaSenal}) — para entonces ya llevaba <strong>{it.pctConsumido.toFixed(0)}%</strong> del
                                     movimiento total consumido.</>
                                   )}
