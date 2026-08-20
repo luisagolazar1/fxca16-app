@@ -5570,10 +5570,17 @@ export default function App() {
                           <span style={{color:TC[s.trend],fontSize:"10px"}}>{TI[s.trend]} {s.trend}</span>
                         </div>}
                       </div>
-                      <div style={{textAlign:"center",padding:"12px 20px",background:g.c+"10",border:`1px solid ${g.c}30`,borderRadius:"6px"}}>
-                        <div style={{fontFamily:"'Bebas Neue'",fontSize:"38px",color:g.c,lineHeight:1}}>{g.l}</div>
-                        <div style={{fontSize:"9px",color:g.c}}>{sel.bt.hr}%</div>
-                      </div>
+                      {sel.bt.n>0 ? (
+                        <div style={{textAlign:"center",padding:"12px 20px",background:g.c+"10",border:`1px solid ${g.c}30`,borderRadius:"6px"}}>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:"38px",color:g.c,lineHeight:1}}>{g.l}</div>
+                          <div style={{fontSize:"9px",color:g.c}}>{sel.bt.hr}%</div>
+                        </div>
+                      ) : (
+                        <div style={{textAlign:"center",padding:"12px 16px",background:"#5a8fa810",border:"1px solid #5a8fa830",borderRadius:"6px"}}>
+                          <div style={{fontSize:"9px",color:"#5a8fa8"}}>sin backtest</div>
+                          <div style={{fontSize:"7px",color:"#4a7a9b"}}>0 operaciones</div>
+                        </div>
+                      )}
                     </div>
 
                     {s&&<div className="card" style={{padding:"12px",marginBottom:"10px"}}>
@@ -5671,6 +5678,7 @@ export default function App() {
                       </div>
                     </div>}
 
+                    {sel.bt.n>0 ? (<>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(85px,1fr))",gap:"5px",marginBottom:"9px"}}>
                       {(verBacktest?[
                         {l:"EF%",v:`${sel.bt.hr}%`,c:g.c},
@@ -5698,6 +5706,15 @@ export default function App() {
                       style={{background:"transparent",border:"none",padding:"2px 0 8px",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
                       {verBacktest ? "▾ menos métricas" : "▸ 5 métricas más del backtest"}
                     </button>
+                    </>) : (
+                      <div style={{...semBox("#5a8fa8","0c"),padding:"9px 10px",marginBottom:"9px"}}>
+                        <div style={{fontSize:"7px",color:"#8fb4cc"}}>
+                          Sin operaciones en el backtest para este activo (0 trades) — no hay suficiente historia
+                          o el sistema nunca disparó una señal accionable en el período. No es un "0%" de rendimiento,
+                          es ausencia de datos.
+                        </div>
+                      </div>
+                    )}
 
                     {/* ══ VEREDICTO FINAL ══ */}
                     {(()=>{
@@ -6427,6 +6444,7 @@ export default function App() {
                       );
                     })()}
 
+                    {sel.bt.n>0 && (<>
                     <div className="card" style={{padding:"10px",marginBottom:"9px"}}>
                       <div style={{fontSize:"8px",color:"#4a7a9b",marginBottom:"6px"}}>EQUITY CURVE</div>
                       <div style={{overflowX:"auto"}}>
@@ -6456,6 +6474,7 @@ export default function App() {
                         </table>
                       </div>
                     </div>
+                    </>)}
                   </div>;
                 })()}
 
