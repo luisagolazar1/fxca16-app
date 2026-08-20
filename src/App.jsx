@@ -739,6 +739,26 @@ const RSI_TASAS_BASE = [
 ];
 const RSI_BASE_PROM_UP = 21.4;  // promedio general de P(+4%) en el universo
 
+// ── VOLUMEN RELATIVO vs MEDIA PROPIA DEL ACTIVO ──
+// Media anual de vol_24h por activo (152 activos, ultimo año). Cada activo
+// tiene su nivel normal de actividad: comparar contra un umbral global
+// mezclaba peras con manzanas. Validado: cuando vol_24h supera la media
+// PROPIA del activo, sube 2.66pp mas seguido al dia siguiente, controlando
+// por fecha Y por volatilidad (t=3.14).
+// SALVEDAD: efecto chico (WR ~47%->50%), NO cubre costos de operar
+// (1.2-1.8%), y solo 51%% de las comparaciones dan positivo — el promedio
+// lo empujan pocos casos grandes, no es consistente. Es contexto, no señal.
+const VOL_MEDIA_ANUAL = {"AAL":0.921,"AAPL":1.138,"ABBV":1.507,"ABT":1.434,"ADBE":1.187,"AGRO":1.452,"ALUA":1.314,"AMD":0.773,"AMT":1.618,"AMZN":1.089,"AUSO":1.481,"AVGO":1.085,"AXP":1.5,"BA":1.172,"BABA":0.964,"BAC":1.244,"BHIP":1.195,"BLK":1.642,"BMA":1.26,"BOLT":1.483,"BPAT":1.273,"BRK-B":1.396,"BYMA":1.498,"C":1.28,"CADO":1.009,"CAH":1.738,"CAPX":1.37,"CAT":1.282,"CECO2":1.939,"CELU":1.275,"CEPU":1.323,"CGPA2":1.275,"COF":1.465,"COIN":0.937,"COME":1.519,"COST":1.397,"CRM":1.16,"CTIO":1.14,"CVH":1.735,"CVS":1.568,"CVX":1.257,"DAL":1.389,"DGCU2":1.397,"DHR":1.534,"DIA":0.917,"DIS":1.278,"EDN":1.454,"F":0.975,"FDX":1.798,"FERR":1.383,"FIPL":1.208,"GBAN":1.359,"GCLA":1.228,"GE":1.33,"GGAL":1.212,"GILD":1.582,"GLD":0.889,"GLOB":1.701,"GM":1.42,"GOOGL":1.039,"GRIM":1.341,"GS":1.213,"HARG":1.311,"HD":1.419,"HON":1.654,"IBM":1.286,"INTC":0.749,"INTR":0.873,"INVJ":1.205,"IRSA":1.441,"ISRG":1.415,"IWM":1,"JNJ":1.444,"JPM":1.254,"KO":1.408,"LEDE":1.332,"LLY":1.207,"LOMA":1.407,"LONG":1.23,"LOW":1.667,"MA":1.383,"MCD":1.394,"MELI":1.323,"META":1.019,"METR":1.465,"MOLI":1.362,"MORI":1.124,"MRK":1.393,"MS":1.447,"MSFT":1.114,"MU":0.769,"NDAQ":1.755,"NET":1.382,"NFLX":1.143,"NKE":1.17,"NOW":1.095,"NVDA":0.858,"OEST":1.697,"ORCL":0.857,"OXY":1.211,"PAMP":1.187,"PATA":1.416,"PBR":1.148,"PEP":1.509,"PFE":1.119,"PG":1.358,"PLTR":0.833,"PYPL":1.21,"QCOM":1.338,"QQQ":0.901,"RBLX":1.395,"REGN":1.53,"RIGO":1.188,"ROSE":0.922,"RTX":1.527,"SAMI":1.392,"SBUX":1.539,"SCHW":1.414,"SEMI":1.186,"SHOP":1.382,"SLB":1.281,"SLV":0.743,"SNOW":1.289,"SPOT":1.41,"SPY":1.299,"SUPV":1.343,"T":1.353,"TECO2":1.458,"TGNO4":1.448,"TGSU2":1.288,"TGT":1.484,"TLT":1.248,"TMO":1.221,"TMUS":1.575,"TSLA":0.663,"TXAR":1.578,"TXN":1.659,"UAL":1.402,"UBER":1.134,"UNH":1.075,"UPS":1.381,"V":1.344,"VALO":1.322,"VIST":1.211,"VZ":1.382,"WFC":1.389,"WMT":1.385,"XLE":1.261,"XLF":1.438,"XLK":1.176,"XOM":1.506,"YPFD":1.22};
+
+// Devuelve la desviacion del volumen actual vs la media propia del activo.
+// positivo = mas actividad que lo normal para ESE activo; negativo = menos.
+function volVsMedia(ticker, vol24h) {
+  const tk = (ticker || "").replace(".BA", "");
+  const media = VOL_MEDIA_ANUAL[tk];
+  if (media == null || vol24h == null || !isFinite(vol24h)) return null;
+  return { media, dif: +(vol24h - media).toFixed(2), pct: +((vol24h / media - 1) * 100).toFixed(0) };
+}
+
 function bandaRSI(rsi) {
   if (rsi == null || Number.isNaN(rsi)) return null;
   return RSI_TASAS_BASE.find(b => rsi >= b.lo && rsi < b.hi) || null;
@@ -5643,6 +5663,9 @@ export default function App() {
                             {l:"MACD",   v:(s.macd>0?"▲ ":"▼ ")+Math.abs(s.macd),c:s.macd>0?"#00ff9d":"#ff3355"},
                             {l:"RSI",    v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#5a8fa8"},
                             {l:"Vol.Div.",v:s.volDiv>0?"▲ ACUM":s.volDiv<0?"▼ DIST":"─",c:s.volDiv>0?"#00ff9d":s.volDiv<0?"#ff3355":"#ffd700"},
+                            ...(()=>{ const v=volVsMedia(sel.ticker, s.vol_24h);
+                              return v ? [{l:"Vol vs media", v:`${v.dif>=0?"+":""}${v.dif} (${v.pct>=0?"+":""}${v.pct}%)`,
+                                c:v.dif>0?"#00ff9d":v.dif<0?"#ff9040":"#ffd700"}] : []; })(),
                             {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
                           ];
                           const extra=[
