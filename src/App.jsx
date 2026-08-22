@@ -7486,6 +7486,9 @@ export default function App() {
                               ["ATR",sg?.atr,"#a0cce0"],
                               ["Régimen",sg?.regime,"#ffd700"],
                               ["Vol 24h",sg?.vol_24h!=null?sg.vol_24h+"x":null,"#a0cce0"],
+                              ...(()=>{ const vv=volVsMedia(rpTicker||sel?.ticker, sg?.vol_24h);
+                                return vv ? [["Vol vs media",`${vv.dif>=0?"+":""}${vv.dif} (${vv.pct>=0?"+":""}${vv.pct}%)`,
+                                  vv.dif>0?"#00ff9d":vv.dif<0?"#ff9040":"#ffd700"]] : []; })(),
                               ["Tendencia",sg?.trend,"#8fb4cc"],
                             ].filter(([,v])=>v!=null&&v!=="").map(([l,v,c])=>(
                               <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 6px",background:"#050c15",borderRadius:"3px",fontSize:"8px"}}>
