@@ -752,11 +752,97 @@ const VOL_MEDIA_ANUAL = {"AAL":0.921,"AAPL":1.138,"ABBV":1.507,"ABT":1.434,"ADBE
 
 // Devuelve la desviacion del volumen actual vs la media propia del activo.
 // positivo = mas actividad que lo normal para ESE activo; negativo = menos.
-function volVsMedia(ticker, vol24h) {
+// ── MEDIA MÓVIL DE vol_24h (6 meses, hasta el día ANTERIOR) ────────────
+//
+// Reemplaza a VOL_MEDIA_ANUAL (constante fija por activo). Dos razones:
+//
+// 1. SESGO DE ANTICIPACIÓN. La constante era la media del vol_24h del
+//    último año COMPLETO — incluía días posteriores a la fecha evaluada.
+//    Al medir un patrón sobre el pasado, el indicador ya "sabía" el futuro.
+//    Medido: el hallazgo "COMPRA + volumen muerto → cae" daba -0.32% a 10d
+//    con la constante y +0.42% con la media móvil. Era el sesgo, no señal.
+//
+// 2. UN AÑO DILUYE. Una racha fuerte de volumen levanta la media anual y
+//    tapa las subas siguientes. Con ventana móvil de 6 meses el umbral
+//    acompaña al régimen del activo: el corte del tercil inferior pasó de
+//    -0.33 (anual) a -0.11 (móvil 6m).
+//
+// La ventana termina en la ÚLTIMA BARRA DE LA RUEDA ANTERIOR: la barra
+// evaluada nunca entra en su propia media.
+//
+// Validado sobre 26.591 obs (157 tickers): correlación 0.972 con la
+// constante pero el signo cambia en 24.1% de los casos, y el t mejora en
+// 3 de las 4 celdas (señal × signo de volumen), controlando por fecha,
+// moneda y volatilidad.
+const VOL_MM_RUEDAS = 126;   // ~6 meses de ruedas
+const VOL_MM_MIN    = 60;    // mínimo para no descartar la mitad del panel
+
+function volMediaMovil(data, ruedas = VOL_MM_RUEDAS) {
+  if (!Array.isArray(data) || data.length < 48) return null;
+  const n = data.length - 1;
+
+  // Índices de la última barra de cada rueda, de atrás hacia adelante.
+  const cierres = [];
+  for (let i = n; i > 0 && cierres.length <= ruedas + 1; i--) {
+    if (data[i].date !== data[i - 1].date) cierres.push(i - 1);
+  }
+  if (!cierres.length) return null;
+
+  const fin = cierres[0];                       // última barra de la rueda anterior
+  const ini = cierres.length > ruedas
+    ? cierres[ruedas] + 1                       // ventana llena de 126 ruedas
+    : 0;                                        // toda la historia disponible
+  const nRuedas = Math.min(cierres.length, ruedas);
+  if (nRuedas < VOL_MM_MIN) return null;
+
+  // vol_24h por barra = volumen / media de las 24 barras que la cierran.
+  // Ventana deslizante para no recalcular la suma en cada paso.
+  const desde = Math.max(0, ini - 23);
+  let suma = 0, acum = 0, cuenta = 0;
+  for (let i = desde; i <= fin; i++) {
+    suma += data[i].volume || 0;
+    if (i - desde >= 24) suma -= data[i - 24].volume || 0;
+    const cant = Math.min(i - desde + 1, 24);
+    if (i >= ini && cant > 0) {
+      const media24 = suma / cant;
+      if (media24 > 0) { acum += (data[i].volume || 0) / media24; cuenta++; }
+    }
+  }
+  if (cuenta < 24 * VOL_MM_MIN * 0.3) return null;
+  return { media: acum / cuenta, ruedas: nRuedas, barras: cuenta };
+}
+
+// Devuelve la desviación del volumen actual vs la media MÓVIL del activo.
+// positivo = más actividad que lo normal para ESE activo en los últimos
+// 6 meses; negativo = menos.
+//
+// `sig` es el objeto de combinedSignal(), que ya trae la media móvil
+// calculada sobre la serie. Si no está disponible (serie corta, menos de
+// 60 ruedas), cae a VOL_MEDIA_ANUAL y lo marca en `fuente`.
+function volVsMedia(ticker, vol24h, sig) {
+  if (vol24h == null || !isFinite(vol24h)) return null;
+
+  const movil = sig && sig.vol_media_mov;
+  if (movil != null && isFinite(movil) && movil > 0) {
+    return {
+      media: +movil.toFixed(2),
+      dif:   +(vol24h - movil).toFixed(2),
+      pct:   +((vol24h / movil - 1) * 100).toFixed(0),
+      fuente: "movil6m",
+      ruedas: sig.vol_mm_ruedas ?? null,
+    };
+  }
+
   const tk = (ticker || "").replace(".BA", "");
   const media = VOL_MEDIA_ANUAL[tk];
-  if (media == null || vol24h == null || !isFinite(vol24h)) return null;
-  return { media, dif: +(vol24h - media).toFixed(2), pct: +((vol24h / media - 1) * 100).toFixed(0) };
+  if (media == null) return null;
+  return {
+    media,
+    dif: +(vol24h - media).toFixed(2),
+    pct: +((vol24h / media - 1) * 100).toFixed(0),
+    fuente: "anual",
+    ruedas: null,
+  };
 }
 
 function bandaRSI(rsi) {
@@ -1420,6 +1506,7 @@ function combinedSignal(data, W=7, allData=null) {
 
   // ─ FXCA16 features ─
   const evo = evoFeatures(data, ticker);
+  const volMM = volMediaMovil(data);
   if (!evo) return null;
 
   // ─ SCORE COMBINADO base ─
@@ -1632,6 +1719,8 @@ function combinedSignal(data, W=7, allData=null) {
     sma20:a20, sma50:a50, sma200:a200, mom5:+m5.toFixed(2),
     ca15_score:evo.ca15_score, evo_prob:evo.evo_prob,
     pct6h:evo.pct6h, vol_24h:evo.vol_24h,
+    vol_media_mov: volMM ? +volMM.media.toFixed(3) : null,
+    vol_mm_ruedas: volMM ? volMM.ruedas : null,
     scoreTrend, scoreDelta:+scoreDelta.toFixed(0),
     synthetic: !!data[n]?._synth,
     ruedaAbierta: ultimoDiaParcial(data),
@@ -5663,8 +5752,8 @@ export default function App() {
                             {l:"MACD",   v:(s.macd>0?"▲ ":"▼ ")+Math.abs(s.macd),c:s.macd>0?"#00ff9d":"#ff3355"},
                             {l:"RSI",    v:s.rsi,c:s.rsi>70?"#ff3355":s.rsi<30?"#00ff9d":"#5a8fa8"},
                             {l:"Vol.Div.",v:s.volDiv>0?"▲ ACUM":s.volDiv<0?"▼ DIST":"─",c:s.volDiv>0?"#00ff9d":s.volDiv<0?"#ff3355":"#ffd700"},
-                            ...(()=>{ const v=volVsMedia(sel.ticker, s.vol_24h);
-                              return v ? [{l:"Vol vs media", v:`${v.dif>=0?"+":""}${v.dif} (${v.pct>=0?"+":""}${v.pct}%)`,
+                            ...(()=>{ const v=volVsMedia(sel.ticker, s.vol_24h, s);
+                              return v ? [{l:v.fuente==="movil6m"?`Vol vs media 6m`:`Vol vs media (anual)`, v:`${v.dif>=0?"+":""}${v.dif} (${v.pct>=0?"+":""}${v.pct}%)`,
                                 c:v.dif>0?"#00ff9d":v.dif<0?"#ff9040":"#ffd700"}] : []; })(),
                             {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
                           ];
@@ -7486,8 +7575,8 @@ export default function App() {
                               ["ATR",sg?.atr,"#a0cce0"],
                               ["Régimen",sg?.regime,"#ffd700"],
                               ["Vol 24h",sg?.vol_24h!=null?sg.vol_24h+"x":null,"#a0cce0"],
-                              ...(()=>{ const vv=volVsMedia(rpTicker||sel?.ticker, sg?.vol_24h);
-                                return vv ? [["Vol vs media",`${vv.dif>=0?"+":""}${vv.dif} (${vv.pct>=0?"+":""}${vv.pct}%)`,
+                              ...(()=>{ const vv=volVsMedia(rpTicker||sel?.ticker, sg?.vol_24h, sg);
+                                return vv ? [[vv.fuente==="movil6m"?"Vol vs media 6m":"Vol vs media (anual)",`${vv.dif>=0?"+":""}${vv.dif} (${vv.pct>=0?"+":""}${vv.pct}%)`,
                                   vv.dif>0?"#00ff9d":vv.dif<0?"#ff9040":"#ffd700"]] : []; })(),
                               ["Tendencia",sg?.trend,"#8fb4cc"],
                             ].filter(([,v])=>v!=null&&v!=="").map(([l,v,c])=>(
