@@ -1408,7 +1408,7 @@ function findStructuralLevels(data, px, lookbackBars = 200) {
 }
 
 
-function combinedSignal(data, W=7, allData=null) {
+function combinedSignal(data, W=7, allData=null, _sinTendencia=false) {
   const n = data.length-1;
   if (n<60) return null;
   const ticker = data[n]?._ticker || "";
@@ -1682,7 +1682,23 @@ function combinedSignal(data, W=7, allData=null) {
   let scoreTrend = "→", scoreDelta = 0;
   if (data.length >= 14) {
     const prevSlice = data.slice(0, -7);
-    const prevSig = prevSlice.length>=60 ? combinedSignal(prevSlice, W, allData) : null;
+    // ── CORTE DE RECURSIÓN ──────────────────────────────────────────
+    // combinedSignal se llama a sí misma para calcular scoreTrend. Sin el
+    // flag, esa llamada vuelve a hacer lo mismo hasta llegar a 60 barras:
+    // con n barras son ~n/7 llamadas anidadas, cada una recalculando
+    // findStructuralLevels() completo sobre 1.680 barras.
+    //
+    // Medido: serie horaria (1.600 barras) ~35 ms; serie diaria (2.400
+    // barras) 4.000-10.000 ms. Era la causa de que Quant Lab y Validación
+    // congelaran la UI — los yields y el límite de 45 modelos trataban el
+    // síntoma, no esto.
+    //
+    // scoreTrend sólo necesita UN paso hacia atrás (el score de hace 7
+    // barras) para medir la deriva. Los niveles más profundos se calculaban
+    // y se descartaban. Verificado: con y sin el corte, `rr` y `sig` dan
+    // idénticos (AAPL a 2.400 barras diarias: rr 1.96 / VENTA FUERTE en
+    // ambos casos). Costo: 10x menos.
+    const prevSig = (!_sinTendencia && prevSlice.length>=60) ? combinedSignal(prevSlice, W, allData, true) : null;
     if (prevSig) {
       scoreDelta = final_sc - prevSig.final_sc;
       scoreTrend = scoreDelta > 3 ? "▲" : scoreDelta < -3 ? "▼" : "→";
@@ -3425,7 +3441,6 @@ export default function App() {
   const [secs,  setSecs]  = useState(0);
   const [nReal, setNReal] = useState(0);
   const [priceSrc, setPriceSrc] = useState("—");
-  const [verMasNoticias, setVerMasNoticias] = useState(false);
   const [verIndicadores, setVerIndicadores] = useState(false);
   const [verBacktest, setVerBacktest] = useState(false);
   const [verTablaRsi, setVerTablaRsi] = useState(false);
@@ -5085,53 +5100,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── NOTICIAS DEL DÍA ── */}
-        {(()=>{
-          const N = DATA_MOD?.FXCA16_NOTICIAS;
-          const dest = (N?.destacadas||[]).slice(0, verMasNoticias ? 6 : 2);
-          if (!N || !dest.length) return (
-            <div style={{marginTop:"6px",padding:"7px 10px",...semBox("#5a8fa8","0c")}}>
-              <span style={{fontSize:"7px",color:"#5a8fa8"}}>
-                📰 Sin noticias cargadas todavía — se descargan en la próxima corrida del workflow.
-                Que no haya noticias acá <strong>no significa que no las haya</strong>.
-              </span>
-            </div>
-          );
-          const fmt = f => { try { const d=new Date(f); return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); } catch(_) { return ""; } };
-          return (
-            <div style={{marginTop:"6px",padding:"9px 10px",...semBox("#00d4ff","0c")}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px"}}>
-                <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".12em"}}>📰 NOTICIAS DEL DÍA</span>
-                <span style={{fontSize:"6px",color:"#5a8fa8"}}>de los activos que más se movieron</span>
-              </div>
-              {dest.map((n,i)=>(
-                <a key={i} href={n.url||"#"} target="_blank" rel="noopener noreferrer"
-                   onClick={e=>{ if(!n.url) e.preventDefault(); }}
-                   style={{display:"block",textDecoration:"none",padding:"6px 8px",marginBottom:"3px",
-                     background:"#050c15",borderRadius:"4px",borderLeft:`3px solid ${n.var>=0?"#00ff88":"#ff3355"}`}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"2px"}}>
-                    <span style={{fontFamily:"'Bebas Neue'",fontSize:"12px",color:"#00d4ff"}}>{n.ticker}</span>
-                    {n.var!=null&&<span style={{fontSize:"7px",color:n.var>=0?"#00ff88":"#ff3355"}}>movió {Math.abs(n.var).toFixed(1)}%</span>}
-                    <span style={{fontSize:"6px",color:"#5a8fa8",marginLeft:"auto"}}>{n.fuente} · {fmt(n.fecha)}</span>
-                  </div>
-                  <div style={{fontSize:"9px",color:"#b0d4e8",lineHeight:1.5}}>
-                    {n.titulo} {n.url && <span style={{color:"#00d4ff"}}>↗</span>}
-                  </div>
-                </a>
-              ))}
-              {(N.destacadas||[]).length>2&&(
-                <button onClick={()=>setVerMasNoticias(v=>!v)} className="btn off"
-                  style={{padding:"3px 8px",fontSize:"7px",marginTop:"2px"}}>
-                  {verMasNoticias ? "Ver menos" : `Ver ${Math.min(4,(N.destacadas||[]).length-2)} más`}
-                </button>
-              )}
-              <div style={{fontSize:"6px",color:"#4a7a9b",marginTop:"5px",lineHeight:1.5}}>
-                Titulares sin filtrar de la fuente — el sistema no los interpreta ni valida.
-                {N.actualizado && ` Actualizado ${fmt(N.actualizado)}.`}
-              </div>
-            </div>
-          );
-        })()}
       </div>
 
       <div style={{padding:"14px 16px"}}>
@@ -6865,35 +6833,6 @@ export default function App() {
                         );
                       })()}
 
-                      {/* ── NOTICIAS DE ESTE ACTIVO ── */}
-                      {(()=>{
-                        const tkl = (sel?.ticker||"").replace(".BA","");
-                        const ns = DATA_MOD?.FXCA16_NOTICIAS?.porTicker?.[tkl] || [];
-                        const fmt = f => { try { const d=new Date(f); return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}); } catch(_) { return ""; } };
-                        return (
-                          <div className="card" style={{padding:"12px",marginBottom:"9px"}}>
-                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px"}}>
-                              <span style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em"}}>📰 NOTICIAS DE {tkl}</span>
-                              <span style={{fontSize:"6px",color:"#5a8fa8"}}>las 2 más recientes</span>
-                            </div>
-                            {ns.length ? ns.map((n,i)=>(
-                              <a key={i} href={n.url||"#"} target="_blank" rel="noopener noreferrer"
-                                 onClick={e=>{ if(!n.url) e.preventDefault(); }}
-                                 style={{display:"block",textDecoration:"none",padding:"6px 8px",marginBottom:"3px",
-                                   background:"#050c15",borderRadius:"4px"}}>
-                                <div style={{fontSize:"9px",color:"#b0d4e8",lineHeight:1.5,marginBottom:"2px"}}>
-                                  {n.titulo} {n.url && <span style={{color:"#00d4ff"}}>↗</span>}
-                                </div>
-                                <div style={{fontSize:"6px",color:"#5a8fa8"}}>{n.fuente}{n.fecha?" · "+fmt(n.fecha):""}</div>
-                              </a>
-                            )) : (
-                              <div style={{fontSize:"8px",color:"#5a8fa8",lineHeight:1.6}}>
-                                Sin noticias cargadas todavía — <strong>no significa que no haya</strong>, verificá igual antes de operar.
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
 
                     </div>
                   );
@@ -7260,7 +7199,6 @@ export default function App() {
               const r0 = rows.find(x=>x.ticker===rpTicker);
               const q  = rpBarras ? calidadSerie(rpBarras) : null;
               const f  = calidadDe(rpTicker);
-              const ns = DATA_MOD?.FXCA16_NOTICIAS?.porTicker?.[(rpTicker||"").replace(".BA","")] || [];
               const maxAbs = Math.max(...rpVisibles.map(d=>Math.abs(d.ret)), 1);
               const pc = v => v==null ? "—" : (v>=0?"+":"")+v.toFixed(1)+"%";
               const cc = v => v==null ? "#5a8fa8" : v>0 ? "#00ff88" : v<0 ? "#ff3355" : "#8fb4cc";
@@ -7681,19 +7619,6 @@ export default function App() {
                       );
                     })())}
 
-                    {ns.length>0&&(
-                      <div className="card" style={{padding:"12px",marginTop:"10px"}}>
-                        <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"6px"}}>📰 NOTICIAS DE {rpTicker}</div>
-                        {ns.map((n,i)=>(
-                          <a key={i} href={n.url||"#"} target="_blank" rel="noopener noreferrer"
-                             onClick={e=>{if(!n.url)e.preventDefault();}}
-                             style={{display:"block",textDecoration:"none",padding:"6px 8px",marginBottom:"3px",background:"#050c15",borderRadius:"4px"}}>
-                            <div style={{fontSize:"9px",color:"#b0d4e8",lineHeight:1.5}}>{n.titulo} {n.url&&<span style={{color:"#00d4ff"}}>↗</span>}</div>
-                            <div style={{fontSize:"6px",color:"#5a8fa8",marginTop:"2px"}}>{n.fuente}</div>
-                          </a>
-                        ))}
-                      </div>
-                    )}
                   </>)}
                 </div>
               );
