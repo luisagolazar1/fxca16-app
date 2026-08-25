@@ -705,6 +705,89 @@ const HALLAZGOS_DESCARTADOS = [
     veredicto: "informativo, no operable",
     nota: "La clasificación positiva/negativa se hizo por la reacción del mercado ese día, no por el contenido del comunicado — es circular por diseño. La diferencia sectorial es la reacción del día 0 en sí, no una ventaja capturable después de verla. Ya implementado en la app como contexto (estadoFOMC()); no se agregó nada nuevo porque no hay ventaja operable que agregar.",
   },
+  {
+    fecha: "2026-08-25",
+    hipotesis: "Si el sistema da compra/compra fuerte con volumen sobre su media, al día siguiente baja; si da venta/venta fuerte con volumen sobre su media, al día siguiente sube; si da venta con volumen bajo, al día siguiente baja",
+    origen: "Hipótesis del usuario sobre la relación entre señal y vol_24h vs su media histórica",
+    metodo: "80 tickers (top/bottom 20 por score W=60 + 40 de control) × 381 fechas = 15.561 obs, combinedSignal() real, exceso vs. universo del mismo día y moneda, t clusterizado por fecha",
+    n: "15.561 observaciones, 381 fechas independientes",
+    resultado: "Acción por acción: 51 aciertos de signo sobre 110 = 46.4% (azar 50%). Global: 2 de 3 celdas con el signo correcto, ninguna con |t|>1.96. La de mayor magnitud (COMPRA+vol alto, +0.30%) va al revés de lo esperado. El grupo de control se comportó igual o mejor que los 40 seleccionados.",
+    veredicto: "descartada",
+    nota: "Detonó la revisión de VOL_MEDIA_ANUAL (ver regla activa 'vol vs media móvil'): la constante usada para 'volumen vs media' tenía sesgo de anticipación y estaba desviada hasta 0.89 puntos por ticker respecto al valor real. Corregida en esta sesión.",
+  },
+  {
+    fecha: "2026-08-25",
+    hipotesis: "COMPRA con volumen muy por debajo de su media anticipa caída (Merval, señal fuerte)",
+    origen: "Barrido sistemático de 83 subgrupos (dirección × fuerza × tercil de volumen × moneda) tras descartar la hipótesis anterior",
+    metodo: "Panel horario 1 año, control por volatilidad, drop-one por ticker, consistencia mensual, split IS/OOS 60/40",
+    n: "n=160 (ARS, señal fuerte) hasta n=865 (ARS, todas las fuerzas)",
+    resultado: "Con VOL_MEDIA_ANUAL (constante rota): exceso -0.88% (t=-3.92), pasó drop-one (peor caso t=-2.10), 12/15 meses negativos (80%). Al recalcular con la media móvil de 6 meses corregida, el efecto se invirtió a horizontes >1 día: 5d pasó de -0.22% a +0.04%, 10d de -0.32% a +0.42%.",
+    veredicto: "descartada — era el sesgo de la constante, no señal",
+    nota: "El mejor hallazgo aparente de la sesión resultó ser un artefacto de la constante VOL_MEDIA_ANUAL con lookahead. Lección: cuando un indicador se corrige, revalidar todo lo construido sobre él antes de confiar en los números viejos.",
+  },
+  {
+    fecha: "2026-08-25",
+    hipotesis: "Búsqueda abierta de patrones de éxito: pares de condiciones (indicador×umbral) sobre el universo completo, sin hipótesis previa",
+    origen: "Pedido explícito de seguir buscando patrones de éxito tras agotar la hipótesis original del usuario",
+    metodo: "158 tickers × ~188 ruedas = 31.691 obs, 24 variables, ~3.400-4.700 combinaciones de a pares probadas por corrida (2 corridas: antes y después de corregir el volumen), holdout 60/40, control de volatilidad",
+    n: "3.411 tests (1ª corrida) + 4.716 tests (2ª corrida, volumen corregido)",
+    resultado: "1ª corrida: 69 candidatos con t>2.5 en muestra, 4 sobrevivieron fuera de muestra (ver reglas activas R/R y SMA200 Merval). 2ª corrida: 338 candidatos en muestra, 0 sobrevivieron. Las 4 mejores en muestra de la 2ª corrida compartían atrp<0.87 (baja volatilidad); ese átomo solo daba +1.01% en muestra (t=2.47) y +0.04% fuera (t=0.93).",
+    veredicto: "método validado, la mayoría de los candidatos son ruido",
+    nota: "El período de muestra (hasta feb-2026) tuvo un régimen donde baja volatilidad + momentum rindió bien; cualquier filtro que seleccionara esos papeles daba t>5 sin ser señal real — es una descripción del período, no un patrón. Mismo error que el rally de oct-2025 ya anotado, con otra cara. El holdout es lo único que lo destapa.",
+  },
+  {
+    fecha: "2026-08-25",
+    hipotesis: "En señales de VENTA, distinguir trend=ALCISTA FUERTE de ALCISTA/LATERAL/BAJISTA/BAJISTA FUERTE cambia el resultado a 3 días",
+    origen: "Observación del usuario: 'no es lo mismo venta con señal bajista y bajista fuerte en relación al volumen'",
+    metodo: "Top 20 por retorno de 60 días previos + universo completo, VENTA discriminada por trend × signo de volumen (móvil 6m), retorno a 3 días, control de volatilidad",
+    n: "55 a 3.168 obs por celda según combinación",
+    resultado: "VENTA+ALCISTA+volumen bajo: exceso -0.649% (t=-2.59, n=594), única celda que cruza 1.96 en el universo control, y mantiene signo en el top-20 (-0.831%). VENTA+ALCISTA FUERTE: exceso POSITIVO en top-20 con ambos signos de volumen (+0.671% n=33 vol+, +0.621% t=1.40 n=251 vol-) — ahí la señal de venta falla.",
+    veredicto: "preliminar, sin confirmar — falta validación en 10 años",
+    nota: "La columna de volumen bajo por trend no muestra gradiente (-0.10/-0.65/-0.12/-0.05/-0.11): una celda sobresale 6x sobre sus vecinas, que están todas pegadas. Un efecto real por tendencia raramente saltea el nivel de al lado, así que podría ser una celda con suerte en vez de mecanismo. Extender a 10 años (con la recursión de combinedSignal ya cortada, la corrida es barata) antes de operar esto.",
+  },
+  {
+    fecha: "2026-08-25",
+    hipotesis: "Comprar lejos de cualquier nivel de Fibonacci relevante (sin soporte estructural cerca) rinde peor",
+    origen: "Pedido de agregar Fibonacci como variable a considerar en el barrido de reglas de venta/compra",
+    metodo: "158 tickers × 10 años = 64.294 obs con combinedSignal() real, calcFibonacci() real (niveles ya calculados en producción), barrido de ~2.700 combinaciones (dirección × trend × distancia a Fib × zona × horizonte), holdout 60/40, control de volatilidad, t clusterizado por fecha",
+    n: "424 obs totales, 314 en muestra / 110 fuera de muestra",
+    resultado: "COMPRA + trend=ALCISTA + fibDist>3.92% (lejos de cualquier nivel) + nivel más cercano clasificado 'soporte' débil: exceso -2.63% a 20d (t=-3.80), fuera de muestra -3.07% (t=-2.50, incluso más negativo). Drop-one: sin el ticker más favorable (INTC) sigue en t=-2.99. 8 de 9 años con exceso negativo.",
+    veredicto: "preliminar, fuerte — candidato a veto, no a señal de entrada",
+    nota: "A diferencia del hallazgo de 'volumen muerto' (que resultó ser una constante rota), calcFibonacci() no usa tablas precargadas — calcula todo desde los datos en el momento. Con 5 dimensiones cruzadas sobre miles de combinaciones no pasa un Bonferroni estricto todavía. Usable ya como veto gratuito (no paga comisión filtrar una compra): evita comprar sin estructura de soporte cercana, coherente con el fix de R/R estructural que ya prioriza soportes/resistencias reales.",
+  },
+];
+
+// ── REGLAS ACTIVAS ───────────────────────────────────────────────
+//
+// Hipótesis que SÍ sobrevivieron validación fuera de muestra. Nacen acá
+// como documentación explícita antes de entrar (si corresponde) al motor
+// de señales; el estado indica si ya están aplicadas en producción o
+// todavía en observación.
+const REGLAS_ACTIVAS = [
+  {
+    fecha: "2026-08-25",
+    regla: "Vol vs media: ventana móvil de 6 meses, no constante anual",
+    estado: "aplicada",
+    descripcion: "volMediaMovil(data): media de vol_24h sobre las últimas 126 ruedas, terminando en la última barra de la rueda ANTERIOR (nunca incluye la barra evaluada). Reemplaza a VOL_MEDIA_ANUAL.",
+    evidencia: "La constante vieja tenía rango 0.663-1.939 entre tickers cuando la cantidad que decía medir (media de largo plazo de un cociente) tiene que dar ≈1 por construcción — estaba desviada hasta 0.89 puntos en algunos tickers (53% de los tickers con desvío >0.30). Además incluía días posteriores a la fecha evaluada (sesgo de anticipación). Corregida, cobertura 157/158 tickers sin caer al fallback.",
+    uso: "vol_media_mov y vol_mm_ruedas expuestos en combinedSignal(). volVsMedia(ticker, vol24h, sig) los usa automáticamente.",
+  },
+  {
+    fecha: "2026-08-25",
+    regla: "R/R estructural alto (>1.97 en USD) predice exceso positivo, creciente con el horizonte",
+    estado: "en observación — falta validar en 10 años",
+    descripcion: "El ratio riesgo/beneficio que ya calcula findStructuralLevels() resultó predictivo por sí solo, no sólo como higiene de niveles.",
+    evidencia: "Exceso OOS (control de volatilidad, t clusterizado por fecha): 5d +0.25% (t=2.74), 10d +0.49% (t=3.65), 20d +1.24% (t=5.69), 45d +1.61% (t=4.02). Monótono en el horizonte, rinde MÁS fuera de muestra que dentro, estable ante cambio de fecha de corte, 8/10 meses positivos. A 45d casi cubre el costo (+1.61% OOS vs 1.8% de comisión CEDEAR). Limitación: con 1 año de horaria sólo hay 3 ventanas independientes a 45 días — no alcanza para declarar significancia a ese horizonte; se resuelve con la serie diaria de 10 años.",
+    uso: "Todavía no aplicada. Uso recomendado inmediato: ordenar el ranking de oportunidades por R/R en vez de sólo por score — no paga comisión y ya mostró +0.49% de mejora a 10 días.",
+  },
+  {
+    fecha: "2026-08-25",
+    regla: "ARS bajo su SMA200 (>2.7% por debajo) predice exceso positivo hasta 20 días, se invierte a partir de 30",
+    estado: "en observación — usar sólo a corto plazo, NO extender el horizonte",
+    descripcion: "Reversión a la media en Merval: papeles por debajo de su media de 200 ruedas rebotan a 5-20 días.",
+    evidencia: "Exceso OOS con control de volatilidad: 5d +0.45%, 10d +0.51%, 20d +0.68% — pero 30d -0.50% y 45d -2.43% (t=-5.93). El rebote de hasta 20 días se devuelve entero y se pasa de largo. 10/11 meses positivos a 10 días.",
+    uso: "Tilt de ranking a corto plazo únicamente (5-20 días). Nunca usar como señal de horizonte largo — ahí es la regla contraria.",
+  },
 ];
 
 // ── TASAS BASE HISTÓRICAS POR BANDA DE RSI ──
@@ -5211,7 +5294,7 @@ export default function App() {
         {fase==="done"&&rows.length>0&&(
           <div className="fade">
             <div style={{display:"flex",gap:"5px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["replay","⏪ Replay"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["cal","📅 Calendario"],["quant","🔬 Validación"]].map(([k,l])=>
+              {[["opp","🎯 Oportunidades"],["det","🔍 Detalle"],["replay","⏪ Replay"],["cmp","⚖️ Comparar"],["watch","⭐ Listas"],["track","📌 Tracker"],["cal","📅 Calendario"],["quant","🔬 Validación"],["reglas","📖 Reglas"]].map(([k,l])=>
                 <button key={k} className={`btn ${tab===k?"on":"off"}`} onClick={()=>setTab(k)}>{l}</button>
               )}
               {/* Selector de pantalla dividida (2/4 paneles) — se probó y se
@@ -8501,11 +8584,61 @@ export default function App() {
                   </div>
                 )}
 
-                {/* ── HIPÓTESIS DESCARTADAS ── */}
+              </div>
+            )}
+
+            {paneTab==="reglas"&&(
+              <div className="fade">
+                <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                  <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>
+                    📖 REGLAS E HIPÓTESIS — memoria institucional
+                  </div>
+                  <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.6}}>
+                    Todo lo que se investigó fuera del pipeline normal, con método y resultado explícito.
+                    Objetivo: no volver a "descubrir" y operar la misma idea unos meses después pensando
+                    que es nueva, y saber qué está realmente aplicado en el sistema hoy.
+                  </div>
+                </div>
+
+                {/* ── REGLAS ACTIVAS ── */}
+                {REGLAS_ACTIVAS.length>0&&(
+                  <div className="card" style={{padding:"12px",marginBottom:"10px"}}>
+                    <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>
+                      ✅ REGLAS QUE SOBREVIVIERON VALIDACIÓN ({REGLAS_ACTIVAS.length})
+                    </div>
+                    <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
+                      Hipótesis confirmadas fuera de muestra. "Aplicada" = ya está en el código en producción.
+                      "En observación" = confirmada pero pendiente de más validación antes de usarse como señal.
+                    </div>
+                    {REGLAS_ACTIVAS.map((r,i)=>(
+                      <div key={i} style={{...semBox("#00ff9d","10"),padding:"9px",marginBottom:i<REGLAS_ACTIVAS.length-1?"6px":0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"4px",gap:"8px"}}>
+                          <span style={{fontSize:"9px",color:"#00ff9d",fontWeight:700}}>{r.regla}</span>
+                          <span style={{fontSize:"6px",color:r.estado==="aplicada"?"#00ff9d":"#ffd700",flexShrink:0,
+                            border:`1px solid ${r.estado==="aplicada"?"#00ff9d":"#ffd700"}`,borderRadius:"3px",padding:"1px 5px",whiteSpace:"nowrap"}}>
+                            {r.estado==="aplicada"?"✓ APLICADA":"⏳ EN OBSERVACIÓN"}
+                          </span>
+                        </div>
+                        <div style={{fontSize:"6px",color:"#5a8fa8",flexShrink:0,marginBottom:"4px"}}>{r.fecha}</div>
+                        <div style={{fontSize:"7px",color:"#8fb4cc",lineHeight:1.6,marginBottom:"3px"}}>
+                          {r.descripcion}
+                        </div>
+                        <div style={{fontSize:"7px",color:"#b0d4e8",lineHeight:1.6,marginBottom:"3px"}}>
+                          <strong style={{color:"#5a8fa8"}}>Evidencia:</strong> {r.evidencia}
+                        </div>
+                        <div style={{fontSize:"7px",color:"#5a8fa8",lineHeight:1.6,fontStyle:"italic"}}>
+                          <strong style={{color:"#5a8fa8",fontStyle:"normal"}}>Uso:</strong> {r.uso}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                                {/* ── HIPÓTESIS DESCARTADAS ── */}
                 {HALLAZGOS_DESCARTADOS.length>0&&(
                   <div className="card" style={{padding:"12px"}}>
                     <div style={{fontSize:"8px",color:"#4a7a9b",letterSpacing:".12em",marginBottom:"4px"}}>
-                      🗄️ HIPÓTESIS PROBADAS Y DESCARTADAS
+                      🗄️ HIPÓTESIS PROBADAS Y DESCARTADAS ({HALLAZGOS_DESCARTADOS.length})
                     </div>
                     <div style={{fontSize:"7px",color:"#5a8fa8",marginBottom:"10px",lineHeight:1.6}}>
                       Patrones que parecían prometedores con pocos casos, testeados contra el universo completo,
@@ -8514,10 +8647,11 @@ export default function App() {
                     </div>
                     {HALLAZGOS_DESCARTADOS.map((h,i)=>(
                       <div key={i} style={{...semBox("#ff9040","10"),padding:"9px",marginBottom:i<HALLAZGOS_DESCARTADOS.length-1?"6px":0}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"4px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"4px",gap:"8px"}}>
                           <span style={{fontSize:"9px",color:"#ff9040",fontWeight:700}}>{h.hipotesis}</span>
-                          <span style={{fontSize:"6px",color:"#5a8fa8",flexShrink:0,marginLeft:"8px"}}>{h.fecha}</span>
+                          <span style={{fontSize:"6px",color:"#5a8fa8",flexShrink:0,marginLeft:"8px",whiteSpace:"nowrap"}}>{h.fecha}</span>
                         </div>
+                        {h.veredicto&&<div style={{fontSize:"6px",color:"#4a7a9b",marginBottom:"4px"}}>{h.veredicto}</div>}
                         <div style={{fontSize:"7px",color:"#8fb4cc",lineHeight:1.6,marginBottom:"3px"}}>
                           <strong style={{color:"#5a8fa8"}}>Método:</strong> {h.metodo} · n={h.n}
                         </div>
