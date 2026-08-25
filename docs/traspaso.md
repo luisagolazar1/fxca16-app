@@ -174,38 +174,63 @@ Todo lo de abajo se midió así:
   y se reporta el resultado en las que el buscador nunca vio.
 - Costos: `COSTO_MERVAL = 1,2%` y `COSTO_CEDEAR = 1,8%` round-trip.
 
-## 4. `USD R/R > 1,97` — ÚNICO CANDIDATO SERIO ⭐
+## 4. `R/R estructural` — CERRADO: efecto real pero débil, no pasa a aplicada ⭐→⏳
+
+> **Actualizado 2026-08-25 (misma sesión, corrida de cierre).** La medición original sobre 1
+> año de horaria (abajo, tachada) estaba inflada por escasez de historia. Revalidado sobre
+> 10 años de diarias — con la recursión de `combinedSignal` ya cortada, la corrida bajó de
+> ~15h estimadas a unos 5 minutos.
 
 `rr` es el ratio riesgo/beneficio que ya calcula `findStructuralLevels()` (el fix que subió el
-R/R mediano de 0,23 a ~1,8). **Resultó ser predictivo por sí solo.**
+R/R mediano de 0,23 a ~1,8). Sí tiene relación con el retorno — pero mucho más chica de lo
+que parecía.
+
+**Resultado final (103 tickers USD, 10 años, 42.123 obs), por quintil de R/R a 20d:**
+
+| quintil | rango R/R | n | exceso 20d | t | WR |
+|---|---|---|---|---|---|
+| Q1 (peor) | 1,07–1,80 | 8.050 | −0,215% | −2,27 | 56,7% |
+| Q2 | 1,80–1,89 | 8.528 | −0,177% | −1,75 | 57,1% |
+| Q3 | 1,89–2,00 | 8.341 | +0,016% | 0,14 | 57,5% |
+| Q4+Q5 | 2,00–5,00 | 17.204 | **+0,182%** | **2,54** | 57,1% |
+
+**El gradiente es monótono y real** (Q1 a Q4+Q5: −0,22 → −0,18 → +0,02 → +0,18), la misma
+firma cualitativa que se vio con 1 año. Pero la magnitud es **3 a 6 veces menor**
+(+0,182% contra el +1,237% que había dado la medición inicial a 20d).
+
+**Por qué se infló la medición original:** el umbral `>1,97` no era un extremo — capturaba
+**43% del universo** (mediana real de R/R: 1,93), y **40% del panel tiene RR=2,00 exacto**,
+que es un **tope de diseño** del cálculo de niveles, no un valor que emerja naturalmente del
+mercado. En un año particular ese corte agarraba algo específico de ese régimen; en 10 años
+agarra casi la mitad del universo en cualquier momento.
+
+**La limitación de ventanas independientes, resuelta:** con 10 años hay 84 ventanas
+independientes a 20 días (contra 3 que había con 1 año). Corregido por eso, el t cae de 5,69
+a **1,25** — no alcanza para declarar el efecto sólido incluso con toda la historia
+disponible.
+
+**Veredicto: no pasa a "aplicada".** Sigue en observación. Único uso justificado: **tilt de
+ranking** dentro de las oportunidades ya filtradas (ordenar por R/R como criterio secundario,
+no como filtro) — ahí no compite contra costos y la dirección es correcta, aunque modesta.
+
+<details>
+<summary>Medición original sobre 1 año de horaria (superada, se deja por trazabilidad)</summary>
 
 | horizonte | exceso (todo) | exceso OOS | t OOS |
 |---|---|---|---|
 | 1d | +0,020% | +0,024% | 0,70 |
 | 5d | +0,246% | +0,247% | 2,74 |
 | 10d | +0,447% | +0,493% | 3,65 |
-| 20d | +1,001% | **+1,237%** | **5,69** |
+| 20d | +1,001% | +1,237% | 5,69 |
 | 30d | +1,050% | +1,453% | 5,29 |
-| 45d | +1,235% | **+1,607%** | 4,02 |
+| 45d | +1,235% | +1,607% | 4,02 |
 
-Por qué es el mejor candidato del proyecto:
-- **Monótono en el horizonte** — el efecto se acumula en vez de aparecer en un punto. Un
-  artefacto de búsqueda no tiene por qué crecer ordenado en seis horizontes.
-- **Rinde MÁS fuera de muestra que dentro** (+1,607% vs +1,235% a 45d). Lo contrario del
-  sobreajuste.
-- Pasa el control de volatilidad (+0,493% con control vs +0,543% sin él a 10d).
-- Estable ante cambio de fecha de corte (probado con 15-ene y 06-feb).
-- Consistencia: **8/10 meses positivos** (umbral del proyecto: 65%).
-- A 45d roza el costo: +1,607% OOS contra 1,8% round-trip = −0,19%. La curva sigue subiendo.
+Con 1 año de datos, monótono en el horizonte y rendía más fuera de muestra que dentro — la
+firma que hace confiar en un hallazgo. Pero corregido por solapamiento, a 45 días había sólo
+**3 ventanas independientes**, insuficiente para declarar significancia. Esa era la limitación
+que la corrida de 10 años debía resolver, y la resolvió: no confirmando la magnitud original.
 
-**Limitación que impide declararlo válido:** corregido por solapamiento, a 45 días hay **3
-ventanas independientes**, no 3.870 observaciones (`t_corregido = 0,57`). No es un resultado
-negativo — es que la serie horaria dura un año y no entran más ventanas. **Se resuelve con la
-corrida de 10 años.**
-
-**Uso hoy, sin más validación:** como criterio de **ranking** (no paga comisión). Cuando el
-sistema ya va a mostrar 20 oportunidades, ordenarlas por R/R en vez de por score pone arriba
-las que rinden +0,49% más a 10 días.
+</details>
 
 ## 5. `ARS bajo SMA200` — sirve hasta 20 días, se INVIERTE a 45
 
@@ -359,20 +384,22 @@ hardcodeado en `getUpcomingEvents()` sigue funcionando.
 
 ## PRÓXIMOS PASOS (orden sugerido)
 
-1. **Arreglar la recursión de `combinedSignal`** (hallazgo 2). Mejora la app entera y abarata
-   todo lo demás. El fix está probado y verificado.
+1. ~~Arreglar la recursión de `combinedSignal`~~ — **HECHO**, commit `c497c04`. 35x más rápido
+   (35ms → ~1ms/llamada), verificado idéntico en `sig`/`final_sc`/`rr`/`scoreTrend`.
 2. **Medir `dynParams`** (hallazgo 3): ¿el W por ticker le gana al W global fuera de muestra?
-   Si no, neutralizarlo como se hizo con `adaptiveScoreAdj`.
-3. **Validación de 10 años sobre diarias** para R/R (hallazgo 4) y `trend` (hallazgo 9).
-   Es lo que decide si R/R entra al sistema o va a descartados. Salvedad honesta:
-   `combinedSignal` sobre diarias no da el mismo número que sobre horarias (el lookback de
-   estructura pasa de 1.680 horas a 1.680 días), así que testea si **el concepto** se sostiene,
-   no reproduce el número exacto de producción. Con el fix del punto 1, viable en ~1-2 h.
-4. **Correr el Tracker 3 meses** — evidencia hacia adelante, insustituible.
-5. Arreglar el calendario de earnings.
-6. Revalidar el alfa del Merval con más historia.
-7. Vista de cartera agregada (riesgo total, correlación entre posiciones).
-8. Dólar CCL/MEP — decisión CEDEAR vs papel local.
+   Si no, neutralizarlo como se hizo con `adaptiveScoreAdj`. Ahora barato de correr, gracias
+   al punto 1.
+3. ~~Validación de 10 años sobre diarias para R/R~~ — **HECHO**, misma sesión. Resultado: el
+   gradiente es real pero 3-6x más chico que la medición sobre 1 año, no cubre costos, queda
+   en observación (no pasa a aplicada). Ver hallazgo 4 actualizado arriba.
+4. **Validación de 10 años para `trend` en señales de venta** (hallazgo 9) y para el veto de
+   **Fibonacci** (hallazgo 11) — mismo método que R/R, ahora barato de correr. Son los dos
+   candidatos que siguen sin cerrar.
+5. **Correr el Tracker 3 meses** — evidencia hacia adelante, insustituible.
+6. Arreglar el calendario de earnings.
+7. Revalidar el alfa del Merval con más historia.
+8. Vista de cartera agregada (riesgo total, correlación entre posiciones).
+9. Dólar CCL/MEP — decisión CEDEAR vs papel local.
 9. Dividendos — no se descuentan en ningún cálculo.
 
 ---
