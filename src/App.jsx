@@ -755,6 +755,16 @@ const HALLAZGOS_DESCARTADOS = [
     veredicto: "confirmado como efecto real pero débil — permanece en observación, no pasa a aplicada",
     nota: "La medición sobre 1 año estaba inflada por la escasez de historia, no por sobreajuste al período (a diferencia del hallazgo de atrp<0.87, este SÍ mantuvo el signo en 10 años). Lección: 'sobrevive holdout OOS' con 1 año de datos no es lo mismo que 'sobrevive con historia suficiente' — ambos chequeos hacen falta antes de declarar una regla operable. Ver REGLAS_ACTIVAS para el veredicto final actualizado.",
   },
+  {
+    fecha: "2026-08-25",
+    hipotesis: "CIERRE DE LÍNEA: el volumen relativo del propio papel (serie temporal) predice retorno — 5 variantes probadas",
+    origen: "Hipótesis sostenida del usuario a lo largo de la sesión: un pico de volumen anticipa reversión o continuación. Se probaron 5 construcciones distintas del mismo constructo antes de cerrar.",
+    metodo: "Todas sobre 10 años de diarias (63.510 obs, 156 tickers) salvo la primera; control por fecha+moneda+tercil de volatilidad, t clusterizado por fecha, holdout temporal 60/40. Variantes: (1) vol_24h vs VOL_MEDIA_ANUAL, (2) vol_24h vs media móvil 6 meses, (3) vol10 = volumen de ayer vs media de las 10 ruedas previas, (4) pico de volumen firmado por día alcista (acumulación), (5) pico firmado por día bajista (distribución).",
+    n: "63.510 obs, 2.150 fechas, ~6.000 obs por brazo en el test firmado",
+    resultado: "Ninguna variante cruzó significancia de forma sostenible. (1) resultó ser una constante rota con lookahead (ver entrada aparte). (2) efecto sólo a 1 día, 0.10-0.26% contra costos de 1.2-1.8%. (3) el único candidato del barrido con holdout (VENTA FUERTE + vol10 normal, r10) pasó de t=2.85 en muestra a t=1.26 fuera: 0 de 1 sobrevive. (4) y (5): la diferencia acumulación menos distribución da t entre -1.30 y +0.14 según horizonte — el signo del precio en el día del pico NO discrimina.",
+    veredicto: "línea cerrada — no volver a probar variantes de ventana",
+    nota: "Observación que sí quedó, sin cruzar: 'pico de volumen en día bajista' es positivo en los 4 horizontes, creciendo con el plazo (+0.38% a 20d, +0.655% fuera de muestra, WR 59.1%), lo cual apunta a rebote tras capitulación y NO a agotamiento tras euforia. Máximo t=1.53. Cautela: ese brazo tiene exposición natural a rebote de volatilidad que el control por tercil de ATR mitiga pero no elimina. CONTRASTE IMPORTANTE: el volumen SÍ funciona en este proyecto, pero medido cross-seccionalmente — alpha.js usa rango(vol_shock) con IC +0.127 y t=8.38 validado. La diferencia no es la ventana sino el marco de referencia: contra el universo del día (funciona) vs contra la historia del propio papel (no funciona). Próximo ángulo de volumen a probar: vol_shock cross-seccional como discriminador de señales.",
+  },
 ];
 
 // ── REGLAS ACTIVAS ───────────────────────────────────────────────
@@ -2217,6 +2227,124 @@ function calcMarketCorrelation(data, indexData) {
 // Prefiere el histórico diario de 10 años cuando está disponible.
 // La serie horaria solo cubre ~1 año (límite de Yahoo), insuficiente
 // para validar a través de distintos regímenes de mercado.
+// ── PERSISTENCIA DIRECCIONAL (LMSW) ──────────────────────────────
+//
+// Estima si el retorno de HOY tiende a continuar o revertirse mañana,
+// y cuánto lo modula el volumen. Basado en Llorente, Michaely, Saar y
+// Wang (Review of Financial Studies, 2002): los retornos generados por
+// reparto de riesgo revierten, los generados por trading especulativo
+// (informado) continúan. El coeficiente C2 mide de qué lado está el
+// papel HOY — y cambia con el tiempo dentro del mismo activo.
+//
+// Regresión sobre las últimas 250 ruedas, con r y V estandarizados
+// (z-scores de la propia ventana, para que las escalas sean comparables):
+//
+//   z(r[t+1]) = c0 + c1·z(r[t]) + c2·z(r[t])·z(V[t])
+//
+// donde V = log(volumen) menos su media móvil de 200 ruedas — detrendado,
+// así se adapta al régimen actual del papel y no a su historia completa.
+//
+// VALIDACIÓN (303.096 obs, 156 tickers, 10 años, todo OOS por construcción:
+// el C2 de cada día se estima sólo con las 250 ruedas anteriores).
+// Spread long-short a 1 día, exceso vs. universo del mismo día:
+//
+//   ARS: +0.248%  t=10.29   ✅ VALIDADO
+//   USD: -0.002%  t=-0.16   ❌ SIN PODER PREDICTIVO
+//
+// El efecto es de MERVAL. En USD se probaron 6 cortes (iliquidez de
+// Amihud, volumen en dólares, ETF vs acción, magnitud del movimiento,
+// descomposición C1/C2, y esta versión normalizada) y ninguno pasa de
+// |t|=1.05. No es que falte la variable: no hay señal. 5 de 9 años
+// negativos. Por eso en USD se muestra con badge punteado.
+//
+// Ventana: 250 ruedas. Se probaron 100, 50 y 10 — empeoran de forma
+// monótona (t 3.72 → 1.87 → 0.90 → no estimable). Acortar no capta
+// mejor el régimen actual, capta más ruido: el desvío de C2 sube de
+// 0.159 a 0.388 y el signo se vuelve MENOS estable, no más.
+//
+// ⚠ NO es señal de entrada: +0.248% diario contra 1.2% de comisión
+// Merval. Es criterio de RANKING, que no paga comisión.
+const _persCache = new Map();
+
+function _ols3(Y, X1, X2) {
+  const n = Y.length; if (n < 30) return null;
+  let s0=n,s1=0,s2=0,s11=0,s22=0,s12=0,sy=0,sy1=0,sy2=0;
+  for (let i=0;i<n;i++){ const a=X1[i],b=X2[i],v=Y[i];
+    s1+=a;s2+=b;s11+=a*a;s22+=b*b;s12+=a*b;sy+=v;sy1+=v*a;sy2+=v*b; }
+  const A=[[s0,s1,s2],[s1,s11,s12],[s2,s12,s22]], B=[sy,sy1,sy2];
+  for (let i=0;i<3;i++){
+    let p=i; for(let k=i+1;k<3;k++) if(Math.abs(A[k][i])>Math.abs(A[p][i])) p=k;
+    if (Math.abs(A[p][i])<1e-12) return null;
+    [A[i],A[p]]=[A[p],A[i]]; [B[i],B[p]]=[B[p],B[i]];
+    for(let k=i+1;k<3;k++){ const f=A[k][i]/A[i][i];
+      for(let j=i;j<3;j++) A[k][j]-=f*A[i][j]; B[k]-=f*B[i]; }
+  }
+  const c=[0,0,0];
+  for(let i=2;i>=0;i--){ let s=B[i]; for(let j=i+1;j<3;j++) s-=A[i][j]*c[j]; c[i]=s/A[i][i]; }
+  return c;
+}
+
+function persistenciaDireccional(ticker, hastaFecha=null) {
+  const key = ticker + "|" + (hastaFecha || "ult");
+  if (_persCache.has(key)) return _persCache.get(key);
+  let res = null;
+  try {
+    const d = serieLarga(ticker);
+    const MA = 200, WIN = 250;
+    if (d && d.length >= MA + WIN + 5) {
+      // índice de corte (para el Replay: no mirar más allá de la fecha)
+      let n = d.length - 1;
+      if (hastaFecha) { n = -1; for (let i=0;i<d.length;i++) if (d[i].date <= hastaFecha) n = i; }
+      if (n >= MA + WIN + 2) {
+        const r = new Array(n+1).fill(null), lv = new Array(n+1).fill(null), V = new Array(n+1).fill(null);
+        for (let i=1;i<=n;i++){ const c=d[i].close, p=d[i-1].close; if(c>0&&p>0) r[i]=Math.log(c/p)*100; }
+        for (let i=0;i<=n;i++){ const v=d[i].volume||0; lv[i]= v>0?Math.log(v):null; }
+        for (let i=MA;i<=n;i++){
+          let s=0,c=0; for(let j=i-MA;j<i;j++) if(lv[j]!=null){s+=lv[j];c++;}
+          if (c>MA*0.7 && lv[i]!=null) V[i]=lv[i]-s/c;
+        }
+        if (r[n]!=null && V[n]!=null) {
+          const rw=[], vw=[];
+          for (let j=n-WIN;j<n;j++){ if(r[j]!=null) rw.push(r[j]); if(V[j]!=null) vw.push(V[j]); }
+          if (rw.length>=100 && vw.length>=100) {
+            const mR=rw.reduce((a,x)=>a+x,0)/rw.length, sR=Math.sqrt(rw.reduce((a,x)=>a+(x-mR)**2,0)/rw.length);
+            const mV=vw.reduce((a,x)=>a+x,0)/vw.length, sV=Math.sqrt(vw.reduce((a,x)=>a+(x-mV)**2,0)/vw.length);
+            if (sR>0 && sV>0) {
+              const zR=x=>(x-mR)/sR, zV=x=>(x-mV)/sV;
+              const Y=[],X1=[],X2=[];
+              for (let j=n-WIN;j<n;j++){
+                if (r[j]==null||r[j+1]==null||V[j]==null) continue;
+                Y.push(zR(r[j+1])); X1.push(zR(r[j])); X2.push(zR(r[j])*zV(V[j]));
+              }
+              const c = _ols3(Y,X1,X2);
+              if (c) {
+                const zr=zR(r[n]), zv=zV(V[n]);
+                const pred = c[0] + c[1]*zr + c[2]*zr*zv;
+                const esARS = d[n].moneda === "ARS";
+                res = {
+                  pred: +pred.toFixed(3),
+                  c1: +c[1].toFixed(4),
+                  c2: +c[2].toFixed(4),
+                  regimen: c[2] > 0 ? "continuacion" : "reversion",
+                  zRet: +zr.toFixed(2),
+                  zVol: +zv.toFixed(2),
+                  retHoy: +r[n].toFixed(2),
+                  dir: pred > 0 ? "alza" : "baja",
+                  validado: esARS,          // sólo Merval pasó validación
+                  fecha: d[n].date,
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch(e) { res = null; }
+  if (_persCache.size > 400) _persCache.clear();
+  _persCache.set(key, res);
+  return res;
+}
+
 let _dailyCache = null;
 function serieLarga(ticker) {
   try {
@@ -5806,6 +5934,18 @@ export default function App() {
                             ...(()=>{ const v=volVsMedia(sel.ticker, s.vol_24h, s);
                               return v ? [{l:v.fuente==="movil6m"?`Vol vs media 6m`:`Vol vs media (anual)`, v:`${v.dif>=0?"+":""}${v.dif} (${v.pct>=0?"+":""}${v.pct}%)`,
                                 c:v.dif>0?"#00ff9d":v.dif<0?"#ff9040":"#ffd700"}] : []; })(),
+                            ...(()=>{ const p=persistenciaDireccional(sel.ticker);
+                              if(!p) return [];
+                              const col = p.pred>0?"#00ff9d":"#ff3355";
+                              return [{
+                                l: p.validado ? "Persistencia" : "⚗ Persistencia",
+                                v: `${p.pred>0?"▲":"▼"} ${p.pred>=0?"+":""}${p.pred}σ · ${p.regimen==="continuacion"?"CONT":"REV"}`,
+                                c: p.validado ? col : "#5a8fa8",
+                                punteado: !p.validado,
+                                tip: p.validado
+                                  ? `Persistencia direccional (LMSW). Régimen ${p.regimen==="continuacion"?"de continuación: el movimiento de hoy tiende a seguir":"de reversión: el movimiento de hoy tiende a revertirse"}. C2=${p.c2}. Validado en Merval: t=10.29 sobre 10 años. Es criterio de ranking, NO señal de entrada (+0.25% diario vs 1.2% de comisión).`
+                                  : `SIN VALIDAR en USD: t=-0.16 sobre 10 años (206.425 obs). Se probaron 6 cortes distintos y ninguno mostró poder predictivo. Se muestra sólo como referencia. El indicador SÍ está validado en Merval (t=10.29).`
+                              }]; })(),
                             {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
                           ];
                           const extra=[
@@ -5816,7 +5956,9 @@ export default function App() {
                             {l:"BB Inf.", v:`$${s.boll?.l?.toFixed(0)??"─"}`,c:"#3b82f6"},
                           ];
                           const fila=x=>(
-                            <div key={x.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 7px",marginBottom:"3px",fontSize:"9px",...semBox(x.c,"14")}}>
+                            <div key={x.l} title={x.tip||undefined}
+                              style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 7px",marginBottom:"3px",fontSize:"9px",...semBox(x.c,"14"),
+                                ...(x.punteado?{borderStyle:"dashed"}:{}), ...(x.tip?{cursor:"help"}:{})}}>
                               <span style={{color:"#8fb4cc"}}>{x.l}</span>
                               <span style={{color:x.c,fontWeight:700}}>{x.v}</span>
                             </div>
@@ -7599,6 +7741,11 @@ export default function App() {
                               ...(()=>{ const vv=volVsMedia(rpTicker||sel?.ticker, sg?.vol_24h, sg);
                                 return vv ? [[vv.fuente==="movil6m"?"Vol vs media 6m":"Vol vs media (anual)",`${vv.dif>=0?"+":""}${vv.dif} (${vv.pct>=0?"+":""}${vv.pct}%)`,
                                   vv.dif>0?"#00ff9d":vv.dif<0?"#ff9040":"#ffd700"]] : []; })(),
+                              ...(()=>{ const p=persistenciaDireccional(rpTicker||sel?.ticker, rpCalc.fecha);
+                                if(!p) return [];
+                                return [[p.validado?"Persistencia":"⚗ Persistencia",
+                                  `${p.pred>0?"▲":"▼"} ${p.pred>=0?"+":""}${p.pred}σ`,
+                                  p.validado?(p.pred>0?"#00ff9d":"#ff3355"):"#5a8fa8"]]; })(),
                               ["Tendencia",sg?.trend,"#8fb4cc"],
                             ].filter(([,v])=>v!=null&&v!=="").map(([l,v,c])=>(
                               <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 6px",background:"#050c15",borderRadius:"3px",fontSize:"8px"}}>
