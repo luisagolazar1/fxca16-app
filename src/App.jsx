@@ -617,6 +617,27 @@ function volPriceDivergence(data, n) {
 const HALLAZGOS_DESCARTADOS = [
   {
     fecha: "2026-08-26",
+    hipotesis: "AUDITORÍA DE CONSTANTES: verificar que cada constante precalculada reproduce lo que dice medir",
+    origen: "Tras encontrar VOL_MEDIA_ANUAL rota y CORRELATION_GROUPS incorrectos, se auditaron TODAS las constantes que afectan señales contra los datos de 10 años.",
+    metodo: "Para cada constante: recalcular la cantidad declarada desde CSV_DATA_DAILY_RAW / serie horaria y comparar. Donde aplica, además split temporal 60/40 para ver si el efecto es estable.",
+    n: "RSI: 380.808 obs · DOW: 384.419 obs · horarias: 251.335 obs",
+    resultado: "RSI_TASAS_BASE ✅ CORRECTA — reproduce casi exacto (pUp 33.0 declarado vs 32.7 real, 25.9 vs 25.7, 21.6 vs 21.6; promedio general 21.4 vs 21.7). Es la única de la familia que pasa limpia. HOUR_RELIABILITY ✅ DEFENDIBLE — los factores no siguen el orden de los retornos medios, pero sí correlacionan con la magnitud del movimiento (|ret| medio h13=1.386% vs h20=0.279%), que es lo que dice medir (confiabilidad, no retorno). DOW_FACTOR ❌ ROTA E INESTABLE — ver entrada aparte.",
+    veredicto: "auditoría completa — 1 rota de 3 revisadas",
+    nota: "Estado final de todas las constantes del proyecto: VOL_MEDIA_ANUAL (rota → reemplazada por media móvil), CORRELATION_GROUPS (rota → reemplazada por cálculo), DOW_FACTOR (rota e inestable → neutralizada), adaptiveScoreAdj (sobreajuste → neutralizada), TICKER_CONFIDENCE (sobreajuste → eliminada), dynParams/adaptiveW (perjudicaba → neutralizada), RSI_TASAS_BASE (✅ correcta), HOUR_RELIABILITY (✅ defendible), VELAS_TASAS_BASE (✅ honesta, medida con la norma nueva). El chequeo que destapó las tres rotas es el mismo y toma minutos: recalcular la cantidad declarada desde los datos y comparar.",
+  },
+  {
+    fecha: "2026-08-26",
+    hipotesis: "DOW_FACTOR: el día de la semana modula la confiabilidad de la señal (viernes malo, martes bueno)",
+    origen: "Constante hardcodeada con comentarios explicativos ('Viernes: cierre de posiciones, evitar señales nuevas'). Auditada junto al resto.",
+    metodo: "Retorno medio diario por día de la semana sobre 10 años y 384.419 observaciones. Split temporal 60/40 promediando POR FECHA (no por observación) para chequear estabilidad.",
+    n: "384.419 obs, ~77.000 por día de la semana",
+    resultado: "Los factores están INVERTIDOS respecto a los datos. Ranking declarado: Martes > Miércoles > Jueves > Lunes > Viernes. Ranking real: Miércoles > Viernes > Martes > Lunes > Jueves. El viernes tenía el factor MÁS BAJO (0.90) y es el SEGUNDO MEJOR día (+0.1807%, t=13.92); el jueves con factor 1.03 es el peor (+0.1102%). Y el efecto no es estable: entre las dos mitades el orden se da vuelta (IS: Vie>Mie>Mar>Jue>Lun · OOS: Lun>Mie>Vie>Jue>Mar) — el lunes pasa de último a primero, el martes de tercero a último.",
+    veredicto: "neutralizada — todos los factores en 1.00",
+    nota: "Doble problema: además de estar invertida, no hay efecto que capturar. Un ranking que se da vuelta al partir la muestra es ruido con estructura aparente, no señal. Es el mismo error que atrp<0.87 y que el rally de octubre 2025: describir el período en vez de encontrar un patrón. A diferencia de las otras constantes rotas, esta SÍ afectaba el score en producción vía timeFactor (hourFactor × dowFactor).",
+  },
+
+  {
+    fecha: "2026-08-26",
     hipotesis: "CORRELATION_GROUPS: los 4 grupos escritos a mano cubrían el riesgo de concentración",
     origen: "Revisión del sistema completo. Los grupos estaban hardcodeados con comentarios que declaraban correlaciones específicas.",
     metodo: "Correlación de Pearson sobre retornos logarítmicos diarios, 250 ruedas, todo el universo (158 tickers = 12.403 pares posibles). Se contrastan las correlaciones declaradas contra las medidas.",
@@ -1266,13 +1287,30 @@ const HOUR_RELIABILITY = {
 };
 
 // MEJORA 6 — Día de la semana
-// Lunes y viernes tienen comportamiento diferente (reversión/cierre de posiciones)
+// NEUTRALIZADO (2026-08-26). Los factores estaban invertidos respecto a
+// los datos, y el efecto ni siquiera es estable.
+//
+// MEDIDO sobre 10 años de diarias (384.419 obs):
+//   ranking DECLARADO: Martes > Miércoles > Jueves > Lunes > Viernes
+//   ranking REAL     : Miércoles > Viernes > Martes > Lunes > Jueves
+//
+// El comentario original decía "Viernes: cierre de posiciones, evitar
+// señales nuevas" y le ponía el factor más bajo (0.90). El viernes es el
+// SEGUNDO MEJOR día (+0.1807%, t=13.92). El jueves, con factor 1.03, es
+// el peor (+0.1102%). Viernes y jueves estaban literalmente invertidos.
+//
+// Y el efecto no es estable: partiendo la muestra 60/40 el orden se da
+// vuelta (IS: Vie>Mie>Mar>Jue>Lun · OOS: Lun>Mie>Vie>Jue>Mar). El lunes
+// pasa de último a primero, el martes de tercero a último. No hay señal
+// que capturar, sólo ruido con estructura aparente.
+//
+// Se deja en 1.0 para todos: neutro, sin tocar el score.
 const DOW_FACTOR = {
-  0: 0.92,  // Lunes: gap de fin de semana, mayor incertidumbre
-  1: 1.05,  // Martes: mejor día histórico
-  2: 1.05,  // Miércoles
-  3: 1.03,  // Jueves
-  4: 0.90,  // Viernes: cierre de posiciones, evitar señales nuevas
+  0: 1.00,  // Lunes
+  1: 1.00,  // Martes
+  2: 1.00,  // Miércoles
+  3: 1.00,  // Jueves
+  4: 1.00,  // Viernes
 };
 
 const TICKER_CONFIDENCE = {
