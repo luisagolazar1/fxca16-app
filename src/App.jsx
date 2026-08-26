@@ -617,6 +617,26 @@ function volPriceDivergence(data, n) {
 const HALLAZGOS_DESCARTADOS = [
   {
     fecha: "2026-08-26",
+    hipotesis: "VETO: comprar lejos de cualquier nivel de Fibonacci (sin soporte estructural cerca) rinde peor",
+    origen: "Barrido de Fibonacci como variable, cruzado con dirección de señal y trend",
+    metodo: "156 tickers × 10 años (63.659 obs) con combinedSignal() y calcFibonacci() reales. Condición: COMPRA + trend=ALCISTA + distancia al nivel Fib más cercano > 3.92% (tercil superior) + ese nivel clasificado como 'soporte' débil. Exceso a 20 días controlado por fecha, moneda y tercil de volatilidad. Split temporal 60/40, drop-one por ticker, consistencia anual.",
+    n: "424 obs totales (314 en muestra / 110 fuera de muestra), 93 tickers",
+    resultado: "Exceso -2.632% a 20d con t=-3.80. Fuera de muestra -3.066% con t=-2.50, MÁS negativo que en muestra. Win rate 41.5%. Drop-one: sin el ticker más favorable (INTC) sigue en t=-2.99. CONSISTENCIA ANUAL: 8 de 8 años con exceso negativo. Funciona en ambos mercados: ARS -3.461% (t=-3.46), USD -1.930% (t=-2.10).",
+    veredicto: "confirmado como veto — pendiente de implementar",
+    nota: "El hallazgo más sólido de los preliminares: 8/8 años negativos, aguanta drop-one, más fuerte fuera de muestra que dentro, y funciona en los dos mercados (a diferencia de la persistencia direccional, que es sólo Merval). Mecanismo coherente con el fix de R/R estructural: comprar lejos de todo soporte es comprar sin piso técnico. Cautela: 424 observaciones y 45/93 tickers con exceso negativo (la mitad), así que se apoya en pocos casos por activo. Como VETO no paga comisión — filtrar una compra es gratis — así que el umbral de evidencia para aplicarlo es más bajo que para una señal de entrada.",
+  },
+  {
+    fecha: "2026-08-26",
+    hipotesis: "En señales de VENTA, el campo trend discrimina el resultado (ALCISTA FUERTE vs BAJISTA FUERTE se comportan distinto)",
+    origen: "Observación del usuario de que no es lo mismo una venta con tendencia bajista que bajista fuerte. Quedó preliminar con 1 año de datos horarios; se cierra acá con 10 años.",
+    metodo: "156 tickers × 10 años, señales de VENTA separadas por trend, exceso a 3 días controlado por fecha, moneda y tercil de volatilidad. Split 60/40. Test explícito del gradiente entre extremos.",
+    n: "34.617 señales de venta repartidas en 5 niveles de trend",
+    resultado: "Sólo ALCISTA FUERTE cruza: -0.287% (t=-1.99) y fuera de muestra -0.557% con t=-3.65, MÁS fuerte fuera que dentro. Los otros cuatro niveles no cruzan en ningún caso (|t| ≤ 1.35). El test del gradiente ALCISTA FUERTE vs BAJISTA FUERTE da t=-1.62 a 3 días y t=-0.75 a 20 días: NO hay gradiente ordenado por tendencia.",
+    veredicto: "parcial — sólo sirve el extremo ALCISTA FUERTE, y en dirección CONTRARIA a la esperada",
+    nota: "La hipótesis original (que trend discrimina de forma ordenada) NO se sostiene: no hay gradiente, y el test entre extremos no cruza (t=-1.62 a 3d, t=-0.75 a 20d). Lo que sí queda es un caso puntual: VENTA sobre papeles en tendencia ALCISTA FUERTE da exceso -0.287% (OOS -0.557%, t=-3.65, más fuerte fuera de muestra). ⚠ CORRECCIÓN DE INTERPRETACIÓN: exceso negativo en una señal de VENTA significa que el papel rinde PEOR que sus pares, o sea que la venta ACIERTA. Con 1 año de datos horarios este mismo caso había dado exceso POSITIVO y se interpretó como 'ahí la señal de venta falla' — con 10 años el signo es el opuesto. Verificado: retorno crudo +0.159%, exceso -0.155%, baja el 45.4% de las veces. O sea que el papel sube en términos absolutos pero menos que sus pares. NO es candidato a veto: es el subgrupo donde la venta funciona MEJOR, así que si algo habría que priorizarlo, no filtrarlo. Antes de usarlo, tener presente que el retorno crudo es positivo — sólo gana en términos relativos, que es lo que importa para ranking pero no para una venta en seco.",
+  },
+  {
+    fecha: "2026-08-26",
     hipotesis: "Los patrones de vela deberían estimarse por activo con encogimiento (norma nueva) en vez de en pool global",
     origen: "Aplicación de la norma del proyecto (estimar por activo con encogimiento) al primer caso pendiente. Motivado por un análisis previo que halló efectos de ±1% por activo donde la tabla global mostraba 0.2%.",
     metodo: "184.766 detecciones sobre 156 tickers y 10 años con detectCandlePattern() real. Exceso a 4 días controlado por fecha, moneda y tercil de volatilidad. Split temporal 60/40. Se compara predicción global vs. por activo vs. encogida (peso calculado por método de momentos: tau² entre activos menos varianza de muestreo).",

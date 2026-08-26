@@ -1,7 +1,9 @@
 # FXCA16 — Resumen de traspaso
 
-> Actualizado: 2026-08-25. Reemplaza la versión anterior.
-> Los cambios de esta sesión están en el commit `4cb3362` (+ merge `368c298`).
+> Actualizado: 2026-08-26. Reemplaza la versión anterior.
+> Commits de la sesión: `4cb3362` (vol media móvil), `c497c04` (recursión + noticias),
+> `610452e` (persistencia direccional), `c6d2645` (norma por activo), `c09ea95`
+> (neutralizar adaptiveW), y los de registro.
 
 ## Repositorio
 - **GitHub:** https://github.com/luisagolazar1/fxca16-app
@@ -159,6 +161,90 @@ misma metodología (constantes precalculadas sobre el histórico completo). No r
 
 ---
 
+# NORMA DE ESTIMACIÓN DEL PROYECTO (nueva, validada)
+
+> **Estimar por activo con encogimiento hacia el global. Ventana dinámica de 400 ruedas
+> que termina en la rueda anterior. Nunca en pool global puro.**
+
+Surgió de una observación del usuario: *"un error que estamos teniendo es evaluar de manera
+global y no por casos particulares"*. Se validó empíricamente en vez de adoptarla por
+criterio.
+
+**EXPERIMENTO** (279.735 obs diarias, 156 tickers, 10 años, ~750 fechas fuera de muestra,
+modelo LMSW como banco de pruebas). Spread long-short a 1 día en ARS:
+
+| método | spread | t | IR | OOS spread | OOS t |
+|---|---|---|---|---|---|
+| Global (pool único) | +0,081% | 2,65 | 1,00 | +0,257% | 4,61 |
+| **Por activo** | **+0,240%** | **9,75** | **3,60** | +0,346% | **7,64** |
+| Por activo + encogimiento | +0,225% | 8,39 | 3,11 | **+0,367%** | 7,36 |
+
+**Por activo triplica al global.** Evaluar en pool estaba tirando dos tercios de la señal.
+
+**Por qué encogimiento y no por activo puro:** el peso propio que el dato asigna es 0,29 con
+250 ruedas y **0,48 con 400**. Es decir, ni con 400 ruedas la estimación individual merece más
+de la mitad del peso. Sin encogimiento, "por activo" degenera en `TICKER_CONFIDENCE`.
+
+**Por qué 400 ruedas:** 250/300/400 dan resultados casi idénticos (t=9,75 / 10,36 / 9,84), así
+que el hallazgo no depende de elegir bien el número. Se toma 400 porque sube el peso propio de
+0,29 a 0,48 — le da más voz al activo, que es el objetivo.
+
+**La norma se autorregula.** Aplicada a patrones de vela, el peso propio dio 0,647 para
+"3 Cuervos" y 0,613 para "3 Velas Alcistas" (que sí tienen heterogeneidad real), pero
+**exactamente 0,000** para Doji, Engulfing Alcista, Estrella Fugaz y Marubozu, donde τ²=0 y
+toda la varianza entre activos es ruido de muestreo. Y aplicada al W de `dynParams`, el peso
+correcto es 0 — que es justo lo que se midió (ver hallazgo 11).
+
+Esa es la diferencia con los sobreajustes históricos: **el peso lo decide el dato, no el
+programador.**
+
+---
+
+# INDICADOR NUEVO: PERSISTENCIA DIRECCIONAL (LMSW)
+
+Basado en Llorente, Michaely, Saar y Wang (*Review of Financial Studies*, 2002): los retornos
+generados por reparto de riesgo revierten, los generados por trading informado continúan. El
+coeficiente C2 mide de qué lado está el papel **hoy**, y cambia con el tiempo dentro del mismo
+activo (verificado: GGAL C2=−0,091 en 2024, +0,019 en 2025).
+
+**Especificación** (`persistenciaDireccional(ticker, hastaFecha)` en App.jsx):
+
+```
+z(r[t+1]) = c0 + c1·z(r[t]) + c2·z(r[t])·z(V[t])
+V = log(volumen) − media móvil 200 ruedas   (detrendado, adaptativo)
+ventana 400 ruedas, r y V estandarizados con la propia ventana,
+coeficientes encogidos hacia el promedio del universo de esa fecha
+```
+
+**VALIDACIÓN** (303.096 obs, 156 tickers, 10 años, OOS por construcción):
+
+| | spread 1d | t |
+|---|---|---|
+| **ARS** | **+0,248%** | **10,29** |
+| USD | −0,002% | −0,16 |
+
+- **Drop-one: 156/156** corridas siguen con t>2,58 (rango 3,41–3,95)
+- **8 de 9 años positivos**
+- La normalización fue decisiva: mejoró ARS de t=6,21 a 10,29 y hundió USD de 0,48 a −0,16
+
+**USD no funciona y se probaron 6 cortes** (iliquidez de Amihud, volumen en dólares, ETF vs
+acción, magnitud del movimiento, descomposición C1/C2, versión normalizada). Ninguno pasa de
+|t|=1,05. El diagnóstico: C1 medio en USD es −0,006 (cero) contra +0,070 en Merval — no hay
+autocorrelación diaria que capturar. Badge punteado en USD.
+
+⚠ **NO es señal de entrada:** +0,248% diario contra 1,2% de comisión Merval. Es criterio de
+**ranking**, que no paga comisión.
+
+⚠ **MATIZ IMPORTANTE:** el efecto **no es de volumen**. El término C1 solo da t=10,38 en ARS
+(más que el modelo completo) y el término del volumen C2 aporta t=1,75. Lo que se descubrió es
+que **Merval tiene momentum diario persistente** y el marco LMSW lo capta de rebote. Por eso se
+llama "persistencia" y no "volumen".
+
+**En la UI:** badge en Detalle y en Replay. Sólido en ARS, punteado con tooltip "sin validar"
+en USD. En Replay se corta por fecha para no mirar al futuro.
+
+---
+
 # HALLAZGOS DE MERCADO
 
 ## Método usado (mantenerlo)
@@ -288,37 +374,35 @@ mejor hallazgo de la sesión. Al corregir `VOL_MEDIA_ANUAL` (hallazgo 1) **se di
 
 Vivía del lookahead de la constante. **Dejar anotado: no volver a probarlo.**
 
-## 9. `trend` discrimina las señales de venta — SIN CONFIRMAR, prometedor
+## 9. `trend` en señales de venta — CERRADO con 10 años: parcial, y el signo era al revés
 
-Hasta ahora todas las `VENTA` se trataban igual sin mirar `trend`. Separadas, a 3 días:
+Se cierra la versión preliminar que había con 1 año de horarias.
 
-**Universo completo (control), exceso vs. fecha+moneda+tercil de volatilidad:**
+**156 tickers × 10 años, 34.617 señales de venta.** Exceso a 3 días, control por fecha,
+moneda y tercil de volatilidad:
 
-| trend | vol⁺ | vol⁻ |
-|---|---|---|
-| ALCISTA FUERTE | −0,077 (t=−0,36) | −0,099 (t=−0,43) |
-| **ALCISTA** | +0,134 (t=0,48) | **−0,649 (t=−2,59)** ⭐ |
-| LATERAL | −0,012 (t=−0,07) | −0,123 (t=−1,08) |
-| BAJISTA | −0,023 (t=−0,11) | −0,047 (t=−0,23) |
-| BAJISTA FUERTE | −0,168 (t=−1,02) | −0,105 (t=−0,66) |
+| trend | n | exceso 3d | t | OOS exc | OOS t |
+|---|---|---|---|---|---|
+| **ALCISTA FUERTE** | 3.346 | **−0,287%** | −1,99 | **−0,557%** | **−3,65** |
+| ALCISTA | 1.134 | +0,205% | 1,20 | +0,093% | 0,46 |
+| LATERAL | 16.374 | +0,097% | 1,01 | −0,005% | −0,04 |
+| BAJISTA | 7.104 | −0,044% | −0,49 | −0,018% | −0,12 |
+| BAJISTA FUERTE | 6.659 | +0,120% | 1,35 | +0,013% | 0,09 |
 
-Dos cosas para seguir:
+**La hipótesis original no se sostiene:** no hay gradiente ordenado por tendencia. El test
+entre extremos (ALCISTA FUERTE vs BAJISTA FUERTE) da t=−1,62 a 3 días y t=−0,75 a 20 días.
 
-**(a) `VENTA + ALCISTA + vol⁻`** → −0,649%, t=−2,59, n=594, WR 44,4%. Primera celda de la
-familia que cruza 1,96, y **mantiene el signo en los top-20 de momentum** (−0,831%, WR 40,0%).
-Lectura natural: tendencia alcista moderada + señal de venta + volumen que no acompaña = suba
-sin nafta.
+Lo que sí queda es **un caso puntual**: VENTA sobre papeles en tendencia alcista fuerte,
+con el efecto reforzándose fuera de muestra (t=−3,65).
 
-*Cautela:* mirar la columna vol⁻ completa — −0,099 / **−0,649** / −0,123 / −0,047 / −0,105.
-Si `trend` modulara de verdad, habría un **gradiente**. En cambio una celda sobresale 6× sobre
-sus vecinas, que están todas pegadas a −0,1%. Eso parece una celda con suerte más que un
-mecanismo. Un efecto real por tendencia raramente saltea el nivel de al lado.
+⚠ **CORRECCIÓN DE INTERPRETACIÓN.** Durante la sesión se dijo que ahí "la señal de venta
+falla". Es al revés. Exceso negativo en una VENTA significa que el papel rinde **peor** que
+sus pares, o sea que la venta **acierta**. Verificado: retorno crudo +0,159%, exceso
+−0,155%, baja el 45,4% de las veces — el papel sube en absoluto pero menos que sus pares.
 
-**(b) `ALCISTA FUERTE` se comporta al revés.** En los top-20 de momentum es la única con
-exceso **positivo** en las dos columnas (+0,671 con n=33, y +0,621 con n=251, t=1,40): ahí la
-señal de venta **falla**, el papel sigue subiendo. Si se confirma, es accionable como **veto y
-sin costo**: no mostrar señales de venta en papeles en tendencia alcista fuerte que vienen
-liderando el momentum. Hoy se muestran igual que cualquier otra.
+Consecuencia: **no es candidato a veto.** Es el subgrupo donde la venta funciona mejor. Si se
+usara, sería para priorizar, no para filtrar. Y sólo sirve en términos relativos (ranking),
+porque el retorno crudo es positivo.
 
 ## 10. La búsqueda a ciegas encuentra el período, no señales
 
@@ -334,10 +418,61 @@ Diagnóstico limpio del segundo barrido: las 4 mejores en muestra eran
 
 O sea: el período de muestra fue uno donde los papeles de baja volatilidad con momentum
 rindieron muy bien. Cualquier combinación que los seleccione daba t>5. **No es una señal —
-es una descripción del período.** Mismo error que el rally de octubre 2025 ya anotado, con
-otra cara.
+es una descripción del período.**
 
----
+## 11. `dynParams` / `adaptiveW` — NEUTRALIZADO, y anulaba el selector de W ⚠
+
+`update_data.py` probaba W ∈ {5,7,10,14} sobre la serie completa de cada ticker y se quedaba
+con el de mejor win rate. `adaptiveW()` lo aplicaba en producción.
+
+**Medido** (157 tickers, 10 años, split 60/40, replicando `backtest_w()` exacto):
+
+| | win rate fuera de muestra |
+|---|---|
+| W elegido por activo | 47,48% |
+| **W global fijo = 5** | **47,71%** |
+
+**Diferencia −0,23pp con t=−2,62: no es que no ayude, perjudica.** El W propio le gana al
+global en **8 de 157 activos (5%)**, exactamente lo esperable por azar. El orden de los W es
+idéntico dentro y fuera de muestra (5 > 7 > 10 > 14): W=5 es mejor para todos.
+
+**BUG ADICIONAL, más grave.** Los 158 tickers tenían `sims >= 5`, así que `adaptiveW` siempre
+devolvía el W aprendido y **nunca llegaba al `globalW`**. El selector de ventana de la UI
+(7/14/30/60) estaba siendo **ignorado por completo** en Oportunidades: 138 tickers calculaban
+con W=5, 13 con W=7, 5 con W=10, 2 con W=14, sin importar qué eligiera el usuario.
+
+Con la neutralización el selector vuelve a funcionar. Verificado: GGAL pasa de VENTA (51) en
+W=7 a COMPRA (63) en W=30 — antes era imposible.
+
+⚠ Nota aparte: el win rate ronda 47,5% en **todos** los W. La estrategia que `backtest_w()`
+usa para elegir (cruce SMA20/50, stop 1,5×ATR, TP 2,5×ATR) pierde más veces de las que gana.
+
+## 12. VETO DE FIBONACCI — el candidato más sólido sin implementar ⭐
+
+`COMPRA + trend=ALCISTA + distancia al nivel Fib más cercano > 3,92% + ese nivel clasificado
+'soporte' débil`. Es decir: el sistema dice comprar, pero el precio está en tierra de nadie,
+sin ningún nivel técnico que lo sostenga.
+
+**Exceso a 20 días** (156 tickers × 10 años, control por fecha/moneda/volatilidad):
+
+| | n | exceso | t |
+|---|---|---|---|
+| Total | 424 | **−2,632%** | **−3,80** |
+| Fuera de muestra | 110 | **−3,066%** | −2,50 |
+| ARS | 190 | −3,461% | −3,46 |
+| USD | 234 | −1,930% | −2,10 |
+
+- Win rate 41,5%
+- **Drop-one:** sin el ticker más favorable (INTC) sigue en t=−2,99
+- **Consistencia: 8 de 8 años con exceso negativo**
+- Más fuerte fuera de muestra que dentro
+- **Funciona en los dos mercados** — a diferencia de la persistencia direccional, que es sólo Merval
+
+**Cautela:** 424 observaciones sobre 93 tickers, y sólo 45/93 tienen exceso negativo. Se apoya
+en pocos casos por activo.
+
+**Por qué el umbral de evidencia es más bajo acá:** como *veto* no paga comisión — filtrar una
+compra es gratis. No hay que superar el 1,2-1,8% de costo, sólo hay que no equivocarse.
 
 ## Arquitectura del sistema (sin cambios respecto al traspaso anterior)
 
@@ -384,42 +519,59 @@ hardcodeado en `getUpcomingEvents()` sigue funcionando.
 
 ## PRÓXIMOS PASOS (orden sugerido)
 
-1. ~~Arreglar la recursión de `combinedSignal`~~ — **HECHO**, commit `c497c04`. 35x más rápido
-   (35ms → ~1ms/llamada), verificado idéntico en `sig`/`final_sc`/`rr`/`scoreTrend`.
-2. **Medir `dynParams`** (hallazgo 3): ¿el W por ticker le gana al W global fuera de muestra?
-   Si no, neutralizarlo como se hizo con `adaptiveScoreAdj`. Ahora barato de correr, gracias
-   al punto 1.
-3. ~~Validación de 10 años sobre diarias para R/R~~ — **HECHO**, misma sesión. Resultado: el
-   gradiente es real pero 3-6x más chico que la medición sobre 1 año, no cubre costos, queda
-   en observación (no pasa a aplicada). Ver hallazgo 4 actualizado arriba.
-4. **Validación de 10 años para `trend` en señales de venta** (hallazgo 9) y para el veto de
-   **Fibonacci** (hallazgo 11) — mismo método que R/R, ahora barato de correr. Son los dos
-   candidatos que siguen sin cerrar.
-5. **Correr el Tracker 3 meses** — evidencia hacia adelante, insustituible.
-6. Arreglar el calendario de earnings.
-7. Revalidar el alfa del Merval con más historia.
-8. Vista de cartera agregada (riesgo total, correlación entre posiciones).
-9. Dólar CCL/MEP — decisión CEDEAR vs papel local.
-9. Dividendos — no se descuentan en ningún cálculo.
+1. **Probar el selector de W en Oportunidades.** Es el cambio más visible de la sesión:
+   hasta ahora no hacía nada (ver hallazgo 11). Verificar que el comportamiento por ventana
+   tiene sentido antes de confiar en las señales.
+2. **Implementar el veto de Fibonacci** (hallazgo 12). Es el candidato más sólido que quedó
+   sin aplicar: 8/8 años negativos, aguanta drop-one, funciona en ARS y USD, y como veto no
+   paga comisión.
+3. **Correr el Tracker 3 meses** — evidencia hacia adelante, insustituible.
+4. Arreglar el calendario de earnings (`descargar_earnings()` devuelve vacío).
+5. Revalidar el alfa del Merval con más historia.
+6. Vista de cartera agregada (riesgo total, correlación entre posiciones).
+7. Dólar CCL/MEP — decisión CEDEAR vs papel local.
+8. Dividendos — no se descuentan en ningún cálculo.
 
----
+### Ya cerrado en esta sesión
+- ~~Recursión de `combinedSignal`~~ → arreglado, 35x más rápido
+- ~~Validación de 10 años de R/R~~ → efecto real pero débil, queda en observación
+- ~~Medir `dynParams`~~ → neutralizado, perjudicaba (t=-2.62)
+- ~~Fibonacci y `trend` en ventas~~ → ambos cerrados con 10 años
+- ~~Patrones de vela por activo~~ → medido, no justifica cambiar la tabla
 
 ## Filosofía (mantener)
 
 Cada mejora se valida **empíricamente contra los datos reales**, no por intuición. Lo que no
 sobrevive fuera de muestra se descarta o se marca explícitamente como preliminar.
 
-Esta sesión agrega tres reglas concretas, aprendidas a los golpes:
+Reglas concretas, aprendidas a los golpes:
 
 1. **Controlar por volatilidad siempre.** Sin ese control, tres hipótesis distintas parecieron
    buenas y las tres eran exposición a beta.
 2. **Clusterizar por fecha y contar ventanas independientes.** 15.000 observaciones de 380
    fechas son 380 datos, no 15.000. A 45 días son 3.
-3. **Buscar sólo en el 60% viejo y reportar el 40% que el buscador no vio.** No cuesta tiempo
-   extra y es lo único que separa señal de descripción del período. De 28 candidatos con
-   t>2,5 en muestra, sobrevivieron 4 en un barrido y 0 en el otro.
+3. **Buscar sólo en el 60% viejo y reportar el 40% que el buscador no vio.** De 28 candidatos
+   con t>2,5 en muestra, sobrevivieron 4 en un barrido y 0 en el otro.
+4. **Estimar por activo con encogimiento** (ver norma arriba). El peso lo decide el dato.
+5. **Un año de datos no alcanza para declarar nada a horizontes largos.** R/R parecía t=5,69 a
+   20 días con 1 año; con 10 años el efecto es 3-6x más chico. "Sobrevive holdout con 1 año" y
+   "sobrevive con historia suficiente" son dos chequeos distintos y hacen falta los dos.
 
-Y una advertencia: **las constantes precalculadas del proyecto no son confiables.**
-`VOL_MEDIA_ANUAL` resultó estar rota, `adaptiveScoreAdj` y `TICKER_CONFIDENCE` ya se habían
-eliminado por sobreajuste, y `dynParams` tiene el mismo defecto y sigue activo. Antes de
-confiar en cualquier constante embebida, verificar que reproduce la cantidad que dice medir.
+**Las constantes precalculadas del proyecto no son confiables.** Historial completo:
+
+| constante | destino |
+|---|---|
+| `VOL_MEDIA_ANUAL` | rota (10x más dispersa que la cantidad que medía) → reemplazada |
+| `adaptiveScoreAdj` | sobreajuste → neutralizada |
+| `TICKER_CONFIDENCE` | sobreajuste → eliminada |
+| `dynParams` / `adaptiveW` | perjudicaba (t=−2,62) → neutralizada |
+| `VELAS_TASAS_BASE` | medida con la norma nueva → se deja, es honesta |
+| `RSI_TASAS_BASE` | **sin revisar** |
+
+Antes de confiar en cualquier constante embebida, **verificar que reproduce la cantidad que
+dice medir**. Ese chequeo simple fue el que destapó `VOL_MEDIA_ANUAL`.
+
+**Y un patrón que se repitió toda la sesión:** cada vez que apareció algo prometedor en el
+volumen, el signo terminó siendo el **opuesto** a la intuición. Pasó tres veces. También pasó
+con `trend` en ventas, donde la interpretación del signo estuvo invertida hasta que se verificó
+con 10 años. Verificar la dirección del efecto antes de construir sobre él.
