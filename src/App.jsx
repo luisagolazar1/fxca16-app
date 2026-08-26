@@ -617,6 +617,16 @@ function volPriceDivergence(data, n) {
 const HALLAZGOS_DESCARTADOS = [
   {
     fecha: "2026-08-26",
+    hipotesis: "CORRELATION_GROUPS: los 4 grupos escritos a mano cubrían el riesgo de concentración",
+    origen: "Revisión del sistema completo. Los grupos estaban hardcodeados con comentarios que declaraban correlaciones específicas.",
+    metodo: "Correlación de Pearson sobre retornos logarítmicos diarios, 250 ruedas, todo el universo (158 tickers = 12.403 pares posibles). Se contrastan las correlaciones declaradas contra las medidas.",
+    n: "158 tickers, 250 ruedas",
+    resultado: "Tres problemas. (1) El ticker 'YPF' NO EXISTE en el universo — es YPFD — así que el grupo de energía Merval estaba parcialmente roto. (2) Los 4 grupos cubrían 16 de los 104 pares con correlación >0.70 del universo: el 85% de las correlaciones altas quedaba sin contemplar (CRM-NOW 0.80, MU-XLK 0.75, AMD-XLK 0.73, QQQ-SPY 0.93, QQQ-XLK 0.957). (3) El grupo tech se declaraba en 0.68-0.70 y su correlación real es 0.465 — sobreestimado.",
+    veredicto: "reemplazado por cálculo desde los datos",
+    nota: "Otra constante hardcodeada que no reproducía lo que decía medir, igual que VOL_MEDIA_ANUAL. Ahora matrizCorrelacion() calcula sobre 250 ruedas terminando en la rueda anterior, coherente con la norma del proyecto. Resultado: 104 pares sobre 61 tickers, contra los 17 tickers de los grupos viejos. GGAL pasa de correlacionar con 3 papeles a 11 (AUSO, BHIP, BMA, BPAT, CEPU, EDN, LOMA, METR, PAMP, SUPV, TGSU2). Además la deduplicación ahora exige MISMA DIRECCIÓN de señal para degradar: dos papeles correlacionados con señales opuestas no son la misma apuesta y antes se trataban igual. Los grupos viejos se conservan sólo como semilla de respaldo si la serie diaria no estuviera disponible.",
+  },
+  {
+    fecha: "2026-08-26",
     hipotesis: "LIMITACIÓN ESTRUCTURAL: el universo de datos tiene sesgo de supervivencia — afecta TODAS las validaciones del proyecto",
     origen: "Revisión completa del sistema. No es una hipótesis de mercado sino una limitación de los datos que hay que tener presente al leer cualquier resultado de este registro.",
     metodo: "Inspección de CSV_DATA_DAILY_RAW: se contaron los tickers cuya serie termina en la fecha actual (vivos) contra los que dejaron de cotizar antes.",
@@ -824,6 +834,23 @@ const HALLAZGOS_DESCARTADOS = [
 // de señales; el estado indica si ya están aplicadas en producción o
 // todavía en observación.
 const REGLAS_ACTIVAS = [
+  {
+    fecha: "2026-08-26",
+    regla: "Veto de Fibonacci: no priorizar compras sin soporte estructural cerca",
+    estado: "aplicada",
+    descripcion: "vetoFibonacci(sig, data) marca las COMPRA con trend=ALCISTA donde el precio está a más de 3.92% del nivel de Fibonacci más cercano y ese nivel es sólo un 'soporte' débil — es decir, comprar sin piso técnico. La señal se DEGRADA (COMPRA FUERTE pasa a COMPRA) y sale del conteo de oportunidades, pero NO se elimina.",
+    evidencia: "156 tickers × 10 años (63.659 obs), exceso a 20 días controlado por fecha, moneda y tercil de volatilidad. Exceso -2.632% con t=-3.80; fuera de muestra -3.066% (t=-2.50), MÁS fuerte fuera que dentro. Win rate 41.5%. Drop-one: sin el ticker más favorable (INTC) sigue en t=-2.99. Consistencia: 8 de 8 años con exceso negativo. Funciona en los DOS mercados: ARS -3.461% (t=-3.46), USD -1.930% (t=-2.10) — es el único hallazgo de la sesión que no es exclusivo de Merval. En el universo actual veta el 3.2% de las compras.",
+    uso: "Como VETO no paga comisión: filtrar una compra es gratis, así que el umbral de evidencia es más bajo que para una señal de entrada. El sesgo de supervivencia del universo juega A FAVOR: si estuvieran los papeles deslistados, el veto sería aún más necesario. Degrada en vez de eliminar porque son 424 obs sobre 93 tickers (45/93 con exceso negativo) — alcanza para bajar prioridad, no para descartar.",
+  },
+  {
+    fecha: "2026-08-26",
+    regla: "Correlación entre posiciones calculada de los datos, no declarada a mano",
+    estado: "aplicada",
+    descripcion: "matrizCorrelacion() calcula correlación de Pearson sobre retornos log diarios, ventana de 250 ruedas terminando en la rueda anterior. De cada conjunto de señales correlacionadas por encima de 0.70 Y EN LA MISMA DIRECCIÓN, se mantiene la de mayor convicción y las demás se degradan a NEUTRAL con nota de con quién correlacionan.",
+    evidencia: "Los 4 grupos hardcodeados que había cubrían 16 de los 104 pares con correlación >0.70 del universo (85% sin contemplar), declaraban el grupo tech en 0.68-0.70 cuando su correlación real es 0.465, y referenciaban un ticker inexistente (YPF en vez de YPFD). El cálculo detecta 104 pares sobre 61 tickers, contra los 17 tickers de los grupos viejos.",
+    uso: "Evita concentrar riesgo en la misma apuesta: el sizing de Kelly del backtest de cartera asume independencia entre posiciones, y con correlación alta el riesgo real es mayor que el calculado. Mejora respecto de la versión vieja: ahora exige misma dirección de señal — dos papeles correlacionados con señales opuestas no son la misma apuesta.",
+  },
+
   {
     fecha: "2026-08-25",
     regla: "NORMA DEL PROYECTO: estimar por activo con encogimiento, no en pool global",
@@ -1108,33 +1135,119 @@ function applyRegimeFilter(sig, final_sc, regime) {
 
 // MEJORA 4 — Correlaciones: grupos correlacionados (evitar señales duplicadas)
 // Datos reales: BAC-C-WFC corr 0.78-0.83, AMZN-SPY 0.70, NVDA-SPY 0.68
-const CORRELATION_GROUPS = [
-  ["BAC","C","WFC","AXP"],        // Financiero USA: correlación 0.70-0.83
-  ["AMZN","SPY","NVDA","GOOGL"],  // Tech/mercado amplio: correlación 0.68-0.70
-  ["GGAL","BMA","SUPV","VALO"],   // Bancos Merval: alta correlación
-  ["YPF","PAMP","CEPU","TGSU2","TGNO4"], // Energía Merval
+// ── CORRELACIÓN ENTRE ACTIVOS — CALCULADA, NO DECLARADA ──────────
+//
+// Antes había 4 grupos escritos a mano. Verificados contra 250 ruedas
+// de datos reales, tenían tres problemas:
+//
+//   1. "YPF" no existe en el universo (el ticker es YPFD) — el grupo de
+//      energía Merval estaba parcialmente roto.
+//   2. Cubrían 16 de los 104 pares con correlación >0.70 del universo.
+//      El 85% de las correlaciones altas quedaba sin contemplar
+//      (CRM-NOW 0.80, MU-XLK 0.75, AMD-XLK 0.73, NVDA-XLK 0.72…).
+//   3. El grupo tech se declaraba en 0.68-0.70 y su correlación real
+//      es 0.465 — sobreestimado.
+//
+// Ahora se calcula de la serie diaria. Ventana de 250 ruedas terminando
+// en la rueda anterior, coherente con la norma del proyecto (estimar de
+// los datos, ventana dinámica, sin mirar el día en curso).
+//
+// Los grupos declarados se conservan sólo como semilla de respaldo por
+// si la serie diaria no estuviera disponible.
+const CORRELATION_GROUPS_FALLBACK = [
+  ["BAC","C","WFC","AXP"],
+  ["AMZN","SPY","NVDA","GOOGL"],
+  ["GGAL","BMA","SUPV","VALO"],
+  ["YPFD","PAMP","CEPU","TGSU2","TGNO4"],   // YPF → YPFD (estaba mal)
 ];
-function deduplicateCorrelated(results) {
-  // Para cada grupo correlacionado, mantener solo la señal de mayor score
-  const used = new Set();
-  return results.map(r => {
-    if (!r.sig || r.sig.sig === "NEUTRAL") return r;
-    const group = CORRELATION_GROUPS.find(g => g.includes(r.ticker));
-    if (!group) return r;
-    // Verificar si ya hay una señal mejor en el mismo grupo
-    const groupKey = group.sort().join("-");
-    const existing = results.find(o =>
-      o !== r &&
-      o.sig?.sig !== "NEUTRAL" &&
-      o.sig?.above_p80 &&
-      CORRELATION_GROUPS.find(g => g.includes(o.ticker))?.sort().join("-") === groupKey &&
-      (o.sig?.final_sc || 0) > (r.sig?.final_sc || 0)
-    );
-    if (existing) {
-      // Degradar a NEUTRAL con nota de correlación
-      return { ...r, sig: { ...r.sig, sig:"NEUTRAL", corr_dup: existing.ticker } };
+
+const CORR_UMBRAL = 0.70;   // umbral de "misma apuesta"
+const CORR_WIN    = 250;
+let _corrCache = null;
+
+// Devuelve { "TICKER": { "OTRO": 0.83, ... } } sólo para pares > umbral
+function matrizCorrelacion() {
+  if (_corrCache) return _corrCache;
+  const out = {};
+  try {
+    const src = DATA_MOD?.CSV_DATA_DAILY_RAW || {};
+    const R = {};
+    for (const [tk, bars] of Object.entries(src)) {
+      if (!bars || bars.length < CORR_WIN + 10) continue;
+      const r = [];
+      // termina en la rueda ANTERIOR
+      for (let i = bars.length - CORR_WIN; i < bars.length - 1; i++) {
+        const c = bars[i]?.c, p = bars[i-1]?.c;
+        if (c > 0 && p > 0) r.push(Math.log(c / p));
+      }
+      if (r.length >= CORR_WIN * 0.9) R[tk] = r;
     }
-    return r;
+    const ks = Object.keys(R);
+    // pre-calcular media y desvío
+    const st = {};
+    for (const k of ks) {
+      const v = R[k], n = v.length;
+      const m = v.reduce((a,x)=>a+x,0)/n;
+      st[k] = { m, sd: Math.sqrt(v.reduce((a,x)=>a+(x-m)**2,0)/n), n };
+    }
+    for (let i = 0; i < ks.length; i++) {
+      for (let j = i+1; j < ks.length; j++) {
+        const a = ks[i], b = ks[j];
+        const va = R[a], vb = R[b];
+        const n = Math.min(va.length, vb.length);
+        if (n < CORR_WIN * 0.9) continue;
+        const xa = va.slice(-n), xb = vb.slice(-n);
+        const ma = xa.reduce((s,x)=>s+x,0)/n, mb = xb.reduce((s,x)=>s+x,0)/n;
+        let sxy=0, sx=0, sy=0;
+        for (let k = 0; k < n; k++) { const da=xa[k]-ma, db=xb[k]-mb; sxy+=da*db; sx+=da*da; sy+=db*db; }
+        if (!(sx>0) || !(sy>0)) continue;
+        const c = sxy / Math.sqrt(sx*sy);
+        if (c >= CORR_UMBRAL) {
+          (out[a] ||= {})[b] = +c.toFixed(3);
+          (out[b] ||= {})[a] = +c.toFixed(3);
+        }
+      }
+    }
+  } catch(e) { /* cae al fallback */ }
+  // respaldo si no se pudo calcular nada
+  if (!Object.keys(out).length) {
+    for (const g of CORRELATION_GROUPS_FALLBACK)
+      for (const a of g) for (const b of g)
+        if (a !== b) (out[a] ||= {})[b] = 0.75;
+  }
+  _corrCache = out;
+  return out;
+}
+
+function deduplicateCorrelated(results) {
+  // De cada conjunto de señales correlacionadas entre sí, se mantiene la
+  // de mayor score y las demás se degradan: son la MISMA apuesta, y
+  // tomarlas todas concentra riesgo sin diversificar.
+  const M = matrizCorrelacion();
+  const activos = results.filter(r => r.sig && r.sig.sig !== "NEUTRAL" && r.sig.above_p80);
+  const perder = new Map();   // ticker degradado → con quién correlaciona
+  for (const r of activos) {
+    const vecinos = M[r.ticker]; if (!vecinos) continue;
+    for (const o of activos) {
+      if (o === r) continue;
+      const c = vecinos[o.ticker]; if (c == null) continue;
+      // misma dirección: sólo entonces es la misma apuesta
+      const dirR = r.sig.sig.includes("COMPRA") ? 1 : -1;
+      const dirO = o.sig.sig.includes("COMPRA") ? 1 : -1;
+      if (dirR !== dirO) continue;
+      const convR = Math.abs((r.sig.final_sc ?? 50) - 50);
+      const convO = Math.abs((o.sig.final_sc ?? 50) - 50);
+      if (convO > convR || (convO === convR && o.ticker < r.ticker)) {
+        perder.set(r.ticker, { con: o.ticker, corr: c });
+        break;
+      }
+    }
+  }
+  return results.map(r => {
+    const d = perder.get(r.ticker);
+    if (!d || !r.sig) return r;
+    return { ...r, sig: { ...r.sig, sig: "NEUTRAL", above_p80: false,
+                          corr_dup: d.con, corr_val: d.corr } };
   });
 }
 
@@ -1998,6 +2111,57 @@ function normCdf(z) {
 }
 
 
+// ── VETO DE FIBONACCI: comprar sin soporte estructural cerca ──────
+//
+// Detecta compras donde el precio está en tierra de nadie: lejos de
+// cualquier nivel de Fibonacci relevante, y el nivel más cercano es un
+// soporte débil. Comprar ahí es comprar sin piso técnico.
+//
+// VALIDADO (156 tickers × 10 años, 63.659 obs, exceso a 20 días
+// controlado por fecha, moneda y tercil de volatilidad):
+//
+//   condición: COMPRA + trend=ALCISTA + fibDist > 3.92% + zona 'soporte'
+//   exceso -2.632%  t=-3.80   (n=424, WR 41.5%)
+//   fuera de muestra -3.066%  t=-2.50   ← MÁS fuerte fuera que dentro
+//   drop-one: sin el ticker más favorable (INTC) sigue en t=-2.99
+//   consistencia: 8 de 8 años con exceso negativo
+//   ARS -3.461% (t=-3.46) · USD -1.930% (t=-2.10)  ← funciona en ambos
+//
+// Es el único hallazgo de la sesión que funciona en los DOS mercados.
+//
+// Por qué el umbral de evidencia es más bajo que para una señal: como
+// VETO no paga comisión — filtrar una compra es gratis. No hay que
+// superar el 1.2-1.8% de costo, sólo hay que no equivocarse.
+//
+// El sesgo de supervivencia del universo juega A FAVOR acá: si
+// estuvieran los papeles que se deslistaron, el veto sería aún más
+// necesario (ver HALLAZGOS_DESCARTADOS).
+//
+// Cautela: 424 obs sobre 93 tickers, 45/93 con exceso negativo. Se
+// apoya en pocos casos por activo, por eso NO cambia la señal a VENTA
+// ni la elimina — sólo la degrada y la marca.
+const FIB_DIST_LEJOS = 3.92;   // tercil superior de distancia al nivel
+
+function vetoFibonacci(sig, data) {
+  try {
+    if (!sig || !data) return null;
+    if (!(sig.sig || "").includes("COMPRA")) return null;
+    if (sig.trend !== "ALCISTA") return null;
+    const fib = calcFibonacci(data, 60);
+    if (!fib || !fib.levels || !fib.levels.length) return null;
+    const px = data[data.length - 1]?.close;
+    if (!(px > 0)) return null;
+    const cerca = [...fib.levels].sort(
+      (a, b) => Math.abs(a.value - px) - Math.abs(b.value - px)
+    )[0];
+    if (!cerca) return null;
+    const dist = Math.abs(cerca.value - px) / px * 100;
+    if (dist <= FIB_DIST_LEJOS) return null;
+    if (cerca.type !== "soporte") return null;   // sólo soporte débil
+    return { dist: +dist.toFixed(2), nivel: cerca.label, zona: cerca.type };
+  } catch (e) { return null; }
+}
+
 function applyP80Threshold(results, minConviccion = 18) {
   if (!results.length) return results;
 
@@ -2065,12 +2229,26 @@ function applyP80Threshold(results, minConviccion = 18) {
     } else if (above && !rrOk) {
       sigStr = "NEUTRAL";  // en el top pero sin R/R viable tras costos
     }
+
+    // ── VETO DE FIBONACCI ──
+    // Compra en tierra de nadie: lejos de cualquier nivel y con sólo un
+    // soporte débil cerca. Medido -2.63% a 20d (8/8 años negativos).
+    // Degrada, NO elimina: con 424 obs sobre 93 tickers la evidencia
+    // alcanza para bajarle la prioridad, no para descartar la señal.
+    const vetado = !!r.sig.vetoFib && sigStr.includes("COMPRA");
+    if (vetado) {
+      sigStr = "COMPRA";          // COMPRA FUERTE → COMPRA
+    }
+
     // Una señal solo cuenta como oportunidad si NO es neutral
-    const isOpportunity = above && sigStr !== "NEUTRAL";
+    // y no está vetada por falta de estructura de soporte
+    const isOpportunity = above && sigStr !== "NEUTRAL" && !vetado;
 
     const sig = {
       ...r.sig,
       sig:           sigStr,
+      vetoFib:       r.sig.vetoFib || null,
+      vetado,
       p80_threshold: +p80val.toFixed(1),
       above_p80:     isOpportunity,
       in_top20:      above,
@@ -4451,6 +4629,9 @@ export default function App() {
       const optW    = optApplied && optParams[tk.ticker]?.w;
       const tickerW = optW ? optW : adaptiveW(tk.ticker, W);
       const sig     = combinedSignal(data, tickerW);
+      // Veto de Fibonacci: compra sin soporte estructural cerca (validado
+      // 10 años, -2.63% a 20d, 8/8 años negativos, funciona en ARS y USD)
+      if (sig) sig.vetoFib = vetoFibonacci(sig, data);
       // bt calculado lazy en tab Detalle — no en el loop principal
       const bt      = {trades:[],curve:[],n:0,hits:0,hr:0,avg:0,aw:0,al:0,pf:0,sh:0,dd:0,eq:100};
       const ps      = null;
