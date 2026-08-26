@@ -616,6 +616,26 @@ function volPriceDivergence(data, n) {
 // el detalle completo de cada test.
 const HALLAZGOS_DESCARTADOS = [
   {
+    fecha: "2026-08-26",
+    hipotesis: "Los patrones de vela deberían estimarse por activo con encogimiento (norma nueva) en vez de en pool global",
+    origen: "Aplicación de la norma del proyecto (estimar por activo con encogimiento) al primer caso pendiente. Motivado por un análisis previo que halló efectos de ±1% por activo donde la tabla global mostraba 0.2%.",
+    metodo: "184.766 detecciones sobre 156 tickers y 10 años con detectCandlePattern() real. Exceso a 4 días controlado por fecha, moneda y tercil de volatilidad. Split temporal 60/40. Se compara predicción global vs. por activo vs. encogida (peso calculado por método de momentos: tau² entre activos menos varianza de muestreo).",
+    n: "184.766 detecciones; 26 a 188 por activo según el patrón",
+    resultado: "El encogimiento se autorregula como corresponde. Peso propio por patrón: 3 Cuervos 0.647 (173 detecciones/activo, tau²=0.1201), 3 Velas Alcistas 0.613 (188, tau²=0.1115), Martillo 0.110, Engulfing Bajista 0.007, y CUATRO patrones con peso exactamente 0.000 (Doji, Engulfing Alcista, Estrella Fugaz, Marubozu) porque tau²=0: toda la varianza entre activos es ruido de muestreo. Fuera de muestra la correlación con el exceso real es diminuta con los tres métodos (por activo entre -0.021 y +0.038, encogido entre 0 y +0.022).",
+    veredicto: "medido — NO se cambia la tabla global",
+    nota: "Sólo 2 de los 8 patrones (3 Cuervos y 3 Velas Alcistas) tienen heterogeneidad real por activo, y aun en esos el poder predictivo fuera de muestra sigue siendo casi nulo. Reemplazar VELAS_TASAS_BASE por la versión por activo agregaría cómputo sin mejorar la predicción. Se deja la tabla global como está y queda anotado que se midió con el método correcto. VALOR DEL EJERCICIO: es la demostración de que la norma funciona en ambas direcciones — donde hay evidencia por activo (LMSW, peso 0.48) la usa, y donde no la hay (4 patrones con peso 0.000) devuelve el global sola, sin que haya que decidirlo a mano.",
+  },
+  {
+    fecha: "2026-08-26",
+    hipotesis: "dynParams / adaptiveW: cada activo tiene un W óptimo propio que mejora las señales",
+    origen: "update_data.py probaba W ∈ {5,7,10,14} sobre la serie completa de cada ticker y se quedaba con el de mejor win rate; adaptiveW() lo aplicaba en producción. Se midió como parte de la revisión de constantes precalculadas.",
+    metodo: "157 tickers × 10 años, split temporal 60/40, replicando backtest_w() exacto del script (cruce SMA20/50, stop 1.5×ATR, TP 2.5×ATR). Se elige el W en la primera mitad y se evalúa en la segunda, contra el W global fijo.",
+    n: "157 tickers con datos OOS suficientes (≥20 trades)",
+    resultado: "W por activo fuera de muestra: 47.48%. W global fijo (=5): 47.71%. Diferencia -0.23pp con t=-2.62: no es que no ayude, PERJUDICA significativamente. El W propio le gana al global en 8 de 157 activos (5%), exactamente lo esperable por azar. El orden de los W es idéntico dentro y fuera de muestra (5:47.7% > 7:46.3% > 10:44.3% > 14:42.5%) — W=5 es mejor para todos.",
+    veredicto: "neutralizado — adaptiveW() devuelve el W global",
+    nota: "Coherente con la norma del proyecto: acá el peso correcto para la estimación por activo es 0, porque toda la varianza entre activos es ruido de muestreo. dynParams usaba peso 1.0 sin justificarlo — mismo error que adaptiveScoreAdj y TICKER_CONFIDENCE. ⚠ BUG ADICIONAL más grave descubierto al medirlo: los 158 tickers tenían sims>=5, así que adaptiveW SIEMPRE devolvía el W aprendido y nunca llegaba al globalW. El selector de ventana de la UI (7/14/30/60) estaba siendo ignorado por completo en Oportunidades — 138 tickers calculaban con W=5 sin importar qué eligiera el usuario. Con la neutralización el selector vuelve a funcionar. ⚠ Nota aparte: el win rate ronda 47.5% en TODOS los W, o sea que la estrategia que backtest_w() usa para elegir pierde más veces de las que gana; los conf y p80adj derivados de ese win rate estaban construidos sobre esa base (no se usaban en ningún lado).",
+  },
+  {
     fecha: "2026-08-03",
     hipotesis: "MACD subiendo (2-3 días) + volumen bajo predice rally a 3-5 días",
     origen: "BA, GLOB, ORCL, AAL, BABA subieron juntas la semana del 27-31/7; parecía un patrón técnico común",
