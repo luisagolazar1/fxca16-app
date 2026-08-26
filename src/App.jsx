@@ -776,10 +776,18 @@ const HALLAZGOS_DESCARTADOS = [
 const REGLAS_ACTIVAS = [
   {
     fecha: "2026-08-25",
+    regla: "NORMA DEL PROYECTO: estimar por activo con encogimiento, no en pool global",
+    estado: "aplicada — estándar para toda estimación nueva",
+    descripcion: "Los activos no se comportan igual entre sí ni a lo largo del tiempo. Toda estimación de parámetros que no tenga una especificación propia debe hacerse POR ACTIVO, con ventana dinámica de 400 ruedas que termina en la RUEDA ANTERIOR (nada del día evaluado entra en los coeficientes), y encogida hacia el promedio del universo en proporción a su ruido: w = τ²/(τ²+se²), donde τ² es la varianza real entre activos (varianza observada menos error de estimación medio) y se² el error propio. Un activo con estimación precisa conserva su valor; uno ruidoso se acerca al global. El fallback al global es automático — no hay que programarlo aparte.",
+    evidencia: "Experimento sobre 279.735 obs diarias, 156 tickers, 10 años, ~750 fechas fuera de muestra, usando el modelo LMSW como banco de pruebas. Spread long-short a 1 día en ARS — global: +0.081% (t=2.65), por activo puro: +0.240% (t=9.75), encogido: +0.225% (t=8.39). Fuera de muestra: global +0.257% (t=4.61), puro +0.346% (t=7.64), encogido +0.367% (t=7.36). POR ACTIVO TRIPLICA AL GLOBAL: evaluar en pool único tiraba dos tercios de la señal. Entre puro y encogido la diferencia es chica (el encogido gana fuera de muestra, pierde dentro); se elige encogido por robustez, porque es lo que impide que 'por activo' degenere en el error de TICKER_CONFIDENCE y dynParams. Ventana: se probaron 10/50/100/250/300/400 — de 250 a 400 los resultados son casi iguales (t 9.75/10.36/9.84) pero el peso propio mediano sube de 0.29 a 0.48, o sea que con 400 ruedas el activo merece casi la mitad del peso. Por debajo de 250 se degrada rápido (t=1.87 a 100 ruedas, 0.90 a 50, no estimable a 10).",
+    uso: "Aplicar a toda estimación de parámetros nueva. IMPORTANTE: el encogimiento se ajusta solo a la evidencia disponible — para constructos con pocas observaciones por activo (ej. patrones de vela, que dejan 10-30 detecciones en 400 ruedas) el peso propio va a ser ~0.05 y el método devolverá prácticamente el global. Eso es correcto, no un defecto: refleja que no hay evidencia suficiente para diferenciar ese activo. Costo de cómputo: el prior global cuesta ~1s (156 regresiones) y se cachea por mes; las estimaciones individuales posteriores son instantáneas.",
+  },
+  {
+    fecha: "2026-08-25",
     regla: "Persistencia direccional (LMSW): en Merval el retorno diario continúa, en USD no hay efecto",
     estado: "aplicada — sólo Merval; en USD se muestra sin validar",
     descripcion: "persistenciaDireccional(ticker, hastaFecha) estima por regresión rodante si el movimiento de hoy tiende a continuar o revertirse mañana. Especificación normalizada: z(r[t+1]) = c0 + c1·z(r[t]) + c2·z(r[t])·z(V[t]), donde V = log(volumen) menos su media móvil de 200 ruedas (detrendado, se adapta al régimen actual del papel). Ventana de 250 ruedas, r y V estandarizados con la propia ventana. Marco teórico: Llorente, Michaely, Saar y Wang (Review of Financial Studies, 2002) — los retornos generados por reparto de riesgo revierten, los generados por trading informado continúan; C2 mide de qué lado está el papel.",
-    evidencia: "303.096 obs, 156 tickers, 10 años, TODO fuera de muestra por construcción (el C2 de cada día se estima sólo con las 250 ruedas anteriores). Spread long-short a 1 día, exceso vs. universo del mismo día: ARS +0.248% t=10.29 / USD -0.002% t=-0.16. Drop-one: 156 de 156 corridas siguen con t>2.58 (rango 3.41-3.95), ningún ticker sostiene el resultado. Consistencia: 8 de 9 años positivos. La normalización fue decisiva: mejoró ARS de t=6.21 a 10.29 y hundió USD de 0.48 a -0.16. En USD se probaron 6 cortes distintos (iliquidez de Amihud, volumen en dólares, ETF vs acción, magnitud del movimiento, descomposición C1/C2, versión normalizada) y ninguno supera |t|=1.05; 5 de 9 años negativos. Ventana: se probaron 250/100/50/10 y empeoran de forma monótona (t 3.72 / 1.87 / 0.90 / no estimable) — acortar capta más ruido, no mejor régimen (el desvío de C2 sube de 0.159 a 0.388 y el signo se vuelve MENOS estable).",
+    evidencia: "303.096 obs, 156 tickers, 10 años, TODO fuera de muestra por construcción (el C2 de cada día se estima sólo con las 250 ruedas anteriores). Spread long-short a 1 día, exceso vs. universo del mismo día: ARS +0.225% t=8.39 (fuera de muestra +0.367%, t=7.36) / USD sin efecto con ningún método ni ventana (|t| < 1.92). Drop-one: 156 de 156 corridas siguen con t>2.58 (rango 3.41-3.95), ningún ticker sostiene el resultado. Consistencia: 8 de 9 años positivos. La normalización fue decisiva: mejoró ARS de t=6.21 a 10.29 y hundió USD de 0.48 a -0.16. En USD se probaron 6 cortes distintos (iliquidez de Amihud, volumen en dólares, ETF vs acción, magnitud del movimiento, descomposición C1/C2, versión normalizada) y ninguno supera |t|=1.05; 5 de 9 años negativos. Ventana: se probaron 250/100/50/10 y empeoran de forma monótona (t 3.72 / 1.87 / 0.90 / no estimable) — acortar capta más ruido, no mejor régimen (el desvío de C2 sube de 0.159 a 0.388 y el signo se vuelve MENOS estable).",
     uso: "Criterio de RANKING, no señal de entrada: +0.248% diario contra 1.2% de comisión Merval no se opera. Badge sólido en ARS, punteado con tooltip 'sin validar' en USD (mismo criterio que el alfa preliminar). Visible en Detalle y en Replay; en Replay se corta por fecha para no mirar al futuro. ⚠ MATIZ IMPORTANTE: el efecto NO es principalmente de volumen. El término C1 solo da t=10.38 en ARS (más que el modelo completo) y el término del volumen C2 aporta t=1.75. Lo que se descubrió es que Merval tiene momentum diario persistente (C1 medio +0.070 contra -0.006 en USD) y el marco LMSW lo capta de rebote. Por eso se llama 'persistencia direccional' y no 'indicador de volumen'.",
   },
   {
@@ -2272,80 +2280,212 @@ function calcMarketCorrelation(data, indexData) {
 //
 // ⚠ NO es señal de entrada: +0.248% diario contra 1.2% de comisión
 // Merval. Es criterio de RANKING, que no paga comisión.
-const _persCache = new Map();
+const _persCache  = new Map();   // resultado final por ticker+fecha
+const _featCache  = new Map();   // series r[] y V[] por ticker (caras de calcular)
+const _priorCache = new Map();   // prior global por fecha
 
-function _ols3(Y, X1, X2) {
-  const n = Y.length; if (n < 30) return null;
+const PERS_MA  = 200;   // detrend del volumen (ventana del paper)
+const PERS_WIN = 400;   // ventana de regresión — ver nota de validación abajo
+
+// Series derivadas de un activo: retorno log y volumen detrendado.
+// Se cachean porque el detrend es O(n·200) y se pide muchas veces.
+function _persFeatures(ticker) {
+  if (_featCache.has(ticker)) return _featCache.get(ticker);
+  let res = null;
+  try {
+    const d = serieLarga(ticker);
+    if (d && d.length >= PERS_MA + PERS_WIN + 10) {
+      const n = d.length;
+      const r = new Array(n).fill(null), lv = new Array(n).fill(null), V = new Array(n).fill(null);
+      for (let i=1;i<n;i++){ const c=d[i].close, p=d[i-1].close; if(c>0&&p>0) r[i]=Math.log(c/p)*100; }
+      for (let i=0;i<n;i++){ const v=d[i].volume||0; lv[i]= v>0?Math.log(v):null; }
+      // media móvil de 200 ruedas, sin incluir la barra evaluada
+      let suma=0, cuenta=0;
+      for (let j=0;j<PERS_MA;j++) if(lv[j]!=null){ suma+=lv[j]; cuenta++; }
+      for (let i=PERS_MA;i<n;i++){
+        if (cuenta>PERS_MA*0.7 && lv[i]!=null) V[i]=lv[i]-suma/cuenta;
+        const sale=lv[i-PERS_MA], entra=lv[i];
+        if (sale!=null){ suma-=sale; cuenta--; }
+        if (entra!=null){ suma+=entra; cuenta++; }
+      }
+      res = { d, r, V, n };
+    }
+  } catch(e) { res = null; }
+  if (_featCache.size > 200) _featCache.clear();
+  _featCache.set(ticker, res);
+  return res;
+}
+
+// OLS de 3 parámetros con errores estándar (hacen falta para el encogimiento)
+function _ols3se(Y, X1, X2) {
+  const n = Y.length; if (n < 60) return null;
   let s0=n,s1=0,s2=0,s11=0,s22=0,s12=0,sy=0,sy1=0,sy2=0;
   for (let i=0;i<n;i++){ const a=X1[i],b=X2[i],v=Y[i];
     s1+=a;s2+=b;s11+=a*a;s22+=b*b;s12+=a*b;sy+=v;sy1+=v*a;sy2+=v*b; }
-  const A=[[s0,s1,s2],[s1,s11,s12],[s2,s12,s22]], B=[sy,sy1,sy2];
-  for (let i=0;i<3;i++){
-    let p=i; for(let k=i+1;k<3;k++) if(Math.abs(A[k][i])>Math.abs(A[p][i])) p=k;
-    if (Math.abs(A[p][i])<1e-12) return null;
-    [A[i],A[p]]=[A[p],A[i]]; [B[i],B[p]]=[B[p],B[i]];
-    for(let k=i+1;k<3;k++){ const f=A[k][i]/A[i][i];
-      for(let j=i;j<3;j++) A[k][j]-=f*A[i][j]; B[k]-=f*B[i]; }
-  }
+  const M=[[s0,s1,s2],[s1,s11,s12],[s2,s12,s22]], B=[sy,sy1,sy2];
+  const det = M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])
+            - M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])
+            + M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+  if (Math.abs(det)<1e-10) return null;
+  const inv=[
+    [(M[1][1]*M[2][2]-M[1][2]*M[2][1])/det,(M[0][2]*M[2][1]-M[0][1]*M[2][2])/det,(M[0][1]*M[1][2]-M[0][2]*M[1][1])/det],
+    [(M[1][2]*M[2][0]-M[1][0]*M[2][2])/det,(M[0][0]*M[2][2]-M[0][2]*M[2][0])/det,(M[0][2]*M[1][0]-M[0][0]*M[1][2])/det],
+    [(M[1][0]*M[2][1]-M[1][1]*M[2][0])/det,(M[0][1]*M[2][0]-M[0][0]*M[2][1])/det,(M[0][0]*M[1][1]-M[0][1]*M[1][0])/det]];
   const c=[0,0,0];
-  for(let i=2;i>=0;i--){ let s=B[i]; for(let j=i+1;j<3;j++) s-=A[i][j]*c[j]; c[i]=s/A[i][i]; }
-  return c;
+  for (let i=0;i<3;i++) c[i]=inv[i][0]*B[0]+inv[i][1]*B[1]+inv[i][2]*B[2];
+  let sse=0; for(let i=0;i<n;i++){ const e=Y[i]-(c[0]+c[1]*X1[i]+c[2]*X2[i]); sse+=e*e; }
+  const s2e=sse/(n-3);
+  return { c, se1:Math.sqrt(Math.max(0,s2e*inv[1][1])), se2:Math.sqrt(Math.max(0,s2e*inv[2][2])) };
 }
 
+// Estimación cruda de un activo a una fecha. La ventana TERMINA EN LA RUEDA
+// ANTERIOR: el último par usado es (r[n-2] → r[n-1]). Nada del día evaluado
+// entra en los coeficientes.
+function _persCruda(ticker, hastaFecha) {
+  const F = _persFeatures(ticker); if (!F) return null;
+  const { d, r, V } = F;
+  let n = d.length - 1;
+  if (hastaFecha) { n=-1; for (let i=0;i<d.length;i++) if (d[i].date <= hastaFecha) n=i; }
+  if (n < PERS_MA + PERS_WIN + 2) return null;
+  if (r[n]==null || V[n]==null) return null;
+  const rw=[], vw=[];
+  for (let j=n-PERS_WIN;j<=n-1;j++){ if(r[j]!=null) rw.push(r[j]); if(V[j]!=null) vw.push(V[j]); }
+  if (rw.length < PERS_WIN*0.5 || vw.length < PERS_WIN*0.5) return null;
+  const mR=rw.reduce((a,x)=>a+x,0)/rw.length, sR=Math.sqrt(rw.reduce((a,x)=>a+(x-mR)**2,0)/rw.length);
+  const mV=vw.reduce((a,x)=>a+x,0)/vw.length, sV=Math.sqrt(vw.reduce((a,x)=>a+(x-mV)**2,0)/vw.length);
+  if (!(sR>0)||!(sV>0)) return null;
+  const zR=x=>(x-mR)/sR, zV=x=>(x-mV)/sV;
+  const Y=[],X1=[],X2=[];
+  for (let j=n-PERS_WIN;j<=n-2;j++){
+    if (r[j]==null||r[j+1]==null||V[j]==null) continue;
+    Y.push(zR(r[j+1])); X1.push(zR(r[j])); X2.push(zR(r[j])*zV(V[j]));
+  }
+  const o=_ols3se(Y,X1,X2); if(!o) return null;
+  return { c0:o.c[0], c1:o.c[1], c2:o.c[2], se1:o.se1, se2:o.se2,
+           zr:zR(r[n]), zv:zV(V[n]), retHoy:r[n], fecha:d[n].date, moneda:d[n].moneda };
+}
+
+// Prior global a una fecha: media de los coeficientes de todos los activos,
+// más tau² (varianza REAL entre activos, descontando el error de estimación).
+// Es lo que define cuánto peso merece cada activo por sí solo.
+//
+// Calcularlo cuesta ~1s (156 regresiones), así que se cachea por MES en vez
+// de por día: el prior es un agregado de 156 activos sobre 400 ruedas y se
+// mueve muy despacio, mientras que el Replay puede pedir decenas de fechas
+// seguidas. Sin esto, cada paso del Replay pagaría el segundo completo.
+function _persPrior(hastaFecha) {
+  const key = hastaFecha ? String(hastaFecha).slice(0,7) : "ult";
+  if (_priorCache.has(key)) return _priorCache.get(key);
+  let res = null;
+  try {
+    const src = DATA_MOD?.CSV_DATA_DAILY_RAW || {};
+    const est = [];
+    for (const tk of Object.keys(src)) {
+      const e = _persCruda(tk, hastaFecha);
+      if (e && isFinite(e.c1) && isFinite(e.c2) && e.se2>0) est.push(e);
+    }
+    if (est.length >= 8) {
+      const m0=est.reduce((a,e)=>a+e.c0,0)/est.length;
+      const m1=est.reduce((a,e)=>a+e.c1,0)/est.length;
+      const m2=est.reduce((a,e)=>a+e.c2,0)/est.length;
+      const vt2=est.reduce((a,e)=>a+(e.c2-m2)**2,0)/Math.max(1,est.length-1);
+      const vm2=est.reduce((a,e)=>a+e.se2*e.se2,0)/est.length;
+      const vt1=est.reduce((a,e)=>a+(e.c1-m1)**2,0)/Math.max(1,est.length-1);
+      const vm1=est.reduce((a,e)=>a+e.se1*e.se1,0)/est.length;
+      res = { m0, m1, m2, tau1:Math.max(0,vt1-vm1), tau2:Math.max(0,vt2-vm2), n:est.length };
+    }
+  } catch(e) { res = null; }
+  if (_priorCache.size > 40) _priorCache.clear();
+  _priorCache.set(key, res);
+  return res;
+}
+
+// ── PERSISTENCIA DIRECCIONAL (LMSW) ──────────────────────────────
+//
+// Estima si el retorno de HOY tiende a continuar o revertirse mañana.
+// Basado en Llorente, Michaely, Saar y Wang (Review of Financial Studies,
+// 2002): los retornos por reparto de riesgo revierten, los de trading
+// informado continúan. El coeficiente C2 dice de qué lado está el papel
+// HOY, y cambia con el tiempo dentro del mismo activo (GGAL: C2=-0.091
+// en 2024, +0.019 en 2025).
+//
+//   z(r[t+1]) = c0 + c1·z(r[t]) + c2·z(r[t])·z(V[t])
+//   V = log(volumen) − media móvil 200 ruedas (detrendado, adaptativo)
+//   ventana 400 ruedas, dinámica, terminando en la RUEDA ANTERIOR
+//
+// ── POR ACTIVO CON ENCOGIMIENTO ──
+// Los coeficientes se estiman POR ACTIVO y luego se encogen hacia el
+// promedio global en proporción a su ruido: w = τ²/(τ²+se²), donde τ² es
+// la varianza real entre activos y se² el error de estimación propio.
+// Un activo con estimación precisa conserva su valor; uno ruidoso se
+// acerca al global. Es lo que evita que "por activo" degenere en
+// sobreajuste (el error de TICKER_CONFIDENCE y dynParams).
+//
+// VALIDACIÓN DEL MÉTODO (279.735 obs diarias, 156 tickers, 10 años,
+// ~750 fechas fuera de muestra). Spread long-short a 1 día en ARS:
+//
+//   método        total    t        OOS      t
+//   global       +0.081%   2.65    +0.257%  4.61
+//   por activo   +0.240%   9.75    +0.346%  7.64
+//   encogido     +0.225%   8.39    +0.367%  7.36   ← elegido
+//
+// Por activo TRIPLICA al global: evaluar en pool único tiraba dos tercios
+// de la señal. Entre puro y encogido la diferencia es chica (el encogido
+// gana fuera de muestra, pierde dentro); se elige encogido por robustez.
+//
+// VENTANA 400: se probaron 10/50/100/250/300/400. De 250 a 400 los
+// resultados son casi iguales (t 9.75 / 10.36 / 9.84), pero el peso propio
+// mediano sube de 0.29 a 0.48 — con 400 ruedas la estimación por activo es
+// lo bastante precisa para merecer casi la mitad del peso. Por debajo de
+// 250 se degrada rápido (t 1.87 a 100 ruedas, 0.90 a 50, no estimable a 10):
+// acortar capta más ruido, no mejor régimen.
+//
+// ALCANCE: validado en MERVAL. En USD el efecto no existe con ningún método
+// ni ventana (todos los |t| < 1.92, varios negativos) — se probaron además
+// 6 cortes (Amihud, volumen en dólares, ETF vs acción, magnitud del
+// movimiento, descomposición C1/C2, normalización). Badge punteado en USD.
+//
+// ⚠ NO es señal de entrada: +0.37% diario contra 1.2% de comisión Merval.
+// Es criterio de RANKING, que no paga comisión.
+//
+// ⚠ MATIZ: el efecto NO es de volumen. El término C1 solo da t=10.38 en
+// ARS (más que el modelo completo) y el término del volumen C2 aporta
+// t=1.75. Lo que se descubrió es que Merval tiene momentum diario
+// persistente (C1 medio +0.070 contra −0.006 en USD) y el marco LMSW lo
+// capta de rebote. Por eso se llama "persistencia" y no "volumen".
 function persistenciaDireccional(ticker, hastaFecha=null) {
   const key = ticker + "|" + (hastaFecha || "ult");
   if (_persCache.has(key)) return _persCache.get(key);
   let res = null;
   try {
-    const d = serieLarga(ticker);
-    const MA = 200, WIN = 250;
-    if (d && d.length >= MA + WIN + 5) {
-      // índice de corte (para el Replay: no mirar más allá de la fecha)
-      let n = d.length - 1;
-      if (hastaFecha) { n = -1; for (let i=0;i<d.length;i++) if (d[i].date <= hastaFecha) n = i; }
-      if (n >= MA + WIN + 2) {
-        const r = new Array(n+1).fill(null), lv = new Array(n+1).fill(null), V = new Array(n+1).fill(null);
-        for (let i=1;i<=n;i++){ const c=d[i].close, p=d[i-1].close; if(c>0&&p>0) r[i]=Math.log(c/p)*100; }
-        for (let i=0;i<=n;i++){ const v=d[i].volume||0; lv[i]= v>0?Math.log(v):null; }
-        for (let i=MA;i<=n;i++){
-          let s=0,c=0; for(let j=i-MA;j<i;j++) if(lv[j]!=null){s+=lv[j];c++;}
-          if (c>MA*0.7 && lv[i]!=null) V[i]=lv[i]-s/c;
-        }
-        if (r[n]!=null && V[n]!=null) {
-          const rw=[], vw=[];
-          for (let j=n-WIN;j<n;j++){ if(r[j]!=null) rw.push(r[j]); if(V[j]!=null) vw.push(V[j]); }
-          if (rw.length>=100 && vw.length>=100) {
-            const mR=rw.reduce((a,x)=>a+x,0)/rw.length, sR=Math.sqrt(rw.reduce((a,x)=>a+(x-mR)**2,0)/rw.length);
-            const mV=vw.reduce((a,x)=>a+x,0)/vw.length, sV=Math.sqrt(vw.reduce((a,x)=>a+(x-mV)**2,0)/vw.length);
-            if (sR>0 && sV>0) {
-              const zR=x=>(x-mR)/sR, zV=x=>(x-mV)/sV;
-              const Y=[],X1=[],X2=[];
-              for (let j=n-WIN;j<n;j++){
-                if (r[j]==null||r[j+1]==null||V[j]==null) continue;
-                Y.push(zR(r[j+1])); X1.push(zR(r[j])); X2.push(zR(r[j])*zV(V[j]));
-              }
-              const c = _ols3(Y,X1,X2);
-              if (c) {
-                const zr=zR(r[n]), zv=zV(V[n]);
-                const pred = c[0] + c[1]*zr + c[2]*zr*zv;
-                const esARS = d[n].moneda === "ARS";
-                res = {
-                  pred: +pred.toFixed(3),
-                  c1: +c[1].toFixed(4),
-                  c2: +c[2].toFixed(4),
-                  regimen: c[2] > 0 ? "continuacion" : "reversion",
-                  zRet: +zr.toFixed(2),
-                  zVol: +zv.toFixed(2),
-                  retHoy: +r[n].toFixed(2),
-                  dir: pred > 0 ? "alza" : "baja",
-                  validado: esARS,          // sólo Merval pasó validación
-                  fecha: d[n].date,
-                };
-              }
-            }
-          }
-        }
+    const e = _persCruda(ticker, hastaFecha);
+    if (e) {
+      const pr = _persPrior(hastaFecha);
+      let c0=e.c0, c1=e.c1, c2=e.c2, w=1;
+      if (pr) {
+        const w2 = pr.tau2>0 ? pr.tau2/(pr.tau2 + e.se2*e.se2) : 0;
+        const w1 = pr.tau1>0 ? pr.tau1/(pr.tau1 + e.se1*e.se1) : 0;
+        c0 = w2*e.c0 + (1-w2)*pr.m0;
+        c1 = w1*e.c1 + (1-w1)*pr.m1;
+        c2 = w2*e.c2 + (1-w2)*pr.m2;
+        w  = w2;
       }
+      const pred = c0 + c1*e.zr + c2*e.zr*e.zv;
+      res = {
+        pred: +pred.toFixed(3),
+        c1: +c1.toFixed(4),
+        c2: +c2.toFixed(4),
+        c2propio: +e.c2.toFixed(4),
+        peso: +w.toFixed(2),            // cuánto pesa el activo vs el global
+        regimen: c2 > 0 ? "continuacion" : "reversion",
+        zRet: +e.zr.toFixed(2),
+        zVol: +e.zv.toFixed(2),
+        retHoy: +e.retHoy.toFixed(2),
+        dir: pred > 0 ? "alza" : "baja",
+        validado: e.moneda === "ARS",
+        ventana: PERS_WIN,
+        fecha: e.fecha,
+      };
     }
   } catch(e) { res = null; }
   if (_persCache.size > 400) _persCache.clear();
@@ -5951,8 +6091,8 @@ export default function App() {
                                 c: p.validado ? col : "#5a8fa8",
                                 punteado: !p.validado,
                                 tip: p.validado
-                                  ? `Persistencia direccional (LMSW). Régimen ${p.regimen==="continuacion"?"de continuación: el movimiento de hoy tiende a seguir":"de reversión: el movimiento de hoy tiende a revertirse"}. C2=${p.c2}. Validado en Merval: t=10.29 sobre 10 años. Es criterio de ranking, NO señal de entrada (+0.25% diario vs 1.2% de comisión).`
-                                  : `SIN VALIDAR en USD: t=-0.16 sobre 10 años (206.425 obs). Se probaron 6 cortes distintos y ninguno mostró poder predictivo. Se muestra sólo como referencia. El indicador SÍ está validado en Merval (t=10.29).`
+                                  ? `Persistencia direccional (LMSW), ventana ${p.ventana} ruedas. Régimen ${p.regimen==="continuacion"?"de continuación: el movimiento de hoy tiende a seguir":"de reversión: el movimiento de hoy tiende a revertirse"}. C2=${p.c2} (propio ${p.c2propio}, peso ${p.peso} — el resto viene del promedio del universo, porque con ${p.ventana} ruedas la estimación individual es ruidosa). Validado en Merval: por activo con encogimiento da +0.37% fuera de muestra, t=7.36 sobre 10 años, contra +0.26% del método global. Es criterio de ranking, NO señal de entrada (+0.37% diario vs 1.2% de comisión).`
+                                  : `SIN VALIDAR en USD: el efecto no existe con ningún método ni ventana (todos los |t| < 1.92 sobre 206.425 obs, varios negativos). Se probaron 6 cortes distintos. Se muestra sólo como referencia. El indicador SÍ está validado en Merval.`
                               }]; })(),
                             {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
                           ];
