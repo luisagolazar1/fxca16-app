@@ -1280,10 +1280,35 @@ function adaptiveScoreAdj(ticker, baseScore) {
 
 // W adaptativo por ticker
 function adaptiveW(ticker, globalW) {
-  const learnedW = getDynParam(ticker, 'w', null);
-  const sims     = getDynParam(ticker, 'sims', 0);
-  // Solo usar W aprendido si tiene historia suficiente (≥5 simulaciones)
-  if (learnedW && sims >= 5) return learnedW;
+  // DESACTIVADO: mismo problema que adaptiveScoreAdj y TICKER_CONFIDENCE.
+  //
+  // update_data.py probaba W ∈ {5,7,10,14} sobre la serie COMPLETA de cada
+  // ticker y se quedaba con el de mejor win rate. Elegir el mejor de 4 sobre
+  // los mismos datos que después se usan infla el resultado por construcción.
+  //
+  // MEDIDO (157 tickers, 10 años, split temporal 60/40, replicando
+  // backtest_w() exacto del script):
+  //
+  //   W elegido por activo, fuera de muestra : 47.48%
+  //   W global fijo = 5, fuera de muestra    : 47.71%
+  //   diferencia: -0.23pp, t = -2.62
+  //
+  // No es que no ayude: PERJUDICA de forma significativa. Y el W propio le
+  // gana al global en 8 de 157 activos (5%), que es exactamente lo esperable
+  // por azar — no hay W óptimo por activo, la elección es ruido.
+  //
+  // El orden de los W es idéntico dentro y fuera de muestra
+  // (5:47.7% > 7:46.3% > 10:44.3% > 14:42.5%): W=5 es mejor para todos.
+  //
+  // Coherente con la norma del proyecto (estimar por activo con encogimiento):
+  // acá el peso correcto para la estimación propia es 0, porque la varianza
+  // entre activos es toda ruido de muestreo. La norma bien aplicada llega
+  // sola a "usá el global"; dynParams usaba peso 1.0 sin justificarlo.
+  //
+  // ⚠ Nota aparte: el win rate ronda 47.5% en TODOS los W — la estrategia
+  // que backtest_w() usa para elegir (cruce SMA20/50, stop 1.5×ATR,
+  // TP 2.5×ATR) pierde más veces de las que gana. Los `conf` y `p80adj`
+  // que dynParams deriva de ese win rate están construidos sobre esa base.
   return globalW;
 }
 
