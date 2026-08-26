@@ -617,6 +617,16 @@ function volPriceDivergence(data, n) {
 const HALLAZGOS_DESCARTADOS = [
   {
     fecha: "2026-08-26",
+    hipotesis: "LIMITACIÓN ESTRUCTURAL: el universo de datos tiene sesgo de supervivencia — afecta TODAS las validaciones del proyecto",
+    origen: "Revisión completa del sistema. No es una hipótesis de mercado sino una limitación de los datos que hay que tener presente al leer cualquier resultado de este registro.",
+    metodo: "Inspección de CSV_DATA_DAILY_RAW: se contaron los tickers cuya serie termina en la fecha actual (vivos) contra los que dejaron de cotizar antes.",
+    n: "158 tickers, 10 años de historia diaria",
+    resultado: "158 tickers vivos, 0 dados de baja. El universo son EXCLUSIVAMENTE supervivientes: son las empresas que existen hoy, y se les mide la historia de 10 años hacia atrás. Las que quebraron, se deslistaron o fueron absorbidas no están.",
+    veredicto: "limitación conocida — no corregible con los datos actuales",
+    nota: "DIRECCIÓN DEL SESGO POR HALLAZGO: (1) Las señales de REVERSIÓN A LA MEDIA están INFLADAS — 'ARS bajo SMA200 rebota' se mide sólo sobre papeles que efectivamente se recuperaron; los que cayeron y nunca volvieron no están en la muestra. Ese hallazgo hay que leerlo con ese descuento. (2) Los VETOS están si acaso SUBESTIMADOS — el veto de Fibonacci dice 'comprar sin soporte cercano rinde peor'; si estuvieran los papeles que desaparecieron, rendiría todavía peor. Es sesgo conservador, juega a favor. (3) Los hallazgos CROSS-SECCIONALES (persistencia direccional, alfa) están parcialmente protegidos porque el exceso se mide contra el universo del mismo día, y el sesgo afecta a todos los papeles del pool de forma similar — pero no elimina el problema. MITIGACIÓN POSIBLE: yfinance no entrega deslistados fácilmente; habría que sumar una fuente de tickers históricos. Mientras tanto, el Tracker es la única evidencia libre de este sesgo, porque marca hacia adelante sobre el universo real del momento.",
+  },
+  {
+    fecha: "2026-08-26",
     hipotesis: "VETO: comprar lejos de cualquier nivel de Fibonacci (sin soporte estructural cerca) rinde peor",
     origen: "Barrido de Fibonacci como variable, cruzado con dirección de señal y trend",
     metodo: "156 tickers × 10 años (63.659 obs) con combinedSignal() y calcFibonacci() reales. Condición: COMPRA + trend=ALCISTA + distancia al nivel Fib más cercano > 3.92% (tercil superior) + ese nivel clasificado como 'soporte' débil. Exceso a 20 días controlado por fecha, moneda y tercil de volatilidad. Split temporal 60/40, drop-one por ticker, consistencia anual.",
@@ -4262,13 +4272,16 @@ export default function App() {
     })();
   },[]);
 
-  // Seed dynParams desde data.js (calculados por Colab con 2 años de datos reales)
+  // Seed dynParams desde data.js — CONSERVADO SÓLO COMO DATO INERTE.
+  // adaptiveW() está neutralizado (ver HALLAZGOS_DESCARTADOS), así que
+  // getDynParam() ya no lo lee nadie. Se deja el seed para no romper el
+  // formato de data.js que genera el workflow, pero NO afecta ninguna señal.
   useEffect(()=>{
     if (DYN_PARAMS_IMPORTED && Object.keys(DYN_PARAMS_IMPORTED).length > 0) {
       dynParamsRef.current = DYN_PARAMS_IMPORTED;
       setDynParams(DYN_PARAMS_IMPORTED);
       setDynParamsVersion(v=>v+1);
-      lg(`🧠 dynParams: ${Object.keys(DYN_PARAMS_IMPORTED).length} tickers pre-calibrados desde Colab`, "info");
+      lg(`dynParams: ${Object.keys(DYN_PARAMS_IMPORTED).length} tickers cargados (INERTE — no se aplican, ver tab Reglas)`, "info");
     }
   // eslint-disable-next-line
   },[]);
