@@ -617,6 +617,17 @@ function volPriceDivergence(data, n) {
 const HALLAZGOS_DESCARTADOS = [
   {
     fecha: "2026-08-26",
+    hipotesis: "BUG: el control de falsos positivos (FDR) dependía del control de EXIGENCIA",
+    origen: "Observación del usuario: al cambiar de Equilibrado a Estricto, el contador de 'superan control de falsos positivos' se quedaba clavado en 13.",
+    metodo: "Se instrumentó applyFDRCorrection() contando el conjunto de candidatos que entra al procedimiento Benjamini-Hochberg en cada nivel de exigencia.",
+    n: "158 tickers",
+    resultado: "El conjunto de candidatos CAMBIABA con la exigencia, y al revés de lo intuitivo: 141 candidatos en Amplio y 154 en Estricto. Causa: se filtraba por sig !== 'NEUTRAL', pero applyP80Threshold marca NEUTRAL a las señales que entran al top sin R/R viable — y cuántas entran al top depende de la exigencia. Como el umbral de BH es (i/m)·q, cambiar m cambia quién pasa sin que ninguna señal haya cambiado: Amplio daba 14 aprobados y los otros tres 10.",
+    veredicto: "corregido — el FDR evalúa el universo completo",
+    nota: "El síntoma que reportó el usuario (el número no cambia) resultó NO ser el bug: es correcto que no cambie mucho, porque BH selecciona por p-valor derivado del score, o sea siempre a los de mayor convicción (los aprobados tienen convicción 35-48, muy por encima del umbral de Estricto que es 25). El bug real estaba escondido detrás: el tamaño del universo evaluado se movía. Ahora es constante en 158 y los aprobados quedan en 10 en los cuatro niveles. La pregunta que responde BH es 'de todos los que probé, cuáles destacan más allá del azar', y ese 'todos' es el universo, no el subconjunto que el usuario eligió mirar.",
+  },
+
+  {
+    fecha: "2026-08-26",
     hipotesis: "AUDITORÍA DE CONSTANTES: verificar que cada constante precalculada reproduce lo que dice medir",
     origen: "Tras encontrar VOL_MEDIA_ANUAL rota y CORRELATION_GROUPS incorrectos, se auditaron TODAS las constantes que afectan señales contra los datos de 10 años.",
     metodo: "Para cada constante: recalcular la cantidad declarada desde CSV_DATA_DAILY_RAW / serie horaria y comparar. Donde aplica, además split temporal 60/40 para ver si el efecto es estable.",
@@ -2111,11 +2122,25 @@ function calcPositionSize(entry, sl, totalCapital, riskPct=0.01) {
 
 // ── APLICAR UMBRAL PERCENTIL 80 (como EVO) ───────────────────
 // ── CORRECCIÓN POR COMPARACIONES MÚLTIPLES (Benjamini-Hochberg FDR) ──
-// Con 104 tickers probados a la vez, ~5% aparecen "buenos" solo por azar.
+// Con ~158 tickers probados a la vez, ~5% aparecen "buenos" solo por azar.
 // BH controla la tasa de falsos descubrimientos manteniendo poder estadístico.
+//
+// FIX (2026-08-26): el conjunto de candidatos NO debe depender del control
+// de EXIGENCIA. Antes se filtraba por `sig !== "NEUTRAL"`, pero
+// applyP80Threshold marca NEUTRAL a las señales que entran al top sin R/R
+// viable — y cuántas entran al top depende de la exigencia. Resultado: con
+// exigencia Amplio entraban 141 candidatos y con Estricto 154, al revés de
+// lo intuitivo. Como el umbral de BH es (i/m)·q, cambiar m cambia quién
+// pasa sin que ninguna señal haya cambiado: Amplio daba 14 aprobados y los
+// otros tres 10, por puro artefacto.
+//
+// Ahora el universo evaluado son TODOS los tickers con señal calculada, que
+// es lo que corresponde: la pregunta que responde BH es "de todos los que
+// probé, cuáles destacan más allá del azar", y ese "todos" es el universo,
+// no el subconjunto que el usuario eligió mirar.
 function applyFDRCorrection(results, fdr = 0.10) {
   const cands = results
-    .filter(r => r.sig && r.sig.sig !== "NEUTRAL")
+    .filter(r => r.sig && r.sig.final_sc != null)
     .map(r => {
       // p-valor aproximado desde el score: score 50 = azar (p=1), score 100 = p→0
       const z = Math.abs((r.sig.final_sc || 50) - 50) / 12.5;   // ~4 sigma en los extremos
