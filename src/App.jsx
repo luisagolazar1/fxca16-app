@@ -4135,7 +4135,7 @@ export default function App() {
   const [secs,  setSecs]  = useState(0);
   const [nReal, setNReal] = useState(0);
   const [priceSrc, setPriceSrc] = useState("—");
-  const [verIndicadores, setVerIndicadores] = useState(false);
+  const [verIndicadores, setVerIndicadores] = useState(true);
   const [verBacktest, setVerBacktest] = useState(false);
   const [verTablaRsi, setVerTablaRsi] = useState(false);
   const [verTablaVelas, setVerTablaVelas] = useState(false);
@@ -6428,7 +6428,7 @@ export default function App() {
                               const col = p.pred>0?"#00ff9d":"#ff3355";
                               return [{
                                 l: p.validado ? "Persistencia" : "⚗ Persistencia",
-                                v: `${p.pred>0?"▲":"▼"} ${p.pred>=0?"+":""}${p.pred}σ · ${p.regimen==="continuacion"?"CONT":"REV"}`,
+                                v: `${p.pred>0?"▲":"▼"} ${p.pred>=0?"+":""}${p.pred}σ ${p.regimen==="continuacion"?"CONT":"REV"}`,
                                 c: p.validado ? col : "#5a8fa8",
                                 punteado: !p.validado,
                                 tip: p.validado
@@ -6446,10 +6446,12 @@ export default function App() {
                           ];
                           const fila=x=>(
                             <div key={x.l} title={x.tip||undefined}
-                              style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 7px",marginBottom:"3px",fontSize:"9px",...semBox(x.c,"14"),
+                              style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                                gap:"10px",padding:"4px 7px",marginBottom:"3px",fontSize:"9px",...semBox(x.c,"14"),
                                 ...(x.punteado?{borderStyle:"dashed"}:{}), ...(x.tip?{cursor:"help"}:{})}}>
-                              <span style={{color:"#8fb4cc"}}>{x.l}</span>
-                              <span style={{color:x.c,fontWeight:700}}>{x.v}</span>
+                              <span style={{color:"#8fb4cc",flexShrink:1,minWidth:0,lineHeight:1.3}}>{x.l}</span>
+                              <span style={{color:x.c,fontWeight:700,flexShrink:0,textAlign:"right",
+                                whiteSpace:"nowrap",lineHeight:1.3}}>{x.v}</span>
                             </div>
                           );
                           return (<>
@@ -6457,7 +6459,7 @@ export default function App() {
                             {verIndicadores && extra.map(fila)}
                             <button onClick={()=>setVerIndicadores(v=>!v)}
                               style={{background:"transparent",border:"none",padding:"3px 0",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
-                              {verIndicadores ? "▾ menos" : `▸ ${extra.length} indicadores más`}
+                              {verIndicadores ? "▾ ocultar secundarios" : `▸ ${extra.length} indicadores más`}
                             </button>
 
                             {/* ── DESGLOSE: cuánto aportó cada indicador al score ── */}
@@ -8277,8 +8279,8 @@ export default function App() {
                                   p.validado?(p.pred>0?"#00ff9d":"#ff3355"):"#5a8fa8"]]; })(),
                               ["Tendencia",sg?.trend,"#8fb4cc"],
                             ].filter(([,v])=>v!=null&&v!=="").map(([l,v,c])=>(
-                              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 6px",background:"#050c15",borderRadius:"3px",fontSize:"8px"}}>
-                                <span style={{color:"#5a8fa8"}}>{l}</span><span style={{color:c,fontWeight:700}}>{v}</span>
+                              <div key={l} style={{display:"flex",justifyContent:"space-between",gap:"8px",padding:"4px 6px",background:"#050c15",borderRadius:"3px",fontSize:"8px"}}>
+                                <span style={{color:"#5a8fa8",flexShrink:1,minWidth:0}}>{l}</span><span style={{color:c,fontWeight:700,flexShrink:0,whiteSpace:"nowrap",textAlign:"right"}}>{v}</span>
                               </div>
                             ))}
                           </div>
