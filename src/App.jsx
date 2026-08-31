@@ -1793,45 +1793,51 @@ function combinedSignal(data, W=7, allData=null, _sinTendencia=false) {
   // sistema elige cuál aplicar según el régimen del activo.
 
   // ── MOTOR A: MOMENTUM / SEGUIMIENTO DE TENDENCIA ──
+  // `aportes` registra cuánto suma o resta cada indicador, para poder
+  // mostrar el desglose en el tab Detalle. No altera el cálculo.
+  const aportes = [];
   let mom_raw = 0;
-  if (roc10 >  3.0) mom_raw += 20;
-  else if (roc10 >  1.5) mom_raw += 12;
-  else if (roc10 >  0.5) mom_raw +=  6;
-  else if (roc10 < -3.0) mom_raw -= 20;
-  else if (roc10 < -1.5) mom_raw -= 12;
-  else if (roc10 < -0.5) mom_raw -=  6;
+  const addM = (etiqueta, pts, valor) => { mom_raw += pts; if (pts !== 0) aportes.push({ ind: etiqueta, pts, valor, motor: "mom" }); };
 
-  if (roc5 > 1.0) mom_raw += 8;
-  else if (roc5 < -1.0) mom_raw -= 8;
+  if (roc10 >  3.0) addM("ROC 10", 20, roc10);
+  else if (roc10 >  1.5) addM("ROC 10", 12, roc10);
+  else if (roc10 >  0.5) addM("ROC 10",  6, roc10);
+  else if (roc10 < -3.0) addM("ROC 10", -20, roc10);
+  else if (roc10 < -1.5) addM("ROC 10", -12, roc10);
+  else if (roc10 < -0.5) addM("ROC 10",  -6, roc10);
 
-  mom_raw += volDiv * 10;
+  if (roc5 > 1.0) addM("ROC 5", 8, roc5);
+  else if (roc5 < -1.0) addM("ROC 5", -8, roc5);
+
+  addM("Vol/Precio", volDiv * 10, volDiv);
 
   // MACD con BANDA MUERTA (FIX medio: antes ±0.00001 movía 20 pts)
   const macdDead = px * 0.0004;          // umbral proporcional al precio
-  if      (mh >  macdDead && mhp <= macdDead) mom_raw += 20;   // cruce alcista
-  else if (mh >  macdDead)                    mom_raw += 10;
-  else if (mh < -macdDead && mhp >= -macdDead)mom_raw -= 20;   // cruce bajista
-  else if (mh < -macdDead)                    mom_raw -= 10;
+  if      (mh >  macdDead && mhp <= macdDead) addM("MACD (cruce alcista)", 20, mh);
+  else if (mh >  macdDead)                    addM("MACD", 10, mh);
+  else if (mh < -macdDead && mhp >= -macdDead)addM("MACD (cruce bajista)", -20, mh);
+  else if (mh < -macdDead)                    addM("MACD", -10, mh);
   // dentro de la banda muerta: 0 pts
 
-  if(a20&&a50) a20>a50 ? mom_raw+=12 : mom_raw-=12;
-  if(a200)     px>a200 ? mom_raw+=8  : mom_raw-=8;
+  if(a20&&a50) addM("SMA 20 vs 50", a20>a50 ? 12 : -12, a20/a50 - 1);
+  if(a200)     addM("Precio vs SMA200", px>a200 ? 8 : -8, px/a200 - 1);
 
   const m5=(px-data[Math.max(0,n-5)].close)/data[Math.max(0,n-5)].close*100;
-  if(m5>3) mom_raw+=8; else if(m5>1) mom_raw+=4;
-  else if(m5<-3) mom_raw-=8; else if(m5<-1) mom_raw-=4;
+  if(m5>3) addM("Mom. 5", 8, m5); else if(m5>1) addM("Mom. 5", 4, m5);
+  else if(m5<-3) addM("Mom. 5", -8, m5); else if(m5<-1) addM("Mom. 5", -4, m5);
 
   // ── MOTOR B: REVERSIÓN A LA MEDIA ──
   let rev_raw = 0;
+  const addR = (etiqueta, pts, valor) => { rev_raw += pts; if (pts !== 0) aportes.push({ ind: etiqueta, pts, valor, motor: "rev" }); };
   const bbPos = (b.u - b.l) > 0 ? (px - b.l)/(b.u - b.l) : 0.5;  // 0=banda inf, 1=banda sup
-  if      (px < b.l)  rev_raw += 20;        // sobrevendido → comprar
-  else if (bbPos < 0.25) rev_raw += 10;
-  else if (px > b.u)  rev_raw -= 20;        // sobrecomprado → vender
-  else if (bbPos > 0.75) rev_raw -= 10;
-  if      (r < 30) rev_raw += 12;
-  else if (r < 40) rev_raw +=  5;
-  else if (r > 70) rev_raw -= 12;
-  else if (r > 60) rev_raw -=  5;
+  if      (px < b.l)  addR("Bollinger (bajo banda)", 20, bbPos);
+  else if (bbPos < 0.25) addR("Bollinger", 10, bbPos);
+  else if (px > b.u)  addR("Bollinger (sobre banda)", -20, bbPos);
+  else if (bbPos > 0.75) addR("Bollinger", -10, bbPos);
+  if      (r < 30) addR("RSI", 12, r);
+  else if (r < 40) addR("RSI",  5, r);
+  else if (r > 70) addR("RSI", -12, r);
+  else if (r > 60) addR("RSI",  -5, r);
 
   // ── NORMALIZACIÓN SUAVE (FIX saturación) ──
   // tanh comprime asintóticamente: nunca satura en 0/100, preserva el ranking.
@@ -2081,6 +2087,19 @@ function combinedSignal(data, W=7, allData=null, _sinTendencia=false) {
     sma20:a20, sma50:a50, sma200:a200, mom5:+m5.toFixed(2),
     ca15_score:evo.ca15_score, evo_prob:evo.evo_prob,
     pct6h:evo.pct6h, vol_24h:evo.vol_24h,
+    // Desglose: cuánto aportó cada indicador al score.
+    // `pts` son los puntos crudos dentro de su motor; `efecto` es el
+    // impacto aproximado sobre el score final, que pasa por tanh y por
+    // el peso del motor (wMom/wRev según régimen). Por eso la suma de
+    // `efecto` no da exactamente el score: la normalización no es lineal.
+    aportes: aportes.map(a => ({
+      ...a,
+      peso: +(a.motor === "mom" ? wMom : wRev).toFixed(2),
+      efecto: +((a.pts / (a.motor === "mom" ? 45 : 28)) * 50
+                * (a.motor === "mom" ? wMom : wRev)).toFixed(1),
+    })).sort((x,y) => Math.abs(y.efecto) - Math.abs(x.efecto)),
+    mom_raw, rev_raw, mom_sc:+mom_sc.toFixed(1), rev_sc:+rev_sc.toFixed(1),
+    wMom:+wMom.toFixed(2), wRev:+wRev.toFixed(2),
     vol_media_mov: volMM ? +volMM.media.toFixed(3) : null,
     vol_mm_ruedas: volMM ? volMM.ruedas : null,
     scoreTrend, scoreDelta:+scoreDelta.toFixed(0),
@@ -6440,6 +6459,46 @@ export default function App() {
                               style={{background:"transparent",border:"none",padding:"3px 0",cursor:"pointer",fontSize:"7px",color:"#4a7a9b",fontFamily:"inherit"}}>
                               {verIndicadores ? "▾ menos" : `▸ ${extra.length} indicadores más`}
                             </button>
+
+                            {/* ── DESGLOSE: cuánto aportó cada indicador al score ── */}
+                            {Array.isArray(s?.aportes) && s.aportes.length>0 && (
+                              <div style={{marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #1a3a52"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"5px"}}>
+                                  <span style={{fontSize:"7px",color:"#4a7a9b",letterSpacing:".1em"}}>APORTE AL SCORE</span>
+                                  <span style={{fontSize:"6px",color:"#5a8fa8"}}>
+                                    régimen {s.wMom>=0.6?"tendencial":s.wMom<=0.45?"lateral":"mixto"} · {Math.round(s.wMom*100)}% mom / {Math.round(s.wRev*100)}% rev
+                                  </span>
+                                </div>
+                                {s.aportes.map((a,i)=>{
+                                  const pos = a.efecto>0;
+                                  const col = pos?"#00ff9d":"#ff3355";
+                                  const maxAbs = Math.max(...s.aportes.map(x=>Math.abs(x.efecto)),1);
+                                  const ancho = Math.abs(a.efecto)/maxAbs*100;
+                                  return (
+                                    <div key={i} style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px",fontSize:"8px"}}>
+                                      <span style={{color:"#8fb4cc",width:"38%",flexShrink:0}}>{a.ind}</span>
+                                      <span style={{color:"#5a8fa8",width:"16%",flexShrink:0,textAlign:"right",fontSize:"7px"}}>
+                                        {a.valor!=null&&isFinite(a.valor)?(Math.abs(a.valor)<1?a.valor.toFixed(3):a.valor.toFixed(2)):"—"}
+                                      </span>
+                                      <div style={{flex:1,height:"7px",background:"#0d1f2d",borderRadius:"2px",position:"relative",overflow:"hidden"}}>
+                                        <div style={{position:"absolute",left:pos?"50%":`${50-ancho/2}%`,width:`${ancho/2}%`,
+                                          height:"100%",background:col,opacity:.75}}/>
+                                        <div style={{position:"absolute",left:"50%",width:"1px",height:"100%",background:"#2a4a62"}}/>
+                                      </div>
+                                      <span style={{color:col,fontWeight:700,width:"34px",textAlign:"right",flexShrink:0}}>
+                                        {pos?"+":""}{a.efecto}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                                <div style={{fontSize:"6px",color:"#4a7a9b",marginTop:"5px",lineHeight:1.5}}>
+                                  Puntos sobre el 50 neutro, ya ponderados por el régimen del activo.
+                                  La suma no da exacto el score: la normalización usa <code>tanh</code>,
+                                  que comprime los extremos y no es lineal.
+                                </div>
+                              </div>
+                            )}
+
                             <Nota titulo="qué tanto sirven estos indicadores">
                               Medido sobre 10 años y 110.806 observaciones: la correlación de estos
                               indicadores con el retorno futuro a 10 días es ≈0 (RSI 0.004, momentum 0.095).
