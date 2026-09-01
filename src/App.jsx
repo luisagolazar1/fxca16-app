@@ -867,6 +867,15 @@ const HALLAZGOS_DESCARTADOS = [
 // todavía en observación.
 const REGLAS_ACTIVAS = [
   {
+    fecha: "2026-08-27",
+    regla: "Reversión bajo Bollinger con RSI moderado — NO rebota, sigue cayendo (sólo volatilidad baja)",
+    estado: "aplicada — marca en Detalle, no altera la señal",
+    descripcion: "marcarReversionBB(results) marca los papeles que cumplen las tres condiciones a la vez: RSI(14) entre 35 y 65 (no hace falta sobreventa extrema), posición dentro de la banda de Bollinger menor a 0.30 (precio cerca o bajo la banda inferior), y ATR relativo al precio en el TERCIL BAJO del universo de esa fecha. El tercil se calcula contra los pares del día, no contra un umbral fijo, coherente con la norma del proyecto.",
+    evidencia: "156 tickers × 10 años, exceso a 15 días controlado por fecha, moneda y tercil de volatilidad. Exceso -0.958% con t=-5.11 (n=20.470). Drop-one: 156 de 156 tickers siguen con t<-1.96, rango muy estrecho (-3.11 a -3.73), o sea el efecto está distribuido y no lo sostiene ningún papel. Fuera de muestra MÁS fuerte que en muestra: -0.502% (t=-3.14) contra -0.254% (t=-3.42) total. Consistencia: 7 de 10 años con exceso negativo (70%, umbral proyecto 65%). Funciona en ambos mercados: ARS t=-2.68, USD t=-1.78.",
+    uso: "⚠ CRÍTICO: SÓLO aplica en volatilidad baja. Por tercil de ATR el efecto es -0.958% (t=-5.11) en el bajo, pero se INVIERTE a +0.124% (t=1.91) en el medio y +0.088% (t=1.04) en el alto. Aplicarla sin chequear el tercil sería un error grave: en papeles de beta alta la misma señal apunta al revés. NO es señal de entrada (-0.96% a 15 días no cubre el 1.2-1.8% de comisión), es filtro de riesgo y criterio de ranking. Contradice el manual: RSI bajo + precio bajo la banda sugeriría rebote, y lo medido es lo contrario. En el universo actual marca ~16 de 158 tickers, todos con ATR entre 0.28% y 0.69% (SPY, KO, V, MCD, GOOGL...), y todos ya tenían señal de VENTA — la regla no contradice al sistema, agrega la advertencia de no esperar rebote.",
+  },
+
+  {
     fecha: "2026-08-26",
     regla: "Veto de Fibonacci: no priorizar compras sin soporte estructural cerca",
     estado: "aplicada",
@@ -2242,6 +2251,72 @@ function vetoFibonacci(sig, data) {
     if (cerca.type !== "soporte") return null;   // sólo soporte débil
     return { dist: +dist.toFixed(2), nivel: cerca.label, zona: cerca.type };
   } catch (e) { return null; }
+}
+
+// ── REVERSIÓN BAJO BOLLINGER CON RSI MODERADO (sólo volatilidad baja) ──
+//
+// Detecta papeles TRANQUILOS que caen bajo su banda inferior con RSI
+// moderado (ni siquiera sobreventa extrema). Contra la intuición del
+// manual, eso NO anticipa rebote: anticipa que sigue cayendo relativo
+// a sus pares.
+//
+// VALIDADO (156 tickers × 10 años, exceso a 15 días vs. pares de la
+// misma fecha, moneda y tercil de volatilidad):
+//
+//   condición: RSI 35-65  +  posición Bollinger < 0.30  +  ATR en el
+//              tercil BAJO del universo de esa fecha
+//
+//   exceso -0.958%  t=-5.11  (n=20.470)
+//   drop-one: 156/156 tickers siguen con t<-1.96 (rango -3.11 a -3.73)
+//   fuera de muestra: -0.502% t=-3.14 (MÁS fuerte que en muestra)
+//   consistencia: 7 de 10 años negativos (70%, umbral proyecto 65%)
+//   funciona en ARS (t=-2.68) y USD (t=-1.78)
+//
+// ⚠ CRÍTICO — SÓLO APLICA EN VOLATILIDAD BAJA. Por tercil de ATR:
+//     bajo:  -0.958%  t=-5.11   ← el efecto vive acá
+//     medio: +0.124%  t= 1.91   ← se INVIERTE
+//     alto:  +0.088%  t= 1.04   ← se INVIERTE
+//   Aplicarla sin chequear el tercil sería un error: en papeles de beta
+//   alta la misma señal apunta al revés.
+//
+// El tercil es RELATIVO al universo de la fecha, no un umbral fijo de
+// ATR — coherente con la norma del proyecto de controlar por volatilidad
+// contra los pares del momento, no contra una constante.
+//
+// ⚠ NO es señal de entrada: -0.96% a 15 días no cubre el 1.2-1.8% de
+// comisión. Es filtro de riesgo / criterio de ranking.
+const RSI_REV_MIN = 35, RSI_REV_MAX = 65, BB_POS_REV = 0.30;
+
+function marcarReversionBB(results) {
+  // ATR relativo al precio, para que el tercil compare volatilidad y no
+  // nivel de precio
+  const conAtr = results
+    .map(r => {
+      const s = r.sig; if (!s || !s.atr || !(r.price > 0)) return null;
+      return { r, atrRel: s.atr / r.price };
+    })
+    .filter(Boolean);
+  if (conAtr.length < 12) return results;   // universo chico: sin terciles fiables
+
+  const orden = [...conAtr].sort((a,b) => a.atrRel - b.atrRel);
+  const corteBajo = orden[Math.floor(orden.length / 3)].atrRel;
+
+  const marca = new Map();
+  for (const { r, atrRel } of conAtr) {
+    const s = r.sig;
+    if (atrRel > corteBajo) continue;                    // no está en el tercil bajo
+    if (s.rsi == null || s.rsi < RSI_REV_MIN || s.rsi >= RSI_REV_MAX) continue;
+    const b = s.boll; if (!b || !(b.u > b.l)) continue;
+    const pos = (r.price - b.l) / (b.u - b.l);
+    if (pos >= BB_POS_REV) continue;
+    marca.set(r.ticker, { pos: +pos.toFixed(3), rsi: s.rsi, atrRel: +(atrRel*100).toFixed(2) });
+  }
+
+  return results.map(r => {
+    const m = marca.get(r.ticker);
+    if (!m || !r.sig) return r;
+    return { ...r, sig: { ...r.sig, revBB: m } };
+  });
 }
 
 function applyP80Threshold(results, minConviccion = 18) {
@@ -4726,7 +4801,7 @@ export default function App() {
       if ((i+1) % 20 === 0) await yield_();
     }
 
-    const final = applyP80Threshold(raw, selectividadRef.current);
+    const final = applyP80Threshold(marcarReversionBB(raw), selectividadRef.current);
     setRows(final);
     calcularAlpha(final);
     lg(`✅ ${label} · ${raw.length} tickers`, "ok");
@@ -4755,7 +4830,7 @@ export default function App() {
     );
     const raw = results.map(r => r.status === "fulfilled" ? r.value : null).filter(Boolean);
     const withPrice = raw.filter(r => r.price != null);
-    const final = applyP80Threshold(withPrice, selectividadRef.current);
+    const final = applyP80Threshold(marcarReversionBB(withPrice), selectividadRef.current);
     setRows(final);
     calcularAlpha(final);
     const nHist = withPrice.filter(r => (rowDataRef.current[r.ticker]||[]).some(d => d.hour !== undefined)).length;
@@ -6423,8 +6498,7 @@ export default function App() {
                             ...(()=>{ const v=volVsMedia(sel.ticker, s.vol_24h, s);
                               return v ? [{l:v.fuente==="movil6m"?`Vol vs media 6m`:`Vol vs media (anual)`, v:`${v.dif>=0?"+":""}${v.dif} (${v.pct>=0?"+":""}${v.pct}%)`,
                                 c:v.dif>0?"#00ff9d":v.dif<0?"#ff9040":"#ffd700"}] : []; })(),
-                            ...(()=>{ const p=persistenciaDireccional(sel.ticker);
-                              if(!p) return [];
+                            ...(()=>{ const p=persistenciaDireccional(sel.ticker);                              if(!p) return [];
                               const col = p.pred>0?"#00ff9d":"#ff3355";
                               return [{
                                 l: p.validado ? "Persistencia" : "⚗ Persistencia",
@@ -6434,6 +6508,14 @@ export default function App() {
                                 tip: p.validado
                                   ? `Persistencia direccional (LMSW), ventana ${p.ventana} ruedas. Régimen ${p.regimen==="continuacion"?"de continuación: el movimiento de hoy tiende a seguir":"de reversión: el movimiento de hoy tiende a revertirse"}. C2=${p.c2} (propio ${p.c2propio}, peso ${p.peso} — el resto viene del promedio del universo, porque con ${p.ventana} ruedas la estimación individual es ruidosa). Validado en Merval: por activo con encogimiento da +0.37% fuera de muestra, t=7.36 sobre 10 años, contra +0.26% del método global. Es criterio de ranking, NO señal de entrada (+0.37% diario vs 1.2% de comisión).`
                                   : `SIN VALIDAR en USD: el efecto no existe con ningún método ni ventana (todos los |t| < 1.92 sobre 206.425 obs, varios negativos). Se probaron 6 cortes distintos. Se muestra sólo como referencia. El indicador SÍ está validado en Merval.`
+                              }]; })(),
+                            ...(()=>{ const rv = sel?.sig?.revBB;
+                              if(!rv) return [];
+                              return [{
+                                l: "⚠ Reversión BB",
+                                v: `bajo banda (${rv.pos}) · RSI ${rv.rsi}`,
+                                c: "#ff9040",
+                                tip: `Papel de volatilidad BAJA (ATR ${rv.atrRel}% del precio, tercil inferior del universo hoy) que cae bajo su banda de Bollinger con RSI moderado. Medido sobre 10 años: NO rebota, sigue cayendo -0.96% a 15 días contra sus pares (t=-5.11, n=20.470). Drop-one 156/156, fuera de muestra más fuerte (t=-3.14), 7 de 10 años consistente. ⚠ Este efecto SÓLO existe en volatilidad baja: en el tercil medio y alto se invierte a positivo. No es señal de entrada (-0.96% no cubre la comisión), es filtro de riesgo.`
                               }]; })(),
                             {l:"Régimen",v:s.regime||"neutral",c:s.regime==="bull"?"#00ff9d":s.regime==="bear"?"#ff3355":"#ffd700"},
                           ];
