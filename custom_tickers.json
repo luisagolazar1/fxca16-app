@@ -7,7 +7,8 @@
     "SPOT",
     "ORCL",
     "PLTR",
-    "PAMP"
+    "PAMP",
+    "RCL"
   ],
   "note": "Tickers agregados manualmente desde la app FXCA16. No editar manualmente."
 }
