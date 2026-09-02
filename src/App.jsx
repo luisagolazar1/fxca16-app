@@ -4129,6 +4129,36 @@ function FXCA16Badge({score}) {
   </span>;
 }
 
+// ── BADGES DE REGLAS ─────────────────────────────────────────────
+// Muestra qué reglas del tab 📖 Reglas actuaron sobre esta señal, sin
+// tener que abrir Detalle. Las tres reglas que DEGRADAN o MARCAN sin
+// avisar (veto Fibonacci, deduplicación por correlación, reversión BB)
+// quedaban invisibles en la lista — esto las hace visibles ahí mismo.
+function badgesRegla(sig) {
+  if (!sig) return null;
+  const items = [];
+  if (sig.vetado) items.push({
+    k: "FIB", c: "#ff9040",
+    tip: `Veto de Fibonacci: compra sin soporte estructural cerca (>${sig.vetoFib?.dist ?? "?"}% del nivel más próximo). COMPRA FUERTE degradada a COMPRA. -2.63% a 20d medido, t=-3.80, 8/8 años negativos.`,
+  });
+  if (sig.corr_dup) items.push({
+    k: "CORR", c: "#a0cce0",
+    tip: `Degradada a NEUTRAL por correlación ${sig.corr_val ?? "alta"} con ${sig.corr_dup}, misma dirección de señal — es la misma apuesta, no diversifica.`,
+  });
+  if (sig.revBB) items.push({
+    k: "BB", c: "#ff9040",
+    tip: `Volatilidad baja (ATR ${sig.revBB.atrRel}% del precio) + bajo banda de Bollinger (${sig.revBB.pos}) + RSI moderado (${sig.revBB.rsi}). NO anticipa rebote: -0.96% a 15d medido (t=-5.11) contra sus pares. Sólo aplica en volatilidad baja — se invierte en tercil medio/alto.`,
+  });
+  if (!items.length) return null;
+  return <>{items.map(it =>
+    <span key={it.k} title={it.tip}
+      style={{fontSize:"7px",marginLeft:"3px",padding:"1px 5px",background:it.c+"15",
+        border:`1px dashed ${it.c}50`,borderRadius:"3px",color:it.c,fontWeight:700,cursor:"help"}}>
+      {it.k}
+    </span>
+  )}</>;
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────
 
 // ── CSV LOADER — textarea paste, funciona en desktop y mobile ──
@@ -6087,6 +6117,7 @@ export default function App() {
                                 })()}
                                 {s.synthetic&&<span title="Historial sintético — no operar" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
                                 {s.synthetic&&<span title="Historial sintético — no son datos reales" style={{fontSize:"9px",color:"#ff3355",marginLeft:"3px"}}>⚠</span>}
+                                {badgesRegla(s)}
                                 <span style={{fontSize:"8px",color:r.moneda==="USD"?"#00d4ff":"#ffd700",background:r.moneda==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{r.moneda}</span>
                                 <FXCA16Badge score={s.ca15_score}/>
                               </div>
@@ -6327,6 +6358,7 @@ export default function App() {
                               <span style={{fontSize:"9px",color:r.fromCsv?"#00d4ff":r.real?"#00ff9d":"#ffd700",fontWeight:700}}>{r.fromCsv?"📊":r.real?"📡":"🔬"}</span>
                           <span style={{fontSize:"8px",color:MONEDA(r,mkt)==="USD"?"#00d4ff":"#ffd700",background:MONEDA(r,mkt)==="USD"?"#00d4ff12":"#ffd70012",padding:"1px 5px",borderRadius:"3px",fontWeight:700}}>{MONEDA(r,mkt)}</span>
                               <FXCA16Badge score={s.ca15_score}/>
+                              {badgesRegla(s)}
                             </div>
                             <div style={{fontSize:"8px",color:"#5a8fa8"}}>{r.name}</div>
                           </div>
